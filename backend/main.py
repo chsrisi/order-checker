@@ -64,11 +64,13 @@ from models import (
     ShpOrderList,
     OrderListT,
     ShpMassTrackingNumber,
+    ShpOrderDetails,
 )
 from keys import (
     KeyManager,
     ACCESS_TTL_SECONDS,
 )
+from cache import ShopeeOrderCache
 
 load_dotenv()
 
@@ -105,6 +107,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 ALGORITHM = "RS256"
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 key_manager = KeyManager()
+shopee_cache = ShopeeOrderCache()
 
 
 def get_password_hash(password: str):
@@ -690,87 +693,153 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
     return None, None
 
 
+# Global lock to prevent concurrent workers from refreshing the token at the same time
+TOKEN_REFRESH_LOCK = asyncio.Lock()
+
+
 async def shopee_request(
     path: str,
     params: Optional[dict[str, Any]] = None,
     body: Optional[dict[str, Any]] = None,
     method: str = "GET",
     retry_on_expiry: bool = True,
+    max_429_retries: int = 3,
 ) -> Optional[ShopeeResponse]:
-    logger.info(f"Making Shopee API request to path: {path}")
-    host = os.getenv("SHOPEE_URL")
-    partner_id_env = os.getenv("PARTNER_ID")
-    partner_key_env = os.getenv("PARTNER_KEY")
-    shop_id_env = os.getenv("SHOP_ID")
-    access_token = os.getenv("ACCESS_TOKEN")
 
-    if not all([partner_id_env, partner_key_env, shop_id_env, access_token]):
-        logger.error("Missing Shopee environment variables for API request")
-        return None
+    backoff_delay = 1.5  # Starting delay for 429 backoff
 
-    partner_id = int(partner_id_env or "0")
-    partner_key = (partner_key_env or "").encode()
-    shop_id = int(shop_id_env or "0")
-    timest = int(time.time())
+    for attempt in range(max_429_retries + 1):
+        host = os.getenv("SHOPEE_URL")
+        partner_id_env = os.getenv("PARTNER_ID")
+        partner_key_env = os.getenv("PARTNER_KEY")
+        shop_id_env = os.getenv("SHOP_ID")
+        access_token = os.getenv(
+            "ACCESS_TOKEN"
+        )  # Capturing token state at start of request
 
-    # Sign: partner_id + api path + timestamp + access_token + shop_id + partner_key
-    tmp_base_string = f"{partner_id}{path}{timest}{access_token}{shop_id}"
-    base_string = tmp_base_string.encode()
-    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+        if not all([partner_id_env, partner_key_env, shop_id_env, access_token]):
+            logger.error("Missing Shopee environment variables for API request")
+            return None
 
-    # Base params
-    query_params = {
-        "partner_id": partner_id,
-        "timestamp": timest,
-        "access_token": access_token,
-        "shop_id": shop_id,
-        "sign": sign,
-    }
-    if params:
-        query_params.update(params)
+        partner_id = int(partner_id_env or "0")
+        partner_key = (partner_key_env or "").encode()
+        shop_id = int(shop_id_env or "0")
+        timest = int(time.time())
 
-    url = f"{host}{path}"
-    headers = {"Content-Type": "application/json"}
+        # Generate HMAC Sign
+        tmp_base_string = f"{partner_id}{path}{timest}{access_token}{shop_id}"
+        base_string = tmp_base_string.encode()
+        sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
 
-    try:
-        if method.upper() == "GET":
-            req_coro = app.state.aiohttp_session.get(
-                url, params=query_params, headers=headers
-            )
-        else:
-            req_coro = app.state.aiohttp_session.post(
-                url, params=query_params, json=body, headers=headers
-            )
+        query_params = {
+            "partner_id": partner_id,
+            "timestamp": timest,
+            "access_token": access_token,
+            "shop_id": shop_id,
+            "sign": sign,
+        }
+        if params:
+            query_params.update(params)
 
-        async with req_coro as resp:
-            # Shopee always returns 200 with error/success info in the body
-            ret = ShopeeResponse.model_validate(await resp.json())
+        url = f"{host}{path}"
+        headers = {"Content-Type": "application/json"}
 
-            if ret.error:
-                logger.error(
-                    f"Shopee API Error: {ret.error} - {ret.message} (ReqID: {ret.request_id})"
+        logger.debug(
+            f"[REQ ENQUEUE] {method} {path} | Token snippet: ...{access_token[-6:] if access_token else 'None'}"
+        )
+
+        try:
+            if method.upper() == "GET":
+                req_coro = app.state.aiohttp_session.get(
+                    url, params=query_params, headers=headers
+                )
+            else:
+                req_coro = app.state.aiohttp_session.post(
+                    url, params=query_params, json=body, headers=headers
                 )
 
-                # Auto-refresh on token expiry
-                if retry_on_expiry and ret.error in ["invalid_acceess_token"]:
-                    logger.info(
-                        "Token might be expired, attempting one-time refresh..."
+            async with req_coro as resp:
+                # Handle standard HTTP Gateway 429 errors
+                if resp.status == 429:
+                    if attempt < max_429_retries:
+                        logger.warning(
+                            f"[429 TOO MANY REQUESTS] Gateway rate limit hit on {path}. Retrying in {backoff_delay}s... (Attempt {attempt + 1}/{max_429_retries})"
+                        )
+                        await asyncio.sleep(backoff_delay)
+                        backoff_delay *= 2  # Exponential increment
+                        continue
+                    else:
+                        logger.error(
+                            f"[429 EXHAUSTED] Max retries reached for rate limit on path: {path}"
+                        )
+                        return None
+
+                ret = ShopeeResponse.model_validate(await resp.json())
+
+                # Handle application-level errors returned as HTTP 200
+                if ret.error:
+                    logger.error(
+                        f"[SHOPEE API ERROR] {ret.error} - {ret.message} (ReqID: {ret.request_id})"
                     )
-                    new_at, _ = await refresh_shopee_token()
-                    if new_at:
-                        return await shopee_request(
-                            path,
-                            params or {},
-                            body or {},
-                            method,
-                            retry_on_expiry=False,
+
+                    # Handle Shopee-specific Rate Limits inside payload
+                    if ret.error in ["request_limit_exceeded", "frequency_limited"]:
+                        if attempt < max_429_retries:
+                            logger.warning(
+                                f"[429 API LIMIT] Application rate limit '{ret.error}' on {path}. Retrying in {backoff_delay}s..."
+                            )
+                            await asyncio.sleep(backoff_delay)
+                            backoff_delay *= 2
+                            continue
+                        return ret
+
+                    # Auto-refresh on token expiry (Fixed Thundering Herd via Lock)
+                    # Note: checked both common formats plus your original snippet spelling
+                    if retry_on_expiry and ret.error in [
+                        "invalid_access_token",
+                        "invalid_acceess_token",
+                        "error_access_token",
+                    ]:
+                        logger.warning(
+                            f"[TOKEN EXPIRED] Detected expired token on task executing {path}."
                         )
 
-            logger.info(f"API success - Request ID: {ret.request_id}")
-            return ret
-    except HTTPException as e:
-        logger.error(f"Exception during Shopee API request: {str(e)}")
-        return None
+                        async with TOKEN_REFRESH_LOCK:
+                            # Double-check structure: Did a parallel worker already update the environment token?
+                            if os.getenv("ACCESS_TOKEN") == access_token:
+                                logger.info(
+                                    "[TOKEN REFRESH] Lock acquired. Executing token renewal..."
+                                )
+                                new_at, _ = await refresh_shopee_token()
+                                if not new_at:
+                                    logger.critical(
+                                        "[TOKEN REFRESH FAILED] Critical failure updating expired token."
+                                    )
+                                    return ret
+                            else:
+                                logger.info(
+                                    "[TOKEN REFRESH SKIPPED] Token was already updated by a concurrent task."
+                                )
+
+                        # Re-run request with retry_on_expiry=False to prevent infinite recursive loops
+                        logger.info(
+                            f"[RETRYING REQUEST] Re-executing {path} with refreshed token tokens."
+                        )
+                        return await shopee_request(
+                            path, params, body, method, retry_on_expiry=False
+                        )
+
+                logger.debug(f"[REQ SUCCESS] {path} | ReqID: {ret.request_id}")
+                return ret
+
+        except Exception as e:
+            logger.error(
+                f"[EXCEPTION] Critical error during Shopee call to {path}: {str(e)}",
+                exc_info=True,
+            )
+            return None
+
+    return None
 
 
 # Auth Endpoints ----
@@ -1338,6 +1407,7 @@ async def close_outbound_period(
         orders_done_count = len(result_orders.scalars().all())
 
     db.commit()
+    shopee_cache.invalidate()
 
     logger.info(
         f"Closed period: {outbound_count} outbound, {unknown_count} unknown, "
@@ -1346,6 +1416,7 @@ async def close_outbound_period(
 
     # Broadcast updates
     await manager.broadcast(WSMessageType.OUTBOUNDS, db, scope="admin")
+    await manager.broadcast(WSMessageType.SHOPEE_ORDERS, db, scope="admin")
 
     return {
         "outbound": outbound_count,
@@ -1442,227 +1513,352 @@ async def set_stock(
 
 
 # Shopee Orders Endpoints ----
-@app.get("/shopee/orders", response_model=List[ShopeeOrderResponse])
-async def get_shopee_orders(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    logger.info(f"User {current_user.username} fetching orders from Shopee API")
+# Limit concurrent Shopee requests to respect rate limits (e.g., max 5 at once)
+SHOPEE_SEMAPHORE = asyncio.Semaphore(3)
 
-    now = int(time.time())
-    time_from = now - (2 * 24 * 60 * 60)  # 2 days ago
 
-    STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED"]
-    all_order_sns: list[str] = []
+async def fetch_sns_for_status(status: str, time_from: int, now: int) -> list[str]:
+    """Worker to fetch order SNs for a specific status with pagination."""
+    cursor = ""
+    status_sns = []
 
-    for order_status in STATUSES:
-        cursor = ""
-        while True:
-            params: dict[str, Any] = {
-                "page_size": 100,
-                "time_range_field": "create_time",
-                "time_from": time_from,
-                "time_to": now,
-                "order_status": order_status,
-            }
-            if cursor:
-                params["cursor"] = cursor
+    while True:
+        params: dict[str, Any] = {
+            "page_size": 100,
+            "time_range_field": "create_time",
+            "time_from": time_from,
+            "time_to": now,
+            "order_status": status,
+        }
+        if cursor:
+            params["cursor"] = cursor
 
+        async with SHOPEE_SEMAPHORE:
             shopee_resp = await shopee_request(
                 path="/api/v2/order/get_order_list",
                 params=params,
             )
 
-            if not shopee_resp or shopee_resp.error:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to fetch {order_status} orders from Shopee",
-                )
-
-            resp_data = shopee_resp.response
-            if not isinstance(resp_data, ShpOrderList):
-                raise TypeError(
-                    "Invalid response type from Shopee API for get_order_list"
-                )
-
-            all_order_sns.extend(item.order_sn for item in resp_data.order_list)
-
-            if not resp_data.more:
-                break
-            cursor = resp_data.next_cursor or ""
-
-    order_sns = list(dict.fromkeys(all_order_sns))
-
-    if order_sns:
-        # Fetch details in chunks of 50
-        chunk_size = 50
-        for i in range(0, len(order_sns), chunk_size):
-            chunk = order_sns[i : i + chunk_size]
-            sn_str = ",".join(chunk)
-
-            detail_resp = await shopee_request(
-                path="/api/v2/order/get_order_detail",
-                params={
-                    "order_sn_list": sn_str,
-                    "response_optional_fields": "recipient_address,note,item_list,split_up,shipping_carrier,package_list,",
-                },
+        if (
+            not shopee_resp
+            or shopee_resp.error
+            or not isinstance(shopee_resp.response, ShpOrderList)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to fetch {status} orders from Shopee",
             )
 
-            if not detail_resp or detail_resp.error:
-                logger.error(f"Failed to fetch Shopee details for chunk: {sn_str}")
-                continue
+        resp_data = shopee_resp.response
+        status_sns.extend(item.order_sn for item in resp_data.order_list)
 
-            detail_data = detail_resp.response
-            if not isinstance(detail_data, OrderListT):
-                logger.error(
-                    "Invalid response type from Shopee API for get_order_detail"
-                )
-                continue
+        if not resp_data.more:
+            break
+        cursor = resp_data.next_cursor or ""
 
-            order_details_list = detail_data.order_list
-            if not isinstance(order_details_list, list):
-                logger.error("Invalid response order_list type from Shopee API")
-                continue
+    return status_sns
 
-            # Fetch tracking numbers/pickup codes for non-READY_TO_SHIP orders
-            tracking_map = {}
-            fail_pkgs = set()
-            processed_packages: list[dict[str, str]] = []
-            for order_detail in order_details_list:
-                if (
-                    order_detail.order_status != "READY_TO_SHIP"
-                    and order_detail.package_list
-                ):
-                    for pkg in order_detail.package_list:
-                        processed_packages.append(
-                            {
-                                "package_number": pkg.package_number,
-                            }
-                        )
 
-            if processed_packages:
-                tracking_resp = await shopee_request(
-                    path="/api/v2/logistics/get_mass_tracking_number",
-                    method="POST",
-                    body={"package_list": processed_packages},
-                )
-                if tracking_resp and not tracking_resp.error and tracking_resp.response:
-                    if isinstance(tracking_resp.response, ShpMassTrackingNumber):
-                        for success_item in tracking_resp.response.success_list:
-                            tracking_map[success_item.package_number] = (
-                                success_item.tracking_number,
-                                success_item.pickup_code,
-                            )
-                        for fail_item in tracking_resp.response.fail_list:
-                            fail_pkgs.add(fail_item.package_number)
+async def fetch_chunk_details(
+    chunk: list[str],
+) -> tuple[list[ShpOrderDetails], dict[str, tuple[str, str | None]], set[str]]:
+    """Worker to fetch details and tracking numbers for a chunk of 50 orders."""
+    sn_str = ",".join(chunk)
 
-            for order_detail in order_details_list:
-                db_order = (
-                    db.execute(
-                        select(ShopeeOrder).filter(
-                            ShopeeOrder.order_sn == order_detail.order_sn
-                        )
+    async with SHOPEE_SEMAPHORE:
+        detail_resp = await shopee_request(
+            path="/api/v2/order/get_order_detail",
+            params={
+                "order_sn_list": sn_str,
+                "response_optional_fields": "recipient_address,note,item_list,split_up,shipping_carrier,package_list,",
+            },
+        )
+
+    if (
+        not detail_resp
+        or detail_resp.error
+        or not isinstance(detail_resp.response, OrderListT)
+    ):
+        logger.error(f"Failed to fetch Shopee details for chunk: {sn_str}")
+        return [], {}, set()
+
+    order_details_list = detail_resp.response.order_list
+    if not isinstance(order_details_list, list):
+        return [], {}, set()
+
+    # Prepare batch tracking payload
+    processed_packages = [
+        {"package_number": pkg.package_number}
+        for detail in order_details_list
+        if detail.order_status != "READY_TO_SHIP" and detail.package_list
+        for pkg in detail.package_list
+    ]
+
+    tracking_map = {}
+    fail_pkgs = set()
+
+    if processed_packages:
+        async with SHOPEE_SEMAPHORE:
+            tracking_resp = await shopee_request(
+                path="/api/v2/logistics/get_mass_tracking_number",
+                method="POST",
+                body={"package_list": processed_packages},
+            )
+
+        if tracking_resp and not tracking_resp.error and tracking_resp.response:
+            if isinstance(tracking_resp.response, ShpMassTrackingNumber):
+                for success_item in tracking_resp.response.success_list:
+                    tracking_map[success_item.package_number] = (
+                        success_item.tracking_number,
+                        success_item.pickup_code,
                     )
-                    .scalars()
-                    .first()
+                for fail_item in tracking_resp.response.fail_list:
+                    fail_pkgs.add(fail_item.package_number)
+
+    return order_details_list, tracking_map, fail_pkgs
+
+
+lection_query = select(ShopeeOrder).order_by(ShopeeOrder.ship_by.desc())
+
+
+def get_local_orders(db: Session):
+    """Helper to ensure identical data return shape."""
+    return db.execute(lection_query).scalars().all()
+
+
+@app.get("/shopee/orders", response_model=List[ShopeeOrderResponse])
+async def get_shopee_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    start_time = time.perf_counter()
+    logger.info(
+        f"[START] User '{current_user.username}' requested Shopee synchronization."
+    )
+
+    # 1. Fast path check
+    if shopee_cache.is_valid():
+        logger.info(
+            "[CACHE HIT] Local order cache valid. Serving directly from database."
+        )
+        res = get_local_orders(db)
+        logger.info(
+            f"[END] Cache hit pipeline complete. Returned {len(res)} orders in {time.perf_counter() - start_time:.4f}s."
+        )
+        return res
+
+    logger.debug(
+        "[CACHE MISS] Cache is invalid or expired. Attempting synchronization lock..."
+    )
+
+    async with shopee_cache.lock:
+        lock_acquired_time = time.perf_counter()
+        logger.debug(
+            f"[LOCK ACQUIRED] Sync lock locked successfully in {lock_acquired_time - start_time:.4f}s."
+        )
+
+        # Double-Checked Locking check
+        if shopee_cache.is_valid():
+            logger.info(
+                "[CACHE HIT] Cache valid inside lock block (parallel sync resolved). Avoiding dual sync."
+            )
+            return get_local_orders(db)
+
+        now = int(time.time())
+        time_from = now - (2 * 24 * 60 * 60)
+        STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED"]
+
+        # Step A: Parallel Fetching of Order SNs
+        logger.info(
+            f"[STAGE 1] Querying order lists for statuses: {STATUSES} in parallel..."
+        )
+        stage1_start = time.perf_counter()
+
+        tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]
+        results = await asyncio.gather(*tasks)
+
+        all_order_sns = []
+        for status, res_list in zip(STATUSES, results):
+            logger.debug(
+                f" -> Found {len(res_list)} matching items for status [{status}]"
+            )
+            all_order_sns.extend(res_list)
+
+        order_sns = list(dict.fromkeys(all_order_sns))
+        logger.info(
+            f"[STAGE 1 DONE] Discovered {len(order_sns)} unique order SNs across statuses in {time.perf_counter() - stage1_start:.4f}s."
+        )
+
+        if order_sns:
+            # Step B: Parallel Fetching of Detailed Info
+            chunk_size = 50
+            chunks = [
+                order_sns[i : i + chunk_size]
+                for i in range(0, len(order_sns), chunk_size)
+            ]
+            logger.info(
+                f"[STAGE 2] Segmented orders into {len(chunks)} chunks of max {chunk_size}. Processing chunk payloads concurrently..."
+            )
+
+            stage2_start = time.perf_counter()
+            chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
+            chunk_results = await asyncio.gather(*chunk_tasks)
+            logger.info(
+                f"[STAGE 2 DONE] Fetched details for all chunks in {time.perf_counter() - stage2_start:.4f}s."
+            )
+
+            # --- Database Processing Phase (Batching) ---
+            logger.info(
+                "[STAGE 3] Loading state tables to complete batch processing strategy..."
+            )
+            stage3_start = time.perf_counter()
+
+            existing_orders = {
+                o.order_sn: o
+                for o in db.execute(
+                    select(ShopeeOrder).filter(ShopeeOrder.order_sn.in_(order_sns))
+                )
+                .scalars()
+                .all()
+            }
+            logger.debug(
+                f" -> Cached {len(existing_orders)} pre-existing ShopeeOrder records from local storage map."
+            )
+
+            all_package_nums = [
+                pkg.package_number
+                for details, _, _ in chunk_results
+                for detail in details
+                if detail.package_list
+                for pkg in detail.package_list
+            ]
+            existing_infos = {
+                info.package_number: info
+                for info in db.execute(
+                    select(ShopeeOrderInfo).filter(
+                        ShopeeOrderInfo.package_number.in_(all_package_nums)
+                    )
+                )
+                .scalars()
+                .all()
+            }
+            logger.debug(
+                f" -> Cached {len(existing_infos)} pre-existing ShopeeOrderInfo package rows from local storage map."
+            )
+
+            # Analytics Counters
+            inserted_orders = updated_orders = inserted_packages = updated_packages = 0
+
+            for chunk_idx, (order_details_list, tracking_map, fail_pkgs) in enumerate(
+                chunk_results, start=1
+            ):
+                logger.debug(
+                    f" Processing dataset chunk {chunk_idx}/{len(chunks)} ({len(order_details_list)} records)"
                 )
 
-                if not db_order:
-                    db_order = ShopeeOrder(
-                        order_sn=order_detail.order_sn, owner_user=None
-                    )
-                    db_order.split_up = order_detail.split_up
-                    db_order.status = order_detail.order_status
-                    db_order.ship_by = order_detail.ship_by_date
-                    db.add(db_order)
+                for order_detail in order_details_list:
+                    db_order = existing_orders.get(order_detail.order_sn)
 
-                    if order_detail.recipient_address:
-                        addr = ShopeeOrderRecipientAddress(
-                            order_sn=order_detail.order_sn,
-                            name=order_detail.recipient_address.name,
-                            city=order_detail.recipient_address.city,
+                    if not db_order:
+                        db_order = ShopeeOrder(
+                            order_sn=order_detail.order_sn, owner_user=None
                         )
-                        db.add(addr)
+                        db_order.split_up = order_detail.split_up
+                        db_order.status = order_detail.order_status
+                        db_order.ship_by = order_detail.ship_by_date
+                        db.add(db_order)
+                        inserted_orders += 1
 
-                    for item in order_detail.item_list:
-                        if item.model_id == 0:
-                            item.model_id = None
-                            item.model_name = None
-                            item.model_sku = None
-                        db_item = ShopeeOrderItemList(
-                            order_sn=order_detail.order_sn,
-                            item_id=item.item_id,
-                            item_name=item.item_name,
-                            item_sku=item.item_sku,
-                            model_id=item.model_id,
-                            model_name=item.model_name,
-                            model_sku=item.model_sku,
-                            model_quantity_purchased=item.model_quantity_purchased,
-                            image_url=item.image_info.image_url
-                            if item.image_info
-                            else None,
-                        )
-                        db.add(db_item)
-                else:
-                    db_order.status = order_detail.order_status
-
-                # Update ShopeeOrderInfo for each package
-                if order_detail.package_list:
-                    for pkg in order_detail.package_list:
-                        if pkg.package_number in fail_pkgs:
-                            continue
-
-                        info = (
-                            db.execute(
-                                select(ShopeeOrderInfo).filter(
-                                    ShopeeOrderInfo.package_number == pkg.package_number
-                                )
+                        if order_detail.recipient_address:
+                            addr = ShopeeOrderRecipientAddress(
+                                order_sn=order_detail.order_sn,
+                                name=order_detail.recipient_address.name,
+                                city=order_detail.recipient_address.city,
                             )
-                            .scalars()
-                            .first()
-                        )
+                            db.add(addr)
 
-                        tracking_number = None
-                        pickup_code = None
-                        if order_detail.order_status != "READY_TO_SHIP":
-                            if pkg.package_number in tracking_map:
+                        for item in order_detail.item_list:
+                            if item.model_id == 0:
+                                item.model_id = item.model_name = item.model_sku = None
+                            db_item = ShopeeOrderItemList(
+                                order_sn=order_detail.order_sn,
+                                item_id=item.item_id,
+                                item_name=item.item_name,
+                                item_sku=item.item_sku,
+                                model_id=item.model_id,
+                                model_name=item.model_name,
+                                model_sku=item.model_sku,
+                                model_quantity_purchased=item.model_quantity_purchased,
+                                image_url=item.image_info.image_url
+                                if item.image_info
+                                else None,
+                            )
+                            db.add(db_item)
+                    else:
+                        db_order.status = order_detail.order_status
+                        updated_orders += 1
+
+                    if order_detail.package_list:
+                        for pkg in order_detail.package_list:
+                            if pkg.package_number in fail_pkgs:
+                                continue
+
+                            info = existing_infos.get(pkg.package_number)
+                            tracking_number = pickup_code = None
+
+                            if (
+                                order_detail.order_status != "READY_TO_SHIP"
+                                and pkg.package_number in tracking_map
+                            ):
                                 tracking_number, pickup_code = tracking_map[
                                     pkg.package_number
                                 ]
 
-                        if not info:
-                            info = ShopeeOrderInfo(
-                                order_sn=order_detail.order_sn,
-                                package_number=pkg.package_number,
-                                logistics_status=pkg.logistics_status,
-                                tracking_number=tracking_number,
-                                pickup_code=pickup_code,
-                                note=order_detail.note,
-                            )
-                            db.add(info)
-                        else:
-                            info.logistics_status = pkg.logistics_status
-                            if order_detail.order_status != "READY_TO_SHIP":
-                                info.tracking_number = tracking_number
-                                info.pickup_code = pickup_code
-                            info.note = order_detail.note
+                            if not info:
+                                info = ShopeeOrderInfo(
+                                    order_sn=order_detail.order_sn,
+                                    package_number=pkg.package_number,
+                                    logistics_status=pkg.logistics_status,
+                                    tracking_number=tracking_number,
+                                    pickup_code=pickup_code,
+                                    note=order_detail.note,
+                                )
+                                db.add(info)
+                                inserted_packages += 1
+                            else:
+                                info.logistics_status = pkg.logistics_status
+                                if order_detail.order_status != "READY_TO_SHIP":
+                                    info.tracking_number = tracking_number
+                                    info.pickup_code = pickup_code
+                                info.note = order_detail.note
+                                updated_packages += 1
 
-        db.commit()
+            logger.info(
+                f"[DB MAP COMPLETE] Analytics: Orders (+{inserted_orders}/~{updated_orders}) | Packages (+{inserted_packages}/~{updated_packages})"
+            )
 
-    orders_in_db: list[ShopeeOrder] = []
-    if order_sns:
-        orders_in_db = list(
-            db.execute(select(ShopeeOrder).filter(ShopeeOrder.order_sn.in_(order_sns)))
-            .scalars()
-            .all()
+            logger.debug(
+                "Executing bulk commit operation onto database transaction context..."
+            )
+            db.commit()
+            logger.info(
+                f"[STAGE 3 DONE] Persisted all changes to relational storage engine in {time.perf_counter() - stage3_start:.4f}s."
+            )
+
+        # Messaging systems
+        logger.debug("Broadcasting socket frames out to application listeners...")
+        await manager.broadcast(WSMessageType.SHOPEE_ORDERS, db, scope="admin")
+        await manager.send_to_user(
+            WSMessageType.SHOPEE_ORDERS, db, current_user.username
         )
 
-    await manager.broadcast(WSMessageType.SHOPEE_ORDERS, db, scope="admin")
-    await manager.send_to_user(WSMessageType.SHOPEE_ORDERS, db, current_user.username)
+        shopee_cache.mark_synced()
 
-    # Eagerly load or just use from_attributes via response_model
-    # The relationships in ShopeeOrder might require a refresh or we return them as is
-    return orders_in_db
+        final_orders = get_local_orders(db)
+        logger.info(
+            f"[END] Full sync routine terminated successfully. Total runtime: {time.perf_counter() - start_time:.4f}s. Returning {len(final_orders)} data objects."
+        )
+        return final_orders
 
 
 @app.post("/shopee/orders/acquire")
@@ -1687,6 +1883,7 @@ async def acquire_order(
 
     db_order.owner_user = current_user.username
     db.commit()
+    shopee_cache.invalidate()
 
     return {"message": "Order assigned successfully", "order_sn": order_sn}
 
