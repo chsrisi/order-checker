@@ -1,0 +1,34 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/.env
+**/*.db
+backend/venv/
+.pytest_cache/
+.mypy_cache/
+keys/
+**/*.key
+**/*.pub
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.packages
+**/*.iml
+**/.idea/
+**/.metadata
+**/.pub/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Temporary files
+**/temp/
