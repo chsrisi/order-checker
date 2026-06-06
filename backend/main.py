@@ -648,7 +648,7 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
     partner_key = cast(str, partner_key_env).encode()
 
     timest = int(time.time())
-    host = "https://openplatform.sandbox.test-stable.shopee.sg"
+    host = os.getenv("SHOPEE_URL")
     path = "/api/v2/auth/access_token/get"
     body = {
         "shop_id": shop_id,
@@ -698,7 +698,7 @@ async def shopee_request(
     retry_on_expiry: bool = True,
 ) -> Optional[ShopeeResponse]:
     logger.info(f"Making Shopee API request to path: {path}")
-    host = "https://openplatform.sandbox.test-stable.shopee.sg"
+    host = os.getenv("SHOPEE_URL")
     partner_id_env = os.getenv("PARTNER_ID")
     partner_key_env = os.getenv("PARTNER_KEY")
     shop_id_env = os.getenv("SHOP_ID")
