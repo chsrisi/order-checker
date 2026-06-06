@@ -342,7 +342,7 @@ class ShopeeOrderInfoResponse(BaseModel):
 class ShopeeOrderResponse(BaseModel):
     order_sn: str
     split_up: Optional[bool] = None
-    created_at: datetime
+    ship_by: datetime
     owner_user: Optional[str] = None
     done: bool = False
     done_at: Optional[datetime] = None
