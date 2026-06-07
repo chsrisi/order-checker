@@ -72,7 +72,6 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
                       "Ongoing Orders",
@@ -81,6 +80,19 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                         fontSize: 16,
                       ),
                     ),
+                    const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: appState.isLoading
+                          ? null
+                          : () => appState.resetShopeeCacheState(),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text("Reset State"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: appState.isLoading
                           ? null
@@ -400,23 +412,26 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
             children: [
               Row(
                 children: [
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-                fontWeight: FontWeight.w500,
-              ),
-              children: [
-                TextSpan(text: "Previous close: ${appState.lastCloseOutbound} out"),
-                if (appState.lastCloseOrdersDone > 0)
-                  TextSpan(
-                    text: ", ${appState.lastCloseOrdersDone} done",
-                    style: const TextStyle(color: Colors.green),
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      children: [
+                        TextSpan(
+                          text:
+                              "Previous close: ${appState.lastCloseOutbound} out",
+                        ),
+                        if (appState.lastCloseOrdersDone > 0)
+                          TextSpan(
+                            text: ", ${appState.lastCloseOrdersDone} done",
+                            style: const TextStyle(color: Colors.green),
+                          ),
+                      ],
+                    ),
                   ),
-              ],
-            ),
-          ),
                   if (appState.lastCloseUnknown > 0) ...[
                     const Text(
                       " - ",

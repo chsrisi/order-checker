@@ -535,6 +535,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> resetShopeeCacheState() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/shopee/reset-cache-state',
+        method: 'POST',
+      );
+      if (response?.statusCode == 200) {
+        await fetchShopeeOrders();
+      }
+    } catch (e) {
+      log("Reset Cache State Error: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> fetchAdminHistory() async {
     _isLoading = true;
     notifyListeners();
@@ -751,6 +770,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // stale
   Future<bool> deleteLabel(String orderSn) async {
     _isLoading = true;
     notifyListeners();

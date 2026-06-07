@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, cast, Generator
 import aiohttp
 import jwt
 import jwt.exceptions as jwt_exc
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from fastapi import (
     Depends,
     FastAPI,
@@ -636,14 +636,16 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 
 # Shopee OpenAPI Utils ----
 async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
-    logger.info("Refreshing Shopee access token")
+    logger.info("[TOKEN SYSTEM] Attempting to refresh Shopee access token...")
     shop_id_env = os.getenv("SHOP_ID")
     partner_id_env = os.getenv("PARTNER_ID")
     partner_key_env = os.getenv("PARTNER_KEY")
     refresh_token = os.getenv("REFRESH_TOKEN")
 
     if not all([shop_id_env, partner_id_env, partner_key_env, refresh_token]):
-        logger.error("Missing Shopee environment variables for token refresh")
+        logger.error(
+            "[TOKEN SYSTEM] Missing Shopee environment variables for token refresh"
+        )
         return None, None
 
     shop_id = int(cast(str, shop_id_env))
@@ -669,27 +671,33 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
         async with app.state.aiohttp_session.post(
             url, json=body, headers=headers
         ) as resp:
-            # Shopee always returns 200 with error/success info in the body
             ret = ShopeeTokenResponse.model_validate(await resp.json())
 
             if ret.error:
                 logger.error(
-                    f"Shopee Refresh Error: {ret.error} - {ret.message} (ReqID: {ret.request_id})"
+                    f"[TOKEN SYSTEM FAILED] Shopee Auth Server rejected refresh token: {ret.error} - {ret.message} (ReqID: {ret.request_id})"
                 )
                 return None, None
 
             if ret.access_token and ret.refresh_token:
+                from dotenv import set_key  # Assumed from your setup
+
                 set_key(".env", "ACCESS_TOKEN", ret.access_token)
                 set_key(".env", "REFRESH_TOKEN", ret.refresh_token)
-                # Manually update environment variables so the current process has them
+
                 os.environ["ACCESS_TOKEN"] = ret.access_token
                 os.environ["REFRESH_TOKEN"] = ret.refresh_token
-                logger.info("Shopee tokens updated in .env and environment")
+                logger.info(
+                    "[TOKEN SYSTEM SUCCESS] Shopee tokens successfully updated in file and memory."
+                )
                 return ret.access_token, ret.refresh_token
 
     except Exception as e:
-        logger.error(f"Exception during Shopee token refresh: {str(e)}")
+        logger.error(
+            f"[TOKEN SYSTEM EXCEPTION] Exception during Shopee token refresh network call: {str(e)}"
+        )
         return None, None
+
     return None, None
 
 
@@ -706,6 +714,16 @@ async def shopee_request(
     max_429_retries: int = 3,
 ) -> Optional[ShopeeResponse]:
 
+    # 1. Top-Level Circuit Breaker Check
+    if shopee_cache.is_token_fatal():
+        logger.critical(
+            f"[CIRCUIT BREAKER] Aborting request to {path}. Token infrastructure is flagged as completely dead."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Shopee API authentication infrastructure is broken. Re-authorization required.",
+        )
+
     backoff_delay = 1.5  # Starting delay for 429 backoff
 
     for attempt in range(max_429_retries + 1):
@@ -713,9 +731,7 @@ async def shopee_request(
         partner_id_env = os.getenv("PARTNER_ID")
         partner_key_env = os.getenv("PARTNER_KEY")
         shop_id_env = os.getenv("SHOP_ID")
-        access_token = os.getenv(
-            "ACCESS_TOKEN"
-        )  # Capturing token state at start of request
+        access_token = os.getenv("ACCESS_TOKEN")
 
         if not all([partner_id_env, partner_key_env, shop_id_env, access_token]):
             logger.error("Missing Shopee environment variables for API request")
@@ -726,7 +742,6 @@ async def shopee_request(
         shop_id = int(shop_id_env or "0")
         timest = int(time.time())
 
-        # Generate HMAC Sign
         tmp_base_string = f"{partner_id}{path}{timest}{access_token}{shop_id}"
         base_string = tmp_base_string.encode()
         sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
@@ -759,14 +774,14 @@ async def shopee_request(
                 )
 
             async with req_coro as resp:
-                # Handle standard HTTP Gateway 429 errors
+                # Handle Gateway 429 errors
                 if resp.status == 429:
                     if attempt < max_429_retries:
                         logger.warning(
                             f"[429 TOO MANY REQUESTS] Gateway rate limit hit on {path}. Retrying in {backoff_delay}s... (Attempt {attempt + 1}/{max_429_retries})"
                         )
                         await asyncio.sleep(backoff_delay)
-                        backoff_delay *= 2  # Exponential increment
+                        backoff_delay *= 2
                         continue
                     else:
                         logger.error(
@@ -776,13 +791,12 @@ async def shopee_request(
 
                 ret = ShopeeResponse.model_validate(await resp.json())
 
-                # Handle application-level errors returned as HTTP 200
                 if ret.error:
                     logger.error(
                         f"[SHOPEE API ERROR] {ret.error} - {ret.message} (ReqID: {ret.request_id})"
                     )
 
-                    # Handle Shopee-specific Rate Limits inside payload
+                    # Handle Payload-level Rate Limits
                     if ret.error in ["request_limit_exceeded", "frequency_limited"]:
                         if attempt < max_429_retries:
                             logger.warning(
@@ -793,8 +807,7 @@ async def shopee_request(
                             continue
                         return ret
 
-                    # Auto-refresh on token expiry (Fixed Thundering Herd via Lock)
-                    # Note: checked both common formats plus your original snippet spelling
+                    # Token Expiry handling with Double-Checked Locks and Circuit Breaking
                     if retry_on_expiry and ret.error in [
                         "invalid_access_token",
                         "invalid_acceess_token",
@@ -805,25 +818,39 @@ async def shopee_request(
                         )
 
                         async with TOKEN_REFRESH_LOCK:
-                            # Double-check structure: Did a parallel worker already update the environment token?
+                            # Worker check 1: Did a previous worker fail catastrophically while we were waiting?
+                            if shopee_cache.is_token_fatal():
+                                logger.critical(
+                                    f"[FAIL FAST] Worker on {path} woke up and detected fatal token state. Aborting."
+                                )
+                                raise HTTPException(
+                                    status_code=500,
+                                    detail="Shopee authentication token refresh failed globally.",
+                                )
+
+                            # Worker check 2: Are we the chosen one to execute the refresh?
                             if os.getenv("ACCESS_TOKEN") == access_token:
                                 logger.info(
                                     "[TOKEN REFRESH] Lock acquired. Executing token renewal..."
                                 )
                                 new_at, _ = await refresh_shopee_token()
+
                                 if not new_at:
                                     logger.critical(
-                                        "[TOKEN REFRESH FAILED] Critical failure updating expired token."
+                                        "[FATAL AUTH FAILURE] Refresh token is invalid/expired! Tripping circuit breaker."
                                     )
-                                    return ret
+                                    shopee_cache.set_token_fatal()
+                                    raise HTTPException(
+                                        status_code=500,
+                                        detail="Shopee Refresh Token has expired or is invalid. Manual merchant re-auth required.",
+                                    )
                             else:
                                 logger.info(
-                                    "[TOKEN REFRESH SKIPPED] Token was already updated by a concurrent task."
+                                    "[TOKEN REFRESH SKIPPED] Token was already successfully updated by a concurrent worker."
                                 )
 
-                        # Re-run request with retry_on_expiry=False to prevent infinite recursive loops
                         logger.info(
-                            f"[RETRYING REQUEST] Re-executing {path} with refreshed token tokens."
+                            f"[RETRYING REQUEST] Re-executing {path} with the active token configuration."
                         )
                         return await shopee_request(
                             path, params, body, method, retry_on_expiry=False
@@ -832,6 +859,9 @@ async def shopee_request(
                 logger.debug(f"[REQ SUCCESS] {path} | ReqID: {ret.request_id}")
                 return ret
 
+        except HTTPException:
+            # CRITICAL: Re-raise HTTPExceptions so they bypass the generic Exception block and hit FastAPI
+            raise
         except Exception as e:
             logger.error(
                 f"[EXCEPTION] Critical error during Shopee call to {path}: {str(e)}",
@@ -981,7 +1011,7 @@ def login_admin(auth: UserAuth, db: Session = Depends(get_db)):
 
 
 # JWT ----
-@app.post("/.well-known/jwks.json")
+@app.get("/.well-known/jwks.json")
 def jwks_endpoint():
     """Returns the JSON Web Key Set containing the public key for verifying JWTs."""
     return {"keys": key_manager.get_jwks()}
@@ -1886,6 +1916,19 @@ async def acquire_order(
     shopee_cache.invalidate()
 
     return {"message": "Order assigned successfully", "order_sn": order_sn}
+
+
+@app.post("/shopee/reset-cache-state")
+async def reset_shopee_cache_state(
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    logger.warning(f"Admin {current_user.username} resetting Shopee cache state")
+    shopee_cache.set_token_fatal(False)
+    shopee_cache.invalidate()
+    return {"message": "Shopee cache state reset successfully"}
 
 
 # PickItemEntry Endpoints
