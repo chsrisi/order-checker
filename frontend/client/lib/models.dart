@@ -105,7 +105,7 @@ class ShopeeOrderItem {
       id: json['id'],
       itemId: json['item_id'],
       itemName: json['item_name'],
-      itemSku: json['item_sku'],
+      itemSku: json['item_sku'] ?? 'unknown',
       modelId: json['model_id'],
       modelName: json['model_name'],
       modelSku: json['model_sku'],

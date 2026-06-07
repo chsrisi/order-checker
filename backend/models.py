@@ -342,6 +342,7 @@ class ShopeeOrderInfoResponse(BaseModel):
 class ShopeeOrderResponse(BaseModel):
     order_sn: str
     split_up: Optional[bool] = None
+    status: str
     ship_by: datetime
     owner_user: Optional[str] = None
     done: bool = False
