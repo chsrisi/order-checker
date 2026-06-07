@@ -232,19 +232,6 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                     ),
                   );
                 }),
-                const Divider(),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: TextButton.icon(
-                    onPressed: () =>
-                        _confirmDeleteLabel(context, appState, order.orderSn),
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                    label: const Text(
-                      "Delete Order",
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ),
               ],
             ),
           );
@@ -549,40 +536,6 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
           content: Text('Export failed or not supported on this platform'),
         ),
       );
-    }
-  }
-
-  Future<void> _confirmDeleteLabel(
-    BuildContext context,
-    AppState appState,
-    String orderSn,
-  ) async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Order"),
-        content: const Text(
-          "Are you sure you want to delete this order? All assignments will be reversed.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    final success = await appState.deleteLabel(orderSn);
-    if (!context.mounted) return;
-    if (success) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Order deleted')));
     }
   }
 

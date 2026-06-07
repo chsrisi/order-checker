@@ -580,28 +580,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> markLabelDone(int labelId, bool done) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/labels/done?label_id=$labelId&done=$done',
-        method: 'POST',
-      );
-      if (response?.statusCode == 200) {
-        fetchAdminLabels();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      log("Mark Done Error: $e");
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
   Future<void> fetchUsers() async {
     _isLoading = true;
     notifyListeners();
@@ -763,29 +741,6 @@ class AppState extends ChangeNotifier {
       return false;
     } catch (e) {
       log("Close Period Error: $e");
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  // stale
-  Future<bool> deleteLabel(String orderSn) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/labels?order_sn=$orderSn',
-        method: 'DELETE',
-      );
-      if (response?.statusCode == 200) {
-        fetchAdminLabels();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      log("Delete Label Error: $e");
       return false;
     } finally {
       _isLoading = false;

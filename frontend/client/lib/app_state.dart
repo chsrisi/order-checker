@@ -654,7 +654,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteScanEntry(int id) async {
     try {
-      String url = '$_baseUrl/scan-entries?entry_id=$id';
+      String url = '$_baseUrl/pick-item?entry_id=$id';
 
       final response = await makeRequest(url, method: 'DELETE');
       if (response?.statusCode == 200) {
@@ -724,27 +724,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createLabel(String name) async {
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/labels',
-        method: 'POST',
-        body: {'label': name},
-      );
-      if (response?.statusCode == 200) {
-        onShowMessage?.call("Label created.");
-      } else {
-        onShowMessage?.call("Failed to create label.", isError: true);
-      }
-    } catch (e) {
-      log("Create Label Error: $e");
-      onShowMessage?.call(
-        "An error occurred while creating label.",
-        isError: true,
-      );
-    }
-  }
-
   Future<void> fetchStocks() async {
     await fetchStocksData();
   }
@@ -760,7 +739,7 @@ class AppState extends ChangeNotifier {
       final response = await makeRequest(
         '$_baseUrl/stocks',
         method: 'POST',
-        body: {'idbrng': idbrng, 'stock': qty, 'mode': mode},
+        body: {'sku': idbrng, 'stock': qty, 'mode': mode},
       );
       if (response?.statusCode == 200) {
         await fetchStocks();
