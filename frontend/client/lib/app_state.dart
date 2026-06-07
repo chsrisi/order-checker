@@ -130,6 +130,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription? _wsSubscription;
   int _wsRetryCount = 0;
   bool _wsConnectionFailed = false;
+  bool _isConnecting = false;
 
   Completer<String?>? _refreshTokenCompleter;
 
@@ -165,12 +166,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initWebSocket() async {
-    if (_channel != null) return;
-
-    final token = await _storage.read(key: 'access_token');
-    if (token == null) return;
+    if (_channel != null || _isConnecting) return;
+    _isConnecting = true;
 
     try {
+      final token = await _storage.read(key: 'access_token');
+      if (token == null) {
+        _isConnecting = false;
+        return;
+      }
+
       final uri = Uri.parse('$_wsUrl/ws?token=$token');
       _channel = IOWebSocketChannel.connect(uri);
 
@@ -213,6 +218,8 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       log("WebSocket Init Error: $e");
       _reconnectWebSocket(error: e);
+    } finally {
+      _isConnecting = false;
     }
   }
 

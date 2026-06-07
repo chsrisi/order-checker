@@ -152,6 +152,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription? _wsSubscription;
   int _wsRetryCount = 0;
   bool _wsConnectionFailed = false;
+  bool _isConnecting = false; // Guard flag to prevent thundering herd
 
   Completer<String?>? _refreshTokenCompleter;
 
@@ -193,12 +194,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initWebSocket() async {
-    if (_channel != null) return;
-
-    final token = await _storage.read(key: 'access_token');
-    if (token == null) return;
+    // 1. Instant check for an active channel or an ongoing connection attempt
+    if (_channel != null || _isConnecting) return;
+    _isConnecting = true;
 
     try {
+      final token = await _storage.read(key: 'access_token');
+      if (token == null) {
+        _isConnecting = false;
+        return;
+      }
+
       final uri = Uri.parse('$_wsUrl/ws?token=$token');
       _channel = IOWebSocketChannel.connect(uri);
 
@@ -231,6 +237,7 @@ class AppState extends ChangeNotifier {
           } else if (type == 'stocks_update') {
             _stocks = payload.map((i) => Stock.fromJson(i)).toList();
           }
+
           _isLoading = false;
           notifyListeners();
         },
@@ -246,6 +253,9 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       log("WebSocket Init Error: $e");
       _reconnectWebSocket(error: e);
+    } finally {
+      // Reset connection guard once synchronization/handshake completes
+      _isConnecting = false;
     }
   }
 
