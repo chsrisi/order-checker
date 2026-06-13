@@ -29,7 +29,7 @@ class UsersView extends StatelessWidget {
             subtitle: Text("Role: ${user.role}"),
             trailing: IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.red),
-              onPressed: () => _confirmDeleteUser(context, appState, user.id),
+              onPressed: () => _confirmDeleteUser(context, appState, user.username),
             ),
           );
         },
@@ -40,7 +40,7 @@ class UsersView extends StatelessWidget {
   Future<void> _confirmDeleteUser(
     BuildContext context,
     AppState appState,
-    int userId,
+    String username,
   ) async {
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -64,7 +64,7 @@ class UsersView extends StatelessWidget {
 
     if (confirm != true) return;
 
-    final success = await appState.deleteUser(userId);
+    final success = await appState.deleteUser(username);
     if (!context.mounted) return;
     if (success) {
       ScaffoldMessenger.of(

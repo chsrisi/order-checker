@@ -17,7 +17,7 @@ class SecurityService {
 
   static const String jwksCacheKey = 'jwks_cache';
   static const String jwksTimestampKey = 'jwks_timestamp';
-  static const int jwksTtlMs = 12 * 60 * 60 * 1000; // 12 hours
+  static const int jwksTtlMs = 15 * 60 * 1000; // 15 minutes
 
   static String? _baseUrl;
 
@@ -112,11 +112,14 @@ class AppState extends ChangeNotifier {
   bool _isFetching = false;
   bool _isSaving = false;
   bool _isGlobalLoading = false;
-  List<OutboundItem> _scannedItems = [];
+  List<OutboundItem> _outboundItems = [];
   List<WarehouseItem> _foundItems = [];
   List<ShopeeOrder> _orders = [];
   List<PickItemEntry> _pickItemEntries = [];
   List<Stock> _stocks = [];
+  final Map<String, List<WarehouseItem>> _findItemsCache = {};
+  final Map<String, DateTime> _findItemsCacheTimes = {};
+  static const Duration _cacheTtl = Duration(minutes: 5);
   bool _isLoggedIn = false;
   String _username = '';
 
@@ -138,7 +141,7 @@ class AppState extends ChangeNotifier {
   bool get isFetching => _isFetching;
   bool get isSaving => _isSaving;
   bool get isGlobalLoading => _isGlobalLoading;
-  List<OutboundItem> get scannedItems => _scannedItems;
+  List<OutboundItem> get outboundItems => _outboundItems;
   List<WarehouseItem> get foundItems => _foundItems;
   List<ShopeeOrder> get orders => _orders;
   List<PickItemEntry> get pickItemEntries => _pickItemEntries;
@@ -170,13 +173,18 @@ class AppState extends ChangeNotifier {
     _isConnecting = true;
 
     try {
-      final token = await _storage.read(key: 'access_token');
-      if (token == null) {
+      final ticket = await fetchWebSocketTicket();
+      if (ticket == null) {
         _isConnecting = false;
+        handleLogout(sessionExpired: true);
+        onShowMessage?.call(
+          "Session expired. Please log in again.",
+          isError: true,
+        );
         return;
       }
 
-      final uri = Uri.parse('$_wsUrl/ws?token=$token');
+      final uri = Uri.parse('$_wsUrl/ws?token=$ticket');
       _channel = IOWebSocketChannel.connect(uri);
 
       _wsSubscription = _channel!.stream.listen(
@@ -192,7 +200,7 @@ class AppState extends ChangeNotifier {
           final payload = List<Map<String, dynamic>>.from(data['data']);
 
           if (type == 'outbound_update') {
-            _scannedItems = payload
+            _outboundItems = payload
                 .map((i) => OutboundItem.fromJson(i))
                 .toList();
           } else if (type == 'shopee_orders_update') {
@@ -232,8 +240,15 @@ class AppState extends ChangeNotifier {
       if (newToken != null) {
         log("WebSocket: Token refreshed, re-initializing...");
         initWebSocket();
-        return;
+      } else {
+        log("WebSocket: Token refresh failed after 403. Logging out...");
+        handleLogout(sessionExpired: true);
+        onShowMessage?.call(
+          "Session expired. Please log in again.",
+          isError: true,
+        );
       }
+      return;
     }
 
     _wsRetryCount++;
@@ -328,6 +343,20 @@ class AppState extends ChangeNotifier {
     } finally {
       _refreshTokenCompleter = null;
     }
+  }
+
+  Future<String?> fetchWebSocketTicket() async {
+    final response = await makeRequest(
+      '$_baseUrl/auth/ws-token',
+      method: 'POST',
+      requiresAuth: true,
+    );
+
+    if (response?.statusCode == 200) {
+      final data = jsonDecode(response!.body);
+      return data['token'] as String?;
+    }
+    return null;
   }
 
   Future<http.Response?> makeRequest(
@@ -435,9 +464,11 @@ class AppState extends ChangeNotifier {
     await _storage.deleteAll();
     _isLoggedIn = false;
     _username = '';
-    _scannedItems = [];
+    _outboundItems = [];
     _foundItems = [];
     _stocks = [];
+    _findItemsCache.clear();
+    _findItemsCacheTimes.clear();
     _closeWebSocket();
     notifyListeners();
   }
@@ -525,7 +556,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> postOutbound(String content, {String? tag}) async {
+  Future<void> postOutbound(String content, {List<String>? tags}) async {
     if (content.isEmpty) return;
 
     _isSaving = true;
@@ -534,7 +565,7 @@ class AppState extends ChangeNotifier {
       final response = await makeRequest(
         '$_baseUrl/outbound',
         method: 'POST',
-        body: {'content': content, 'tag': tag},
+        body: {'content': content, 'tags': tags},
       );
 
       if (response?.statusCode == 200) {
@@ -629,14 +660,32 @@ class AppState extends ChangeNotifier {
   Future<void> searchItems(String query) async {
     if (query.isEmpty) return;
 
+    final normalizedQuery = query.trim().toLowerCase();
+    final cachedTime = _findItemsCacheTimes[normalizedQuery];
+    if (_findItemsCache.containsKey(normalizedQuery) &&
+        cachedTime != null &&
+        DateTime.now().difference(cachedTime) < _cacheTtl) {
+      _foundItems = _findItemsCache[normalizedQuery]!;
+      if (_foundItems.isEmpty) {
+        onShowMessage?.call("No items found.");
+      }
+      notifyListeners();
+      return;
+    }
+
     _isFetching = true;
     notifyListeners();
     try {
       final response = await makeRequest('$_baseUrl/items/find?query=$query');
       if (response?.statusCode == 200) {
-        _foundItems = (jsonDecode(response!.body) as List)
+        final List<WarehouseItem> results = (jsonDecode(response!.body) as List)
             .map((i) => WarehouseItem.fromJson(i))
             .toList();
+
+        _findItemsCache[normalizedQuery] = results;
+        _findItemsCacheTimes[normalizedQuery] = DateTime.now();
+
+        _foundItems = results;
         if (_foundItems.isEmpty) {
           onShowMessage?.call("No items found.");
         }
@@ -676,7 +725,7 @@ class AppState extends ChangeNotifier {
   }) async {
     try {
       String url =
-          '$_baseUrl/pick-items/assign?entry_id=$entryId&order_sn=$orderSn';
+          '$_baseUrl/pick-item/assign?entry_id=$entryId&order_sn=$orderSn';
       if (qty != null) {
         url += '&qty=$qty';
       }

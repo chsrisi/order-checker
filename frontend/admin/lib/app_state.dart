@@ -31,7 +31,7 @@ class SecurityService {
 
   static const String jwksCacheKey = 'jwks_cache';
   static const String jwksTimestampKey = 'jwks_timestamp';
-  static const int jwksTtlMs = 12 * 60 * 60 * 1000; // 12 hours
+  static const int jwksTtlMs = 15 * 60 * 1000; // 15 minutes
 
   static String? _baseUrl;
 
@@ -123,12 +123,15 @@ class SecurityService {
 }
 
 class AppState extends ChangeNotifier {
-  List<OutboundItem> _scannedItems = [];
+  List<OutboundItem> _outboundItems = [];
   List<AdminUser> _registeredUsers = [];
   List<WarehouseItem> _foundItems = [];
   List<ShopeeOrder> _orders = [];
   List<PickItemEntry> _pickItemEntries = [];
   List<Stock> _stocks = [];
+  final Map<String, List<WarehouseItem>> _findItemsCache = {};
+  final Map<String, DateTime> _findItemsCacheTimes = {};
+  static const Duration _cacheTtl = Duration(minutes: 5);
 
   List<OutboundItem> _historyOutboundItems = [];
   List<ShopeeOrder> _historyOrders = [];
@@ -157,7 +160,7 @@ class AppState extends ChangeNotifier {
   Completer<String?>? _refreshTokenCompleter;
 
   // Getters
-  List<OutboundItem> get scannedItems => _scannedItems;
+  List<OutboundItem> get outboundItems => _outboundItems;
   List<AdminUser> get registeredUsers => _registeredUsers;
   List<WarehouseItem> get foundItems => _foundItems;
   List<ShopeeOrder> get orders => _orders;
@@ -199,13 +202,14 @@ class AppState extends ChangeNotifier {
     _isConnecting = true;
 
     try {
-      final token = await _storage.read(key: 'access_token');
-      if (token == null) {
+      final ticket = await fetchWebSocketTicket();
+      if (ticket == null) {
         _isConnecting = false;
+        handleLogout(sessionExpired: true);
         return;
       }
 
-      final uri = Uri.parse('$_wsUrl/ws?token=$token');
+      final uri = Uri.parse('$_wsUrl/ws?token=$ticket');
       _channel = IOWebSocketChannel.connect(uri);
 
       _wsSubscription = _channel!.stream.listen(
@@ -221,7 +225,7 @@ class AppState extends ChangeNotifier {
           final payload = List<Map<String, dynamic>>.from(data['data']);
 
           if (type == 'outbound_update') {
-            _scannedItems = payload
+            _outboundItems = payload
                 .map((i) => OutboundItem.fromJson(i))
                 .toList();
           } else if (type == 'users_update') {
@@ -268,8 +272,11 @@ class AppState extends ChangeNotifier {
       if (newToken != null) {
         log("WebSocket Admin: Token refreshed, re-initializing...");
         initWebSocket();
-        return;
+      } else {
+        log("WebSocket Admin: Token refresh failed after 403. Logging out...");
+        handleLogout(sessionExpired: true);
       }
+      return;
     }
 
     _wsRetryCount++;
@@ -363,6 +370,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String?> fetchWebSocketTicket() async {
+    final response = await makeRequest(
+      '$_baseUrl/auth/ws-token',
+      method: 'POST',
+      requiresAuth: true,
+    );
+
+    if (response?.statusCode == 200) {
+      final data = jsonDecode(response!.body);
+      return data['token'] as String?;
+    }
+    return null;
+  }
+
   void loadCurrentViewData() {
     if (_currentView == AdminView.users) {
       fetchUsers();
@@ -452,12 +473,14 @@ class AppState extends ChangeNotifier {
     await _storage.deleteAll();
     _isLoggedIn = false;
     _username = '';
-    _scannedItems = [];
+    _outboundItems = [];
     _registeredUsers = [];
     _foundItems = [];
     _orders = [];
     _pickItemEntries = [];
     _stocks = [];
+    _findItemsCache.clear();
+    _findItemsCacheTimes.clear();
     _closeWebSocket();
     notifyListeners();
   }
@@ -590,14 +613,29 @@ class AppState extends ChangeNotifier {
   Future<void> searchItems(String query) async {
     if (query.isEmpty) return;
 
+    final normalizedQuery = query.trim().toLowerCase();
+    final cachedTime = _findItemsCacheTimes[normalizedQuery];
+    if (_findItemsCache.containsKey(normalizedQuery) &&
+        cachedTime != null &&
+        DateTime.now().difference(cachedTime) < _cacheTtl) {
+      _foundItems = _findItemsCache[normalizedQuery]!;
+      notifyListeners();
+      return;
+    }
+
     _isLoading = true;
     notifyListeners();
     try {
       final response = await makeRequest('$_baseUrl/items/find?query=$query');
       if (response?.statusCode == 200) {
-        _foundItems = (jsonDecode(response!.body) as List)
+        final List<WarehouseItem> results = (jsonDecode(response!.body) as List)
             .map((i) => WarehouseItem.fromJson(i))
             .toList();
+
+        _findItemsCache[normalizedQuery] = results;
+        _findItemsCacheTimes[normalizedQuery] = DateTime.now();
+
+        _foundItems = results;
       }
     } catch (e) {
       log("Search Error: $e");
@@ -649,10 +687,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteUser(int userId) async {
+  Future<bool> deleteUser(String username) async {
     try {
       final response = await makeRequest(
-        '$_baseUrl/admin/users?user_id=$userId',
+        '$_baseUrl/admin/users?username=$username',
         method: 'DELETE',
       );
       if (response?.statusCode == 200) {

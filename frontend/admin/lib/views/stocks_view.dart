@@ -170,10 +170,11 @@ class _StocksViewState extends State<StocksView> {
                               ),
                             ],
                             rows: stocks.map((stock) {
+                              final itemName = stock.itemName ?? 'Unknown';
                               return DataRow(
                                 cells: [
                                   DataCell(Text(stock.sku)),
-                                  DataCell(Text(stock.itemName ?? "-")),
+                                  DataCell(Text(itemName)),
                                   DataCell(Text(stock.location ?? "-")),
                                   DataCell(
                                     Text(

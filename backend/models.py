@@ -6,6 +6,7 @@ from typing import List, Optional, Union, Annotated, Any
 
 from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
+from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -18,11 +19,6 @@ from pydantic import (
 
 class Base(DeclarativeBase):
     pass
-
-
-class ScanTag(str, PyEnum):
-    TEST1 = "test1"
-    TEST2 = "test2"
 
 
 class WSMessageType(str, PyEnum):
@@ -106,6 +102,7 @@ class ShopeeOrder(Base):
     ship_by: Mapped[datetime] = mapped_column(DateTime)
     owner_user: Mapped[Optional[str]] = mapped_column(ForeignKey("auth.users.username"))
     status: Mapped[str] = mapped_column(String)
+    shipping_carrier: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -180,11 +177,33 @@ class OutboundItem(Base):
         DateTime, default=lambda: datetime.now(UTC)
     )
     owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
-    tag: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     owner: Mapped["User"] = relationship("User", back_populates="outbounds")
+    tags_rel: Mapped[List["OutboundTag"]] = relationship(
+        "OutboundTag",
+        back_populates="outbound",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
+    tags: AssociationProxy[List[str]] = association_proxy(
+        "tags_rel", "content", creator=lambda c: OutboundTag(content=c)
+    )
+
+
+class OutboundTag(Base):
+    __tablename__ = "tags"
+    __table_args__ = {"schema": "orders"}
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    outbound_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.outbound_items.id", ondelete="CASCADE"), index=True
+    )
+    content: Mapped[str] = mapped_column(String, index=True)
+
+    outbound: Mapped["OutboundItem"] = relationship(
+        "OutboundItem", back_populates="tags_rel"
+    )
 
 
 class PickItemEntry(Base):
@@ -254,13 +273,13 @@ class StocksLog(Base):
 # Pydantic Models ----
 class OutboundCreate(BaseModel):
     content: str
-    tag: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class OutboundResponse(BaseModel):
     id: int
     content: str
-    tag: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
     created_at: datetime
     owner_user: str
     closed: bool = False
@@ -345,6 +364,7 @@ class ShopeeOrderResponse(BaseModel):
     status: str
     ship_by: datetime
     owner_user: Optional[str] = None
+    shipping_carrier: Optional[str] = None
     done: bool = False
     done_at: Optional[datetime] = None
     item_list: List[ShopeeOrderItemResponse] = []
@@ -377,6 +397,7 @@ class PickItemEntryResponse(BaseModel):
     order_sn: Optional[str] = None
     timestamp: datetime
     owner_user: str
+    item_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

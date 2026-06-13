@@ -114,7 +114,7 @@ class _ItemFinderScreenState extends State<ItemFinderScreen> {
                     final item = appState.foundItems[index];
                     return ListTile(
                       title: Text(item.sku),
-                      subtitle: Text(item.itemName ?? 'No name'),
+                      subtitle: Text(item.itemName ?? 'Unknown'),
                       trailing: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,

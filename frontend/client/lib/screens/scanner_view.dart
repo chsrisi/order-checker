@@ -13,7 +13,6 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   final TextEditingController _scanController = TextEditingController();
   final FocusNode _scanFocusNode = FocusNode();
-  String? _selectedTag;
 
   @override
   void initState() {
@@ -62,7 +61,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   void _handleSubmit(BuildContext context, AppState appState) {
-    appState.postOutbound(_scanController.text.trim(), tag: _selectedTag);
+    appState.postOutbound(_scanController.text.trim());
     _scanController.clear();
     _scanFocusNode.requestFocus();
   }
@@ -83,30 +82,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
               const Text(
                 "Scan Item",
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8.0,
-            children: [
-              ChoiceChip(
-                label: const Text('test1'),
-                selected: _selectedTag == 'test1',
-                onSelected: (bool selected) {
-                  setState(() {
-                    _selectedTag = selected ? 'test1' : null;
-                  });
-                },
-              ),
-              ChoiceChip(
-                label: const Text('test2'),
-                selected: _selectedTag == 'test2',
-                onSelected: (bool selected) {
-                  setState(() {
-                    _selectedTag = selected ? 'test2' : null;
-                  });
-                },
               ),
             ],
           ),
@@ -165,18 +140,16 @@ class _ScannerHistoryState extends State<ScannerHistory> {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
 
-    List<OutboundItem> filteredItems = appState.scannedItems;
+    List<OutboundItem> filteredItems = appState.outboundItems;
 
     if (_filterTag != null) {
       filteredItems = filteredItems
-          .where((item) => item.tag == _filterTag)
+          .where((item) => item.tags.contains(_filterTag))
           .toList();
     }
 
-    final scannerTags = appState.scannedItems
-        .map((item) => item.tag)
-        .where((tag) => tag != null)
-        .cast<String>()
+    final scannerTags = appState.outboundItems
+        .expand((item) => item.tags)
         .toSet()
         .toList();
 
@@ -238,8 +211,9 @@ class _ScannerHistoryState extends State<ScannerHistory> {
                               ),
                             ),
                           ),
-                          if (item.tag != null)
-                            Container(
+                          Wrap(
+                            spacing: 4,
+                            children: item.tags.map((tag) => Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                                 vertical: 2,
@@ -249,14 +223,15 @@ class _ScannerHistoryState extends State<ScannerHistory> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                item.tag!,
+                                tag,
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Colors.blue.shade900,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                            ),
+                            )).toList(),
+                          ),
                         ],
                       ),
                       subtitle: Text(

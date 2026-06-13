@@ -55,7 +55,7 @@ class _ItemFinderViewState extends State<ItemFinderView> {
                         leading: const CircleAvatar(
                           child: Icon(Icons.inventory_2),
                         ),
-                        title: Text("${item.sku} - ${item.itemName}"),
+                        title: Text("${item.sku} - ${item.itemName ?? 'Unknown'}"),
                         subtitle: Text(
                           "Location: ${item.location}",
                           style: const TextStyle(

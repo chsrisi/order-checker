@@ -52,16 +52,8 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    const allowedOngoingStatuses = {
-      'READY_TO_SHIP',
-      'PROCESSED',
-      'RETRY_SHIP',
-      'SHIPPED',
-    };
-    final orders = appState.orders
-        .where((o) => allowedOngoingStatuses.contains(o.status))
-        .toList();
-    final scannedItems = appState.scannedItems;
+    final orders = appState.orders;
+    final outboundItems = appState.outboundItems;
 
     return Row(
       children: [
@@ -110,7 +102,7 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
         const VerticalDivider(width: 1, thickness: 1),
         Expanded(
           flex: 5,
-          child: _buildScansView(context, appState, scannedItems),
+          child: _buildScansView(context, appState, outboundItems),
         ),
       ],
     );
@@ -141,12 +133,22 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
               .toList();
           final skuMap = Map.fromEntries(
             {
-              ...requirements.map((e) => e.modelSku ?? e.itemSku),
+              ...requirements.map(
+                (e) => (e.itemSku != '' ? e.itemSku : e.modelSku) ?? 'unknown',
+              ),
               ...pickItemEntries.map((e) => e.sku),
             }.map((sku) {
-              final requiredQty = requirements
-                  .firstWhere((e) => (e.modelSku ?? e.itemSku) == sku)
-                  .modelQuantityPurchased;
+              final requiredQty =
+                  requirements
+                      .where(
+                        (e) =>
+                            ((e.itemSku != '' ? e.itemSku : e.modelSku) ??
+                                'unknown') ==
+                            sku,
+                      )
+                      .map((e) => e.modelQuantityPurchased)
+                      .firstOrNull ??
+                  0;
               final scannedQty = pickItemEntries
                   .where((e) => e.sku == sku)
                   .fold(0, (sum, e) => sum + e.qty);
@@ -174,6 +176,25 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
 
           final isUnassigned = order.ownerUser == null;
 
+          final pickupCode = order.info
+              .firstWhere(
+                (i) => i.pickupCode != null && i.pickupCode!.isNotEmpty,
+                orElse: () => ShopeeOrderInfo(id: 0),
+              )
+              .pickupCode;
+
+          final orderSnClean = order.orderSn.trim().toLowerCase();
+          final trackingNumbers = order.info
+              .map((i) => i.trackingNumber?.trim().toLowerCase())
+              .whereType<String>()
+              .toSet();
+
+          final hasOutboundMatch = appState.outboundItems.any((item) {
+            final contentClean = item.content.trim().toLowerCase();
+            return contentClean == orderSnClean ||
+                trackingNumbers.contains(contentClean);
+          });
+
           return Card(
             color: isUnassigned ? Colors.grey.shade300 : null,
             margin: const EdgeInsets.only(bottom: 12),
@@ -184,25 +205,72 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                 Icons.pending_actions,
                 color: isUnassigned ? Colors.grey : Colors.orange,
               ),
-              title: Text(
-                order.orderSn,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isUnassigned ? Colors.grey.shade700 : null,
-                ),
-              ),
-              subtitle: Row(
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    "User ID: ${order.ownerUser ?? 'Unassigned'} | Progress: ",
-                  ),
-                  Text(
-                    "$progress/${requirements.length} SKUs",
+                    order.orderSn,
                     style: TextStyle(
-                      color: textColor,
                       fontWeight: FontWeight.bold,
+                      color: isUnassigned ? Colors.grey.shade700 : null,
+                      decoration: hasOutboundMatch
+                          ? TextDecoration.lineThrough
+                          : null,
                     ),
                   ),
+                  if (pickupCode != null && pickupCode.isNotEmpty)
+                    Text(
+                      pickupCode,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isUnassigned
+                            ? Colors.grey.shade600
+                            : Colors.red.shade900,
+                        decoration: hasOutboundMatch
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        "User ID: ${order.ownerUser ?? 'Unassigned'} | Progress: ",
+                        style: TextStyle(
+                          decoration: hasOutboundMatch
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                      Text(
+                        "$progress/${requirements.length} SKUs",
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.bold,
+                          decoration: hasOutboundMatch
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (order.recipientAddress != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      "Recipient: ${order.recipientAddress!.name ?? 'N/A'} (${order.recipientAddress!.city ?? 'N/A'})",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        decoration: hasOutboundMatch
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ],
                 ],
               ),
               children: [
@@ -221,8 +289,39 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                     textColor = Colors.red;
                   }
 
+                  final isSkuEmpty = sku.trim().isEmpty || sku == 'unknown';
+                  final matchingItem = requirements.firstWhere(
+                    (item) => (isSkuEmpty
+                        ? (item.itemSku == 'unknown' || item.itemSku.isEmpty)
+                        : (item.modelSku == sku || item.itemSku == sku)),
+                    orElse: () => ShopeeOrderItem(
+                      id: 0,
+                      itemId: 0,
+                      itemName: '',
+                      itemSku: '',
+                      modelQuantityPurchased: 0,
+                      imageUrl: '',
+                    ),
+                  );
+
+                  final scanMatch = pickItemEntries.where(
+                    (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
+                  ).firstOrNull;
+
+                  String displayName = matchingItem.itemName.isNotEmpty
+                      ? matchingItem.itemName
+                      : (scanMatch?.itemName ?? 'Unknown Item');
+
+                  final skuPart = isSkuEmpty ? "No SKU" : sku;
+                  final displaySubtext =
+                      (matchingItem.modelName != null &&
+                          matchingItem.modelName!.isNotEmpty)
+                      ? "(${matchingItem.modelName}) $skuPart"
+                      : skuPart;
+
                   return ListTile(
-                    title: Text(sku),
+                    title: Text(displayName),
+                    subtitle: Text(displaySubtext),
                     trailing: Text(
                       "$scannedQty / $requiredQty",
                       style: TextStyle(
@@ -243,18 +342,16 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
   Widget _buildScansView(
     BuildContext context,
     AppState appState,
-    List<OutboundItem> scannedItems,
+    List<OutboundItem> outboundItems,
   ) {
     final filteredItems = _adminHistoryFilterTag == null
-        ? scannedItems
-        : scannedItems
-              .where((item) => item.tag == _adminHistoryFilterTag)
+        ? outboundItems
+        : outboundItems
+              .where((item) => item.tags.contains(_adminHistoryFilterTag))
               .toList();
 
-    final allTags = scannedItems
-        .map((e) => e.tag)
-        .where((tag) => tag != null)
-        .cast<String>()
+    final allTags = outboundItems
+        .expand((e) => e.tags)
         .toSet()
         .toList();
     allTags.sort();
@@ -341,8 +438,9 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                                   ),
                                 ),
                               ),
-                              if (item.tag != null)
-                                Container(
+                              Wrap(
+                                spacing: 4,
+                                children: item.tags.map((tag) => Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 2,
@@ -352,14 +450,15 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
-                                    item.tag!,
+                                    tag,
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.red.shade900,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                ),
+                                )).toList(),
+                              ),
                             ],
                           ),
                           subtitle: Text(
@@ -541,8 +640,8 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
 
   Future<void> _closePeriod(AppState appState) async {
     final List<OutboundItem> itemsToClose = _selectedItemIds.isEmpty
-        ? appState.scannedItems
-        : appState.scannedItems
+        ? appState.outboundItems
+        : appState.outboundItems
               .where((i) => _selectedItemIds.contains(i.id))
               .toList();
 
@@ -632,7 +731,7 @@ class _HistoryOrdersTabState extends State<_HistoryOrdersTab> {
     final lastItem = appState.historyOutboundItems.first;
     setState(() {
       _mode = 'outbound';
-      _searchController.text = lastItem.tag ?? '';
+      _searchController.text = lastItem.tags.firstOrNull ?? '';
       _fromDate = null;
       _toDate = null;
     });
@@ -695,7 +794,7 @@ class _HistoryOrdersTabState extends State<_HistoryOrdersTab> {
                 (o.ownerUser?.toLowerCase().contains(query) ?? false),
           _OutboundItemT(outboundItem: final o) =>
             o.content.toLowerCase().contains(query) ||
-                (o.tag?.toLowerCase().contains(query) ?? false) ||
+                o.tags.any((tag) => tag.toLowerCase().contains(query)) ||
                 (o.ownerUser?.toLowerCase().contains(query) ?? false),
         };
       }).toList();
@@ -851,14 +950,17 @@ class _HistoryOrdersTabState extends State<_HistoryOrdersTab> {
                                 ),
                               ),
                             ),
-                            if (o.tag != null && o.tag!.isNotEmpty)
+                            if (o.tags.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(left: 8.0),
-                                child: Chip(
-                                  label: Text(o.tag!),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                                child: Wrap(
+                                  spacing: 4,
+                                  children: o.tags.map((tag) => Chip(
+                                    label: Text(tag),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  )).toList(),
                                 ),
                               ),
                           ],

@@ -1,7 +1,7 @@
 class OutboundItem {
   final int id;
   final String content;
-  final String? tag;
+  final List<String> tags;
   final DateTime createdAt;
   final String? ownerUser;
   final bool closed;
@@ -10,7 +10,7 @@ class OutboundItem {
   OutboundItem({
     required this.id,
     required this.content,
-    this.tag,
+    required this.tags,
     required this.createdAt,
     this.ownerUser,
     required this.closed,
@@ -21,7 +21,7 @@ class OutboundItem {
     return OutboundItem(
       id: json['id'],
       content: json['content'] ?? '',
-      tag: json['tag'],
+      tags: json['tags'] != null ? List<String>.from(json['tags']) : [],
       createdAt: DateTime.parse(json['created_at']),
       ownerUser: json['owner_user'],
       closed: json['closed'] ?? false,
@@ -173,6 +173,7 @@ class PickItemEntry {
   final String? orderSn;
   final DateTime timestamp;
   final String ownerUser;
+  final String? itemName;
 
   PickItemEntry({
     required this.id,
@@ -181,6 +182,7 @@ class PickItemEntry {
     this.orderSn,
     required this.timestamp,
     required this.ownerUser,
+    this.itemName,
   });
 
   factory PickItemEntry.fromJson(Map<String, dynamic> json) {
@@ -191,6 +193,7 @@ class PickItemEntry {
       orderSn: json['order_sn'],
       timestamp: DateTime.parse(json['timestamp']),
       ownerUser: json['owner_user'] ?? '',
+      itemName: json['item_name'],
     );
   }
 }

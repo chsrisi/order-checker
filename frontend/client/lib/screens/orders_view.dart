@@ -17,6 +17,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
     text: "1",
   );
   final FocusNode _scanFocusNode = FocusNode();
+  final FocusNode _qtyFocusNode = FocusNode();
   String _selectedMode = 'order'; // 'order' or 'item'
 
   @override
@@ -63,7 +64,19 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
     _scanController.dispose();
     _orderQtyController.dispose();
     _scanFocusNode.dispose();
+    _qtyFocusNode.dispose();
     super.dispose();
+  }
+
+  void _parseBarcode(String barcode) {
+    if (barcode.contains('*')) {
+      final parts = barcode.split('*');
+      if (parts.isNotEmpty) {
+        setState(() {
+          _scanController.text = parts[0];
+        });
+      }
+    }
   }
 
   void _handleSubmit(AppState appState) {
@@ -80,9 +93,49 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
       }
       appState.acquireOrder(orderSn);
     } else {
-      final sku = _scanController.text.trim();
+      var sku = _scanController.text.trim();
+      if (sku.contains('*')) {
+        final parts = sku.split('*');
+        if (parts.isNotEmpty) {
+          sku = parts[0];
+        }
+      }
       final qtyStr = _orderQtyController.text.trim();
       final int qty = int.tryParse(qtyStr) ?? 1;
+
+      if (widget.selectedOrder == null) {
+        appState.onShowMessage?.call(
+          "No order selected.",
+          isError: true,
+          isAlert: true,
+        );
+      } else {
+        final activeOrder = appState.orders
+            .where((o) => o.orderSn == widget.selectedOrder)
+            .firstOrNull;
+        if (activeOrder != null) {
+          final reqQty = activeOrder.itemList
+              .where((e) =>
+                  ((e.itemSku != '' ? e.itemSku : e.modelSku) ?? 'unknown') ==
+                  sku)
+              .map((e) => e.modelQuantityPurchased)
+              .firstOrNull ??
+              0;
+
+          final scannedQty = appState.pickItemEntries
+              .where((e) => e.orderSn == widget.selectedOrder && e.sku == sku)
+              .fold(0, (sum, e) => sum + e.qty);
+
+          if (scannedQty + qty > reqQty) {
+            appState.onShowMessage?.call(
+              "Scan quantity (${scannedQty + qty}) exceeds requirement ($reqQty) for SKU: $sku",
+              isError: true,
+              isAlert: true,
+            );
+          }
+        }
+      }
+
       appState.postScanEntry(sku, qty, orderSn: widget.selectedOrder);
     }
     _scanController.clear();
@@ -149,17 +202,25 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
                       hintText: "SKU",
                       border: OutlineInputBorder(),
                     ),
+                    onSubmitted: (_) {
+                      if (_scanController.text.contains('*')) {
+                        _parseBarcode(_scanController.text);
+                      }
+                      _qtyFocusNode.requestFocus();
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _orderQtyController,
+                    focusNode: _qtyFocusNode,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       hintText: "Qty",
                       border: OutlineInputBorder(),
                     ),
+                    onSubmitted: (_) => _handleSubmit(appState),
                   ),
                 ),
               ],
@@ -187,12 +248,32 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
           ),
           const SizedBox(height: 8),
           if (widget.selectedOrder != null)
-            Text(
-              "Active Order: ${appState.orders.firstWhere((o) => o.orderSn == widget.selectedOrder).orderSn}",
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
+            Builder(
+              builder: (context) {
+                final activeOrder = appState.orders
+                    .where((o) => o.orderSn == widget.selectedOrder)
+                    .firstOrNull;
+                if (activeOrder == null) {
+                  return const SizedBox.shrink();
+                }
+                final activePickup = activeOrder.info
+                    .firstWhere(
+                      (i) => i.pickupCode != null && i.pickupCode!.isNotEmpty,
+                      orElse: () => ShopeeOrderInfo(id: 0),
+                    )
+                    .pickupCode;
+                final displayText =
+                    (activePickup != null && activePickup.isNotEmpty)
+                    ? activePickup
+                    : activeOrder.orderSn;
+                return Text(
+                  "Active Order: $displayText",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                );
+              },
             ),
         ],
       ),
@@ -352,7 +433,7 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
               if (selectedOrder != null) {
                 final qty = int.tryParse(qtyController.text);
                 final matchingItem = selectedOrder!.itemList
-                    .where((i) => i.modelSku == entry.sku)
+                    .where((i) => (i.itemSku.isNotEmpty && i.itemSku == entry.sku) || i.modelSku == entry.sku)
                     .firstOrNull;
                 appState.assignToLabel(
                   entry.id,
@@ -396,19 +477,29 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                     color: Colors.grey,
                   ),
                 ),
-                ...appState.orders.where((o) => o.done != true).map((order) {
+                ...appState.orders.map((order) {
                   final requirements = order.itemList;
                   final scanned = appState.pickItemEntries.where(
                     (e) => e.orderSn == order.orderSn,
                   );
                   final skuMap = Map.fromEntries(
                     {
-                      ...requirements.map((e) => e.modelSku ?? e.itemSku),
+                      ...requirements.map(
+                        (e) =>
+                            (e.itemSku != '' ? e.itemSku : e.modelSku) ??
+                            'unknown',
+                      ),
                       ...scanned.map((e) => e.sku),
                     }.map((sku) {
                       final reqQty = requirements
-                          .firstWhere((e) => (e.modelSku ?? e.itemSku) == sku)
-                          .modelQuantityPurchased;
+                          .where(
+                            (e) =>
+                                ((e.itemSku != '' ? e.itemSku : e.modelSku) ??
+                                    'unknown') ==
+                                sku,
+                          )
+                          .map((e) => e.modelQuantityPurchased)
+                          .firstOrNull ?? 0;
                       final scanQty = scanned
                           .where((e) => e.sku == sku)
                           .fold(0, (sum, e) => sum + e.qty);
@@ -445,70 +536,135 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                           ),
                         ),
                         Expanded(
-                          child: ExpansionTile(
-                            shape: Border.all(color: Colors.transparent),
-                            collapsedShape: Border.all(
-                              color: Colors.transparent,
-                            ),
-                            title: Text(
-                              order.orderSn,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Row(
-                              children: [
-                                const Text("Progress: "),
-                                Text(
-                                  "$progress/${requirements.length} SKUs",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor,
-                                  ),
+                          child: Builder(
+                            builder: (context) {
+                              final pickupCode = order.info
+                                  .firstWhere(
+                                    (i) =>
+                                        i.pickupCode != null &&
+                                        i.pickupCode!.isNotEmpty,
+                                    orElse: () => ShopeeOrderInfo(id: 0),
+                                  )
+                                  .pickupCode;
+                              final displaySn =
+                                  (pickupCode != null && pickupCode.isNotEmpty)
+                                  ? pickupCode
+                                  : order.orderSn;
+                              return ExpansionTile(
+                                shape: Border.all(color: Colors.transparent),
+                                collapsedShape: Border.all(
+                                  color: Colors.transparent,
                                 ),
-                              ],
-                            ),
-                            onExpansionChanged: (expanded) {
-                              if (expanded) {
-                                widget.setActiveOrder(order.orderSn);
-                              } else {
-                                widget.setActiveOrder(null);
-                              }
-                            },
-                            children: skuMap.entries.map((entry) {
-                              final sku = entry.key;
-                              final (reqQty, scanQty) = entry.value;
-
-                              Color? textColor;
-                              if (scanQty == 0) {
-                                textColor = Colors.grey;
-                              } else if (scanQty < reqQty) {
-                                textColor = Colors.orange;
-                              } else if (scanQty == reqQty) {
-                                textColor = Colors.green;
-                              } else {
-                                textColor = Colors.red;
-                              }
-
-                              return ListTile(
-                                title: Text(sku),
-                                trailing: Text(
-                                  "$scanQty / $reqQty",
-                                  style: TextStyle(
-                                    color: textColor,
+                                title: Text(
+                                  displaySn,
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                onLongPress: () => _showUnassignDialog(
-                                  context,
-                                  appState,
-                                  order.orderSn,
-                                  sku,
-                                  scanQty,
-                                  reqQty,
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Text("Progress: "),
+                                        Text(
+                                          "$progress/${requirements.length} SKUs",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: textColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (order.recipientAddress != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        "Recipient: ${order.recipientAddress!.name ?? 'N/A'} (${order.recipientAddress!.city ?? 'N/A'})",
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
+                                onExpansionChanged: (expanded) {
+                                  if (expanded) {
+                                    widget.setActiveOrder(order.orderSn);
+                                  } else {
+                                    widget.setActiveOrder(null);
+                                  }
+                                },
+                                children: skuMap.entries.map((entry) {
+                                  final sku = entry.key;
+                                  final (reqQty, scanQty) = entry.value;
+
+                                  Color? textColor;
+                                  if (scanQty == 0) {
+                                    textColor = Colors.grey;
+                                  } else if (scanQty < reqQty) {
+                                    textColor = Colors.orange;
+                                  } else if (scanQty == reqQty) {
+                                    textColor = Colors.green;
+                                  } else {
+                                    textColor = Colors.red;
+                                  }
+
+                                  final isSkuEmpty =
+                                      sku.trim().isEmpty || sku == 'unknown';
+                                  final matchingItem = requirements.firstWhere(
+                                    (item) => (isSkuEmpty
+                                        ? (item.itemSku == 'unknown' ||
+                                              item.itemSku.isEmpty)
+                                        : (item.modelSku == sku ||
+                                              item.itemSku == sku)),
+                                    orElse: () => ShopeeOrderItem(
+                                      id: 0,
+                                      itemId: 0,
+                                      itemName: '',
+                                      itemSku: '',
+                                      modelQuantityPurchased: 0,
+                                      imageUrl: '',
+                                    ),
+                                  );
+
+                                  final scanMatch = scanned.where(
+                                    (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
+                                  ).firstOrNull;
+
+                                  String displayName = matchingItem.itemName.isNotEmpty
+                                      ? matchingItem.itemName
+                                      : (scanMatch?.itemName ?? 'Unknown Item');
+
+                                  final skuPart = isSkuEmpty ? "No SKU" : sku;
+                                  final displaySubtext =
+                                      (matchingItem.modelName != null &&
+                                          matchingItem.modelName!.isNotEmpty)
+                                      ? "(${matchingItem.modelName}) $skuPart"
+                                      : skuPart;
+
+                                  return ListTile(
+                                    title: Text(displayName),
+                                    subtitle: Text(displaySubtext),
+                                    trailing: Text(
+                                      "$scanQty / $reqQty",
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    onLongPress: () => _showUnassignDialog(
+                                      context,
+                                      appState,
+                                      order.orderSn,
+                                      sku,
+                                      scanQty,
+                                      reqQty,
+                                    ),
+                                  );
+                                }).toList(),
                               );
-                            }).toList(),
+                            },
                           ),
                         ),
                       ],
@@ -527,6 +683,7 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                 ...appState.pickItemEntries
                     .where((e) => e.orderSn == null && e.qty > 0)
                     .map((entry) {
+                      final itemName = entry.itemName;
                       return Card(
                         color: Colors.red.shade50,
                         child: ListTile(
@@ -535,7 +692,9 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                             color: Colors.red,
                           ),
                           title: Text(entry.sku),
-                          subtitle: Text("Qty: ${entry.qty}"),
+                          subtitle: Text(
+                            "${itemName ?? 'Unknown'} | Qty: ${entry.qty}",
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

@@ -272,10 +272,11 @@ class _StocksHistoryState extends State<StocksHistory> {
                     itemCount: stocks.length,
                     itemBuilder: (context, index) {
                       final stock = stocks[index];
+                      final itemName = stock.itemName ?? 'Unknown';
                       return ListTile(
                         title: Text(stock.sku),
                         subtitle: Text(
-                          "${stock.itemName ?? "No Name"} | ${stock.location ?? "No Location"}",
+                          "$itemName | ${stock.location ?? "No Location"}",
                         ),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(

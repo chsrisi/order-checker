@@ -7,6 +7,7 @@ import logging
 import logging.handlers
 import os
 import secrets
+import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
@@ -33,7 +34,14 @@ from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import PyJWK
 from jwt.types import Options
 from passlib.context import CryptContext
-from sqlalchemy import create_engine, select, delete, update, Sequence, or_
+from sqlalchemy import (
+    create_engine,
+    select,
+    delete,
+    update,
+    Sequence,
+    or_,
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 from models import (
@@ -257,6 +265,16 @@ async def remove_outdated_refresh():
         raise
 
 
+async def clean_expired_tickets():
+    try:
+        while True:
+            await asyncio.sleep(60)
+            ticket_manager.purge_expired()
+    except asyncio.CancelledError:
+        logger.info("Clean expired tickets task cancelled")
+        raise
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Startup logic
@@ -266,6 +284,7 @@ async def lifespan(_app: FastAPI):
     bg_tasks: list[asyncio.Task[Any]] = []
     bg_tasks.append(asyncio.create_task(key_manager.rotate_keys_task()))
     bg_tasks.append(asyncio.create_task(remove_outdated_refresh()))
+    bg_tasks.append(asyncio.create_task(clean_expired_tickets()))
 
     # Initialize Persistent aiohttp Session
     _app.state.aiohttp_session = aiohttp.ClientSession()
@@ -354,7 +373,7 @@ def get_outbounds_data(db: Session, username: str) -> Sequence[OutboundItem]:
         .filter(OutboundItem.owner_user == username, OutboundItem.closed == False)  # noqa: E712
         .order_by(OutboundItem.created_at.desc())
     )
-    items = db.execute(query).scalars().all()
+    items = db.execute(query).scalars().unique().all()
     return items
 
 
@@ -364,36 +383,81 @@ def get_all_outbound_data(db: Session) -> Sequence[OutboundItem]:
         .filter(OutboundItem.closed == False)  # noqa: E712
         .order_by(OutboundItem.created_at.desc())
     )
-    items = db.execute(query).scalars().all()
+    items = db.execute(query).scalars().unique().all()
     return items
 
 
 def get_shopee_order_data(db: Session, username: str) -> Sequence[ShopeeOrder]:
-    query = select(ShopeeOrder).filter(ShopeeOrder.owner_user == username)
-    orders = db.execute(query).scalars().all()
+    orders = (
+        db.execute(lection_query.filter(ShopeeOrder.owner_user == username))
+        .scalars()
+        .all()
+    )
     return orders
 
 
 def get_all_shopee_order_data(db: Session) -> Sequence[ShopeeOrder]:
-    query = select(ShopeeOrder)
-    orders = db.execute(query).scalars().all()
+    orders = db.execute(lection_query).scalars().all()
     return orders
 
 
-def get_pie_data(db: Session, username: str) -> Sequence[PickItemEntry]:
+def get_pie_data(db: Session, username: str) -> List[PickItemEntryResponse]:
     query = (
-        select(PickItemEntry)
+        select(
+            PickItemEntry.id,
+            PickItemEntry.sku,
+            PickItemEntry.qty,
+            PickItemEntry.order_sn,
+            PickItemEntry.timestamp,
+            PickItemEntry.owner_user,
+            WarehouseItem.item_name,
+        )
+        .outerjoin(WarehouseItem, PickItemEntry.sku == WarehouseItem.sku)
         .filter(PickItemEntry.owner_user == username)
         .order_by(PickItemEntry.timestamp.desc())
     )
-    entries = db.execute(query).scalars().all()
-    return entries
+    results = db.execute(query).all()
+    return [
+        PickItemEntryResponse(
+            id=r.id,
+            sku=r.sku,
+            qty=r.qty,
+            order_sn=r.order_sn,
+            timestamp=r.timestamp,
+            owner_user=r.owner_user,
+            item_name=r.item_name,
+        )
+        for r in results
+    ]
 
 
-def get_all_pie_data(db: Session) -> Sequence[PickItemEntry]:
-    query = select(PickItemEntry).order_by(PickItemEntry.timestamp.desc())
-    entries = db.execute(query).scalars().all()
-    return entries
+def get_all_pie_data(db: Session) -> List[PickItemEntryResponse]:
+    query = (
+        select(
+            PickItemEntry.id,
+            PickItemEntry.sku,
+            PickItemEntry.qty,
+            PickItemEntry.order_sn,
+            PickItemEntry.timestamp,
+            PickItemEntry.owner_user,
+            WarehouseItem.item_name,
+        )
+        .outerjoin(WarehouseItem, PickItemEntry.sku == WarehouseItem.sku)
+        .order_by(PickItemEntry.timestamp.desc())
+    )
+    results = db.execute(query).all()
+    return [
+        PickItemEntryResponse(
+            id=r.id,
+            sku=r.sku,
+            qty=r.qty,
+            order_sn=r.order_sn,
+            timestamp=r.timestamp,
+            owner_user=r.owner_user,
+            item_name=r.item_name,
+        )
+        for r in results
+    ]
 
 
 def get_stocks_data(db: Session, join_warehouse: bool = False):
@@ -409,6 +473,44 @@ def get_stocks_data(db: Session, join_warehouse: bool = False):
 
 def get_all_stocks_data(db: Session, join_warehouse: bool = False):
     return get_stocks_data(db, join_warehouse=join_warehouse)
+
+
+class TicketInfo:
+    def __init__(self, username: str, expires_at: float):
+        self.username = username
+        self.expires_at = expires_at
+
+
+class TicketManager:
+    def __init__(self):
+        self._tickets: Dict[str, TicketInfo] = {}
+        self._lock = threading.Lock()
+
+    def generate_ticket(self, username: str, ttl_seconds: int = 30) -> str:
+        ticket = secrets.token_urlsafe(32)
+        expires_at = time.time() + ttl_seconds
+        with self._lock:
+            self._tickets[ticket] = TicketInfo(username, expires_at)
+        return ticket
+
+    def consume_ticket(self, ticket: str) -> Optional[str]:
+        with self._lock:
+            info = self._tickets.pop(ticket, None)
+            if info is None:
+                return None
+            if time.time() > info.expires_at:
+                return None
+            return info.username
+
+    def purge_expired(self):
+        now = time.time()
+        with self._lock:
+            expired_keys = [k for k, v in self._tickets.items() if now > v.expires_at]
+            for k in expired_keys:
+                self._tickets.pop(k, None)
+
+
+ticket_manager = TicketManager()
 
 
 # WebSockets ----
@@ -458,11 +560,12 @@ class ConnectionManager:
         if message_type == WSMessageType.USERS:
             data = get_all_user_data(db)
         elif message_type == WSMessageType.OUTBOUNDS:
-            data = (
+            outbounds = (
                 get_all_outbound_data(db)
                 if is_admin
                 else get_outbounds_data(db, username)
             )
+            data = [OutboundResponse.model_validate(o) for o in outbounds]
         elif message_type == WSMessageType.SHOPEE_ORDERS:
             data = (
                 get_all_shopee_order_data(db)
@@ -473,7 +576,8 @@ class ConnectionManager:
         elif message_type == WSMessageType.PICK_ITEM_ENTRIES:
             data = get_all_pie_data(db) if is_admin else get_pie_data(db, username)
         elif message_type == WSMessageType.STOCKS:
-            data = get_all_stocks_data(db)
+            stocks = get_all_stocks_data(db, join_warehouse=True)
+            data = [StockResponse.model_validate(dict(s._mapping)) for s in stocks]
 
         if data is not None:
             data = [jsonable_encoder(item) for item in data]
@@ -555,13 +659,30 @@ manager = ConnectionManager()
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+):
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
+    username = ticket_manager.consume_ticket(token)
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
     with ctx_get_db() as db:
-        try:
-            user = get_user(token, db)
-        except Exception:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise
+        user = get_user_data(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            )
 
         await manager.connect(websocket, user.username or "", user.scope or "")
         try:
@@ -1010,6 +1131,14 @@ def login_admin(auth: UserAuth, db: Session = Depends(get_db)):
     return _get_tokens(user, db)
 
 
+@app.post("/auth/ws-token")
+def create_ws_token(
+    current_user: User = Depends(get_current_user),
+):
+    ticket = ticket_manager.generate_ticket(current_user.username, ttl_seconds=30)
+    return {"token": ticket, "expires_in": 30}
+
+
 # JWT ----
 @app.get("/.well-known/jwks.json")
 def jwks_endpoint():
@@ -1173,6 +1302,7 @@ def get_outbound_history(
             .order_by(OutboundItem.created_at.desc())
         )
         .scalars()
+        .unique()
         .all()
     )
     return items
@@ -1212,19 +1342,20 @@ def export_scanned_items(
             .order_by(OutboundItem.created_at.desc())
         )
         .scalars()
+        .unique()
         .all()
     )
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Content", "Tag", "Created At", "Owner"])
+    writer.writerow(["ID", "Content", "Tags", "Created At", "Owner"])
 
     for item in items:
         writer.writerow(
             [
                 item.id,
                 item.content,
-                item.tag or "",
+                ", ".join(item.tags),
                 item.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 item.owner_user,
             ]
@@ -1301,6 +1432,7 @@ async def create_outbound(
             )
         )
         .scalars()
+        .unique()
         .first()
     )
 
@@ -1312,10 +1444,33 @@ async def create_outbound(
         )
         raise HTTPException(status_code=409, detail="Duplicate scan detected")
 
+    content_clean = item.content.strip()
+    matched_order = (
+        db.execute(
+            select(ShopeeOrder)
+            .outerjoin(
+                ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn
+            )
+            .filter(
+                or_(
+                    ShopeeOrder.order_sn == content_clean,
+                    ShopeeOrderInfo.tracking_number == content_clean,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    tags: list[str] = list(item.tags) if item.tags else []
+    if matched_order and matched_order.shipping_carrier:
+        if matched_order.shipping_carrier not in tags:
+            tags.append(matched_order.shipping_carrier)
+
     db_item = OutboundItem(
         content=item.content,
         owner_user=current_user.username,
-        tag=item.tag,
+        tags=tags,
     )
     db.add(db_item)
     db.commit()
@@ -1330,7 +1485,7 @@ async def create_outbound(
     return OutboundResponse(
         id=db_item.id,
         content=db_item.content or "",
-        tag=db_item.tag if db_item.tag else None,
+        tags=db_item.tags,
         created_at=db_item.created_at,
         owner_user=db_item.owner_user,
         closed=db_item.closed,
@@ -1351,6 +1506,7 @@ def read_outbounds(
                 .order_by(OutboundItem.created_at.desc())
             )
             .scalars()
+            .unique()
             .all()
         )
     else:
@@ -1364,6 +1520,7 @@ def read_outbounds(
                 .order_by(OutboundItem.created_at.desc())
             )
             .scalars()
+            .unique()
             .all()
         )
     logger.debug(f"Fetched {len(items)} items for user {current_user.username}")
@@ -1386,17 +1543,14 @@ async def close_outbound_period(
     now = datetime.now(UTC)
 
     # Mark outbounds as closed
-    result = (
-        db.execute(
-            update(OutboundItem)
-            .filter(OutboundItem.content.in_(contents), OutboundItem.closed == False)  # noqa: E712
-            .values(closed=True, closed_at=now)
-        )
-        .scalars()
-        .all()
+    result = db.execute(
+        update(OutboundItem)
+        .filter(OutboundItem.content.in_(contents), OutboundItem.closed == False)  # noqa: E712
+        .values(closed=True, closed_at=now)
+        .returning(OutboundItem.id)
     )
 
-    outbound_count = len(result)
+    outbound_count = len(result.all())
     unknown_count = len(contents) - outbound_count
 
     # Mark matched ShopeeOrders as done
@@ -1433,8 +1587,9 @@ async def close_outbound_period(
                 ShopeeOrder.done == False,  # noqa: E712
             )
             .values(done=True, done_at=now)
+            .returning(ShopeeOrder.order_sn)
         )
-        orders_done_count = len(result_orders.scalars().all())
+        orders_done_count = len(result_orders.all())
 
     db.commit()
     shopee_cache.invalidate()
@@ -1648,12 +1803,15 @@ async def fetch_chunk_details(
     return order_details_list, tracking_map, fail_pkgs
 
 
-lection_query = select(ShopeeOrder).order_by(ShopeeOrder.ship_by.desc())
-
-
-def get_local_orders(db: Session):
-    """Helper to ensure identical data return shape."""
-    return db.execute(lection_query).scalars().all()
+lection_query = (
+    select(ShopeeOrder)
+    .outerjoin(ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
+    .filter(
+        ShopeeOrder.done == False,  # noqa: E712
+        ShopeeOrder.status.in_(["READY_TO_SHIP", "PROCESSED", "RETRY_SHIP"]),
+    )
+    .order_by(ShopeeOrder.ship_by.desc())
+)
 
 
 @app.get("/shopee/orders", response_model=List[ShopeeOrderResponse])
@@ -1671,7 +1829,7 @@ async def get_shopee_orders(
         logger.info(
             "[CACHE HIT] Local order cache valid. Serving directly from database."
         )
-        res = get_local_orders(db)
+        res = get_all_shopee_order_data(db)
         logger.info(
             f"[END] Cache hit pipeline complete. Returned {len(res)} orders in {time.perf_counter() - start_time:.4f}s."
         )
@@ -1692,7 +1850,7 @@ async def get_shopee_orders(
             logger.info(
                 "[CACHE HIT] Cache valid inside lock block (parallel sync resolved). Avoiding dual sync."
             )
-            return get_local_orders(db)
+            return get_all_shopee_order_data(db)
 
         now = int(time.time())
         time_from = now - (2 * 24 * 60 * 60)
@@ -1796,6 +1954,11 @@ async def get_shopee_orders(
                         db_order.split_up = order_detail.split_up
                         db_order.status = order_detail.order_status
                         db_order.ship_by = order_detail.ship_by_date
+                        db_order.shipping_carrier = (
+                            order_detail.package_list[0].shipping_carrier
+                            if order_detail.package_list
+                            else None
+                        )
                         db.add(db_order)
                         inserted_orders += 1
 
@@ -1826,6 +1989,11 @@ async def get_shopee_orders(
                             db.add(db_item)
                     else:
                         db_order.status = order_detail.order_status
+                        db_order.shipping_carrier = (
+                            order_detail.package_list[0].shipping_carrier
+                            if order_detail.package_list
+                            else None
+                        )
                         updated_orders += 1
 
                     if order_detail.package_list:
@@ -1884,7 +2052,7 @@ async def get_shopee_orders(
 
         shopee_cache.mark_synced()
 
-        final_orders = get_local_orders(db)
+        final_orders = get_all_shopee_order_data(db)
         logger.info(
             f"[END] Full sync routine terminated successfully. Total runtime: {time.perf_counter() - start_time:.4f}s. Returning {len(final_orders)} data objects."
         )
@@ -1914,6 +2082,10 @@ async def acquire_order(
     db_order.owner_user = current_user.username
     db.commit()
     shopee_cache.invalidate()
+
+    # broadcast WS updates
+    await manager.send_to_user(WSMessageType.SHOPEE_ORDERS, db, current_user.username)
+    await manager.broadcast(WSMessageType.SHOPEE_ORDERS, db, scope="admin")
 
     return {"message": "Order assigned successfully", "order_sn": order_sn}
 
@@ -1999,6 +2171,10 @@ async def create_pie(
     )
     await manager.broadcast(WSMessageType.PICK_ITEM_ENTRIES, db, scope="admin")
 
+    item_name = db.execute(
+        select(WarehouseItem.item_name).filter(WarehouseItem.sku == entry.sku)
+    ).scalar()
+
     return PickItemEntryResponse(
         id=entry.id,
         sku=entry.sku or "",
@@ -2006,6 +2182,7 @@ async def create_pie(
         order_sn=entry.order_sn,
         timestamp=entry.timestamp,
         owner_user=entry.owner_user,
+        item_name=item_name,
     )
 
 
@@ -2014,17 +2191,7 @@ def read_pies(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     logger.info(f"User {current_user.username} fetching scan entries")
-    entries = (
-        db.execute(
-            select(PickItemEntry)
-            .filter(PickItemEntry.owner_user == current_user.username)
-            .order_by(PickItemEntry.timestamp.desc())
-        )
-        .scalars()
-        .all()
-    )
-    logger.debug(f"Found {len(entries)} scan entries")
-    return entries
+    return get_pie_data(db, current_user.username)
 
 
 @app.delete("/pick-item")
@@ -2125,6 +2292,11 @@ async def assign_pie(
         WSMessageType.PICK_ITEM_ENTRIES, db, username=current_user.username
     )
     await manager.broadcast(WSMessageType.PICK_ITEM_ENTRIES, db, scope="admin")
+
+    item_name = db.execute(
+        select(WarehouseItem.item_name).filter(WarehouseItem.sku == new_entry.sku)
+    ).scalar()
+
     return PickItemEntryResponse(
         id=new_entry.id,
         sku=new_entry.sku,
@@ -2132,6 +2304,7 @@ async def assign_pie(
         order_sn=new_entry.order_sn,
         timestamp=new_entry.timestamp,
         owner_user=new_entry.owner_user,
+        item_name=item_name,
     )
 
 
