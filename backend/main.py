@@ -1809,6 +1809,7 @@ lection_query = (
     .filter(
         ShopeeOrder.done == False,  # noqa: E712
         ShopeeOrder.status.in_(["READY_TO_SHIP", "PROCESSED", "RETRY_SHIP"]),
+        ShopeeOrder.ship_by >= datetime.now(UTC),
     )
     .order_by(ShopeeOrder.ship_by.desc())
 )
