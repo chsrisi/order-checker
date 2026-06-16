@@ -134,7 +134,7 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
           final skuMap = Map.fromEntries(
             {
               ...requirements.map(
-                (e) => (e.itemSku != '' ? e.itemSku : e.modelSku) ?? 'unknown',
+                (e) => e.componentSku.isNotEmpty ? e.componentSku : 'unknown',
               ),
               ...pickItemEntries.map((e) => e.sku),
             }.map((sku) {
@@ -142,11 +142,10 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                   requirements
                       .where(
                         (e) =>
-                            ((e.itemSku != '' ? e.itemSku : e.modelSku) ??
-                                'unknown') ==
+                            (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
                             sku,
                       )
-                      .map((e) => e.modelQuantityPurchased)
+                      .map((e) => e.quantity)
                       .firstOrNull ??
                   0;
               final scannedQty = pickItemEntries
@@ -292,15 +291,12 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                   final isSkuEmpty = sku.trim().isEmpty || sku == 'unknown';
                   final matchingItem = requirements.firstWhere(
                     (item) => (isSkuEmpty
-                        ? (item.itemSku == 'unknown' || item.itemSku.isEmpty)
-                        : (item.modelSku == sku || item.itemSku == sku)),
-                    orElse: () => ShopeeOrderItem(
-                      id: 0,
-                      itemId: 0,
-                      itemName: '',
-                      itemSku: '',
-                      modelQuantityPurchased: 0,
-                      imageUrl: '',
+                        ? (item.componentSku == 'unknown' || item.componentSku.isEmpty)
+                        : (item.componentSku == sku)),
+                    orElse: () => ShopeeOrderItemBOM(
+                      componentSku: '',
+                      componentName: '',
+                      quantity: 0,
                     ),
                   );
 
@@ -308,16 +304,12 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                     (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
                   ).firstOrNull;
 
-                  String displayName = matchingItem.itemName.isNotEmpty
-                      ? matchingItem.itemName
+                  String displayName = matchingItem.componentName.isNotEmpty
+                      ? matchingItem.componentName
                       : (scanMatch?.itemName ?? 'Unknown Item');
 
                   final skuPart = isSkuEmpty ? "No SKU" : sku;
-                  final displaySubtext =
-                      (matchingItem.modelName != null &&
-                          matchingItem.modelName!.isNotEmpty)
-                      ? "(${matchingItem.modelName}) $skuPart"
-                      : skuPart;
+                  final displaySubtext = skuPart;
 
                   return ListTile(
                     title: Text(displayName),

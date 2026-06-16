@@ -116,9 +116,9 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         if (activeOrder != null) {
           final reqQty = activeOrder.itemList
               .where((e) =>
-                  ((e.itemSku != '' ? e.itemSku : e.modelSku) ?? 'unknown') ==
+                  (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
                   sku)
-              .map((e) => e.modelQuantityPurchased)
+              .map((e) => e.quantity)
               .firstOrNull ??
               0;
 
@@ -432,14 +432,14 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
             onPressed: () {
               if (selectedOrder != null) {
                 final qty = int.tryParse(qtyController.text);
-                final matchingItem = selectedOrder!.itemList
-                    .where((i) => (i.itemSku.isNotEmpty && i.itemSku == entry.sku) || i.modelSku == entry.sku)
+                 final matchingItem = selectedOrder!.itemList
+                    .where((i) => i.componentSku == entry.sku)
                     .firstOrNull;
                 appState.assignToLabel(
                   entry.id,
                   selectedOrder!.orderSn,
                   qty: qty,
-                  orderItemQty: matchingItem?.modelQuantityPurchased ?? 0,
+                  orderItemQty: matchingItem?.quantity ?? 0,
                 );
                 Navigator.pop(context);
               } else {
@@ -486,19 +486,17 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                     {
                       ...requirements.map(
                         (e) =>
-                            (e.itemSku != '' ? e.itemSku : e.modelSku) ??
-                            'unknown',
+                            e.componentSku.isNotEmpty ? e.componentSku : 'unknown',
                       ),
                       ...scanned.map((e) => e.sku),
                     }.map((sku) {
                       final reqQty = requirements
                           .where(
                             (e) =>
-                                ((e.itemSku != '' ? e.itemSku : e.modelSku) ??
-                                    'unknown') ==
+                                (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
                                 sku,
                           )
-                          .map((e) => e.modelQuantityPurchased)
+                          .map((e) => e.quantity)
                           .firstOrNull ?? 0;
                       final scanQty = scanned
                           .where((e) => e.sku == sku)
@@ -610,21 +608,17 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                                     textColor = Colors.red;
                                   }
 
-                                  final isSkuEmpty =
+                                   final isSkuEmpty =
                                       sku.trim().isEmpty || sku == 'unknown';
                                   final matchingItem = requirements.firstWhere(
                                     (item) => (isSkuEmpty
-                                        ? (item.itemSku == 'unknown' ||
-                                              item.itemSku.isEmpty)
-                                        : (item.modelSku == sku ||
-                                              item.itemSku == sku)),
-                                    orElse: () => ShopeeOrderItem(
-                                      id: 0,
-                                      itemId: 0,
-                                      itemName: '',
-                                      itemSku: '',
-                                      modelQuantityPurchased: 0,
-                                      imageUrl: '',
+                                        ? (item.componentSku == 'unknown' ||
+                                              item.componentSku.isEmpty)
+                                        : (item.componentSku == sku)),
+                                    orElse: () => ShopeeOrderItemBOM(
+                                      componentSku: '',
+                                      componentName: '',
+                                      quantity: 0,
                                     ),
                                   );
 
@@ -632,16 +626,12 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                                     (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
                                   ).firstOrNull;
 
-                                  String displayName = matchingItem.itemName.isNotEmpty
-                                      ? matchingItem.itemName
+                                  String displayName = matchingItem.componentName.isNotEmpty
+                                      ? matchingItem.componentName
                                       : (scanMatch?.itemName ?? 'Unknown Item');
 
                                   final skuPart = isSkuEmpty ? "No SKU" : sku;
-                                  final displaySubtext =
-                                      (matchingItem.modelName != null &&
-                                          matchingItem.modelName!.isNotEmpty)
-                                      ? "(${matchingItem.modelName}) $skuPart"
-                                      : skuPart;
+                                  final displaySubtext = skuPart;
 
                                   return ListTile(
                                     title: Text(displayName),

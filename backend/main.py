@@ -69,10 +69,18 @@ from models import (
     ShopeeOrderItemList,
     ShopeeOrderRecipientAddress,
     ShopeeOrderResponse,
+    ShopeeOrderItemBOMResponse,
+    ShopeeOrderRecipientResponse,
+    ShopeeOrderInfoResponse,
     ShpOrderList,
     OrderListT,
     ShpMassTrackingNumber,
     ShpOrderDetails,
+    BOMHeader,
+    BOMDetail,
+    BOMHeaderMarketplace,
+    BOMDetailMarketplace,
+    ShopeeItem,
 )
 from keys import (
     KeyManager,
@@ -401,6 +409,133 @@ def get_all_shopee_order_data(db: Session) -> Sequence[ShopeeOrder]:
     return orders
 
 
+def resolve_standard_bom(sku: str, qty: int, db: Session) -> List[tuple[str, int]]:
+    # Check if this sku has a BOMHeader
+    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
+    if not hdr:
+        return [(sku, qty)]
+
+    # Get details
+    details = db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
+    if not details:
+        return [(sku, qty)]
+
+    resolved = []
+    for detail in details:
+        comp_sku = detail.component_sku
+        comp_qty = qty * (detail.quantity_standard or 1)
+        resolved.extend(resolve_standard_bom(comp_sku, comp_qty, db))
+    return resolved
+
+
+def resolve_shopee_item_bom(
+    item_id: Optional[int],
+    model_id: Optional[int],
+    item_sku: Optional[str],
+    model_sku: Optional[str],
+    qty: int,
+    db: Session
+) -> List[tuple[str, int]]:
+    # 1. Check Marketplace BOM
+    # Shopee model_id or item_id (exclude 0 or None)
+    shopee_id = model_id if (model_id and model_id != 0) else item_id
+    if shopee_id:
+        mp_hdr = db.execute(
+            select(BOMHeaderMarketplace).filter(BOMHeaderMarketplace.shopee_id == shopee_id)
+        ).scalar_one_or_none()
+
+        if mp_hdr:
+            mp_details = db.execute(
+                select(BOMDetailMarketplace).filter(BOMDetailMarketplace.shopee_id == shopee_id)
+            ).scalars().all()
+            if mp_details:
+                resolved = []
+                for detail in mp_details:
+                    comp_sku = detail.component_sku
+                    comp_qty = qty * (detail.quantity_standard or 1)
+                    resolved.extend(resolve_standard_bom(comp_sku, comp_qty, db))
+                return resolved
+
+    # 2. Check Shopee Item Mapping (shopee_items table)
+    mapped_sku = None
+    if shopee_id:
+        shopee_item = db.execute(
+            select(ShopeeItem).filter(
+                (ShopeeItem.model_id == str(shopee_id)) | (ShopeeItem.item_id == str(shopee_id))
+            )
+        ).scalars().first()
+        if shopee_item and shopee_item.sku:
+            mapped_sku = shopee_item.sku
+
+    if not mapped_sku:
+        # Fallback to model_sku / item_sku
+        mapped_sku = model_sku if model_sku else item_sku
+
+    if not mapped_sku:
+        return []
+
+    mapped_sku = mapped_sku.strip()
+    return resolve_standard_bom(mapped_sku, qty, db)
+
+
+def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderResponse:
+    # Decompose items and group by SKU
+    resolved_items = {}
+    for item in order.item_list:
+        components = resolve_shopee_item_bom(
+            item_id=item.item_id,
+            model_id=item.model_id,
+            item_sku=item.item_sku,
+            model_sku=item.model_sku,
+            qty=item.model_quantity_purchased or 0,
+            db=db
+        )
+        for comp_sku, comp_qty in components:
+            resolved_items[comp_sku] = resolved_items.get(comp_sku, 0) + comp_qty
+
+    # Fetch names for component SKUs
+    sku_list = list(resolved_items.keys())
+    item_names = {}
+    if sku_list:
+        items_db = db.execute(
+            select(WarehouseItem.sku, WarehouseItem.item_name).filter(WarehouseItem.sku.in_(sku_list))
+        ).all()
+        item_names = {row.sku: row.item_name for row in items_db}
+
+    # Construct ShopeeOrderItemBOMResponse list
+    item_responses = []
+    for comp_sku, comp_qty in resolved_items.items():
+        item_responses.append(
+            ShopeeOrderItemBOMResponse(
+                component_sku=comp_sku,
+                component_name=item_names.get(comp_sku) or comp_sku,
+                quantity=comp_qty,
+            )
+        )
+
+    recipient_address = None
+    if order.recipient_address:
+        recipient_address = ShopeeOrderRecipientResponse.model_validate(order.recipient_address)
+
+    info_list = []
+    if order.info:
+        info_list = [ShopeeOrderInfoResponse.model_validate(order.info)]
+
+    return ShopeeOrderResponse(
+        order_sn=order.order_sn,
+        split_up=order.split_up,
+        status=order.status,
+        ship_by=order.ship_by,
+        owner_user=order.owner_user,
+        shipping_carrier=order.shipping_carrier,
+        done=order.done,
+        done_at=order.done_at,
+        item_list=item_responses,
+        recipient_address=recipient_address,
+        info=info_list
+    )
+
+
 def get_pie_data(db: Session, username: str) -> List[PickItemEntryResponse]:
     query = (
         select(
@@ -572,7 +707,7 @@ class ConnectionManager:
                 if is_admin
                 else get_shopee_order_data(db, username)
             )
-            data = [ShopeeOrderResponse.model_validate(o) for o in data]
+            data = [build_shopee_order_response(o, db) for o in data]
         elif message_type == WSMessageType.PICK_ITEM_ENTRIES:
             data = get_all_pie_data(db) if is_admin else get_pie_data(db, username)
         elif message_type == WSMessageType.STOCKS:
@@ -1323,7 +1458,7 @@ def get_shopee_orders_history(
         .scalars()
         .all()
     )
-    return orders
+    return [build_shopee_order_response(o, db) for o in orders]
 
 
 # exports
@@ -1834,7 +1969,7 @@ async def get_shopee_orders(
         logger.info(
             f"[END] Cache hit pipeline complete. Returned {len(res)} orders in {time.perf_counter() - start_time:.4f}s."
         )
-        return res
+        return [build_shopee_order_response(o, db) for o in res]
 
     logger.debug(
         "[CACHE MISS] Cache is invalid or expired. Attempting synchronization lock..."
@@ -1851,7 +1986,7 @@ async def get_shopee_orders(
             logger.info(
                 "[CACHE HIT] Cache valid inside lock block (parallel sync resolved). Avoiding dual sync."
             )
-            return get_all_shopee_order_data(db)
+            return [build_shopee_order_response(o, db) for o in get_all_shopee_order_data(db)]
 
         now = int(time.time())
         time_from = now - (2 * 24 * 60 * 60)
@@ -2057,7 +2192,7 @@ async def get_shopee_orders(
         logger.info(
             f"[END] Full sync routine terminated successfully. Total runtime: {time.perf_counter() - start_time:.4f}s. Returning {len(final_orders)} data objects."
         )
-        return final_orders
+        return [build_shopee_order_response(o, db) for o in final_orders]
 
 
 @app.post("/shopee/orders/acquire")

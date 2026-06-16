@@ -94,40 +94,22 @@ class ShopeeOrderRecipient {
   }
 }
 
-class ShopeeOrderItem {
-  final int id;
-  final int itemId;
-  final String itemName;
-  final String itemSku;
-  final int? modelId;
-  final String? modelName;
-  final String? modelSku;
-  final int modelQuantityPurchased;
-  final String imageUrl;
+class ShopeeOrderItemBOM {
+  final String componentSku;
+  final String componentName;
+  final int quantity;
 
-  ShopeeOrderItem({
-    required this.id,
-    required this.itemId,
-    required this.itemName,
-    required this.itemSku,
-    this.modelId,
-    this.modelName,
-    this.modelSku,
-    required this.modelQuantityPurchased,
-    required this.imageUrl,
+  ShopeeOrderItemBOM({
+    required this.componentSku,
+    required this.componentName,
+    required this.quantity,
   });
 
-  factory ShopeeOrderItem.fromJson(Map<String, dynamic> json) {
-    return ShopeeOrderItem(
-      id: json['id'],
-      itemId: json['item_id'],
-      itemName: json['item_name'],
-      itemSku: json['item_sku'] ?? 'unknown',
-      modelId: json['model_id'],
-      modelName: json['model_name'],
-      modelSku: json['model_sku'],
-      modelQuantityPurchased: json['model_quantity_purchased'],
-      imageUrl: json['image_url'],
+  factory ShopeeOrderItemBOM.fromJson(Map<String, dynamic> json) {
+    return ShopeeOrderItemBOM(
+      componentSku: json['component_sku'] ?? '',
+      componentName: json['component_name'] ?? '',
+      quantity: json['quantity'] ?? 0,
     );
   }
 }
@@ -141,7 +123,7 @@ class ShopeeOrder {
   final String? shippingCarrier;
   final bool done;
   final DateTime? doneAt;
-  final List<ShopeeOrderItem> itemList;
+  final List<ShopeeOrderItemBOM> itemList;
   final ShopeeOrderRecipient? recipientAddress;
   final List<ShopeeOrderInfo> info;
 
@@ -172,7 +154,7 @@ class ShopeeOrder {
       itemList: json['item_list'] != null
           ? List<Map<String, dynamic>>.from(
               json['item_list'],
-            ).map((e) => ShopeeOrderItem.fromJson(e)).toList()
+            ).map((e) => ShopeeOrderItemBOM.fromJson(e)).toList()
           : [],
       recipientAddress: json['recipient_address'] != null
           ? ShopeeOrderRecipient.fromJson(json['recipient_address'])

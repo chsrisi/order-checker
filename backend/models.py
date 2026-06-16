@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 from datetime import datetime, UTC
 from typing import List, Optional, Union, Annotated, Any
 
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger
+from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from pydantic import (
@@ -242,11 +242,75 @@ class WarehouseItem(Base):
     __table_args__ = {"schema": "warehouse"}
     sku: Mapped[str] = mapped_column(String, primary_key=True, index=True)
     item_name: Mapped[Optional[str]] = mapped_column(String, index=True)
-    location: Mapped[Optional[str]] = mapped_column(String)
+    uom: Mapped[Optional[str]] = mapped_column(String)
+    manufacturer: Mapped[Optional[str]] = mapped_column(String)
+    item_name_manufacturer: Mapped[Optional[str]] = mapped_column(String)
+    dimension_notes: Mapped[Optional[str]] = mapped_column(String)
+    sell_price: Mapped[Optional[float]] = mapped_column(Float)
+    manufacturer_price: Mapped[Optional[float]] = mapped_column(Float)
+    price_before_discount_tax: Mapped[Optional[float]] = mapped_column(Float)
+    jar_length: Mapped[Optional[float]] = mapped_column(Float)  # dim 1
+    jar_width: Mapped[Optional[float]] = mapped_column(Float)  # dim 1
+    jar_height: Mapped[Optional[float]] = mapped_column(Float)  # dim 1
+    box_length: Mapped[Optional[float]] = mapped_column(Float)
+    box_width: Mapped[Optional[float]] = mapped_column(Float)
+    box_height: Mapped[Optional[float]] = mapped_column(Float)
+    qty_per_box: Mapped[Optional[str]] = mapped_column(String)
+    qty_per_pack: Mapped[Optional[float]] = mapped_column(Float)
+    boxes_per_bundle: Mapped[Optional[float]] = mapped_column(Float)
+    whole_uom: Mapped[Optional[str]] = mapped_column(String)
+    whole_deno: Mapped[Optional[float]] = mapped_column(Float)
+    jar_group: Mapped[Optional[str]] = mapped_column(String)
+    moq: Mapped[Optional[float]] = mapped_column(Float)
+    price_list_name: Mapped[Optional[str]] = mapped_column(String)
+    item_group: Mapped[Optional[str]] = mapped_column(String)
+    sell_price_bh: Mapped[Optional[float]] = mapped_column(Float)
+    weight_per_pcs: Mapped[Optional[float]] = mapped_column(Float)
+    hide_in_price_list: Mapped[Optional[bool]] = mapped_column(Boolean)
+    sku_factory: Mapped[Optional[str]] = mapped_column(String)
+    is_parent: Mapped[Optional[bool]] = mapped_column(Boolean)
+    is_child: Mapped[Optional[bool]] = mapped_column(Boolean)
+    sell_price_tokped: Mapped[Optional[float]] = mapped_column(Float)
+    jar_type: Mapped[Optional[str]] = mapped_column(String)
+    jar_capacity_gr: Mapped[Optional[float]] = mapped_column(Float)
+    top_length: Mapped[Optional[float]] = mapped_column(Float)  # dim 2
+    top_width: Mapped[Optional[float]] = mapped_column(Float)  # dim 2
+    bottom_length: Mapped[Optional[float]] = mapped_column(Float)  # dim 2
+    bottom_width: Mapped[Optional[float]] = mapped_column(Float)  # dim 2
+    height: Mapped[Optional[float]] = mapped_column(Float)  # dim 2
+    sales_commission_percent: Mapped[Optional[float]] = mapped_column(Float)
+    salesman_base_kelp_order: Mapped[Optional[float]] = mapped_column(Float)
+    salesman_base_uom_order: Mapped[Optional[str]] = mapped_column(String)
+    salesman_base_price_list_intv: Mapped[Optional[float]] = mapped_column(Float)
+    salesman_whole_uom_order: Mapped[Optional[str]] = mapped_column(String)
+    salesman_group_barang: Mapped[Optional[str]] = mapped_column(String)
+    exclude_stock_control: Mapped[Optional[bool]] = mapped_column(Boolean)
+    note: Mapped[Optional[str]] = mapped_column(String)
+    update_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    volume_m3: Mapped[Optional[float]] = mapped_column(Float)
+    picture: Mapped[Optional[str]] = mapped_column(String)
+    lid_type: Mapped[Optional[str]] = mapped_column(String)
+    category: Mapped[Optional[str]] = mapped_column(String)
+    desc_label: Mapped[Optional[str]] = mapped_column(String)
+    barcode_supplier: Mapped[Optional[str]] = mapped_column(String)
+    item_value_intv: Mapped[Optional[float]] = mapped_column(Float)
+    item_value_target: Mapped[Optional[float]] = mapped_column(Float)
+    photo: Mapped[Optional[str]] = mapped_column(String)
+    weight_kg: Mapped[Optional[float]] = mapped_column(Float)
 
-    stock: Mapped["Stock"] = relationship("Stock", back_populates="item")
+    stocks: Mapped[List["Stock"]] = relationship("Stock", back_populates="item")
+
+    @property
+    def location(self) -> Optional[str]:
+        if self.stocks:
+            unique_locs = sorted(list({s.location for s in self.stocks if s.location}))
+            if unique_locs:
+                return ", ".join(unique_locs)
+        return None
 
 
+# one (WarehouseItem) to many (Stock)
 class Stock(Base):
     __tablename__ = "stocks"
     __table_args__ = {"schema": "warehouse"}
@@ -256,7 +320,7 @@ class Stock(Base):
     location: Mapped[Optional[str]] = mapped_column(String)
 
     item: Mapped["WarehouseItem"] = relationship(
-        "WarehouseItem", back_populates="stock"
+        "WarehouseItem", back_populates="stocks"
     )
 
 
@@ -268,6 +332,76 @@ class StocksLog(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )
+
+
+class BOMHeader(Base):
+    __tablename__ = "bom_headers"
+    __table_args__ = {"schema": "warehouse"}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sku: Mapped[str] = mapped_column(
+        String, ForeignKey("warehouse.items.sku"), unique=True
+    )
+    quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
+    factor_f5: Mapped[Optional[float]] = mapped_column(Float)
+
+
+class BOMDetail(Base):
+    __tablename__ = "bom_details"
+    __table_args__ = {"schema": "warehouse"}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bom_header_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("warehouse.bom_headers.id")
+    )
+    component_sku: Mapped[str] = mapped_column(
+        String, ForeignKey("warehouse.items.sku")
+    )
+    quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
+    is_not_primary_child: Mapped[Optional[bool]] = mapped_column(Boolean)
+
+
+class BOMHeaderMarketplace(Base):
+    __tablename__ = "bom_headers_marketplace"
+    __table_args__ = {"schema": "warehouse"}
+    shopee_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    item_name: Mapped[Optional[str]] = mapped_column(String)
+    model_name: Mapped[Optional[str]] = mapped_column(String)
+    quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
+    marketplace: Mapped[Optional[str]] = mapped_column(String)
+    created_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class BOMDetailMarketplace(Base):
+    __tablename__ = "bom_details_marketplace"
+    __table_args__ = {"schema": "warehouse"}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shopee_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("warehouse.bom_headers_marketplace.shopee_id"),
+    )
+    component_sku: Mapped[str] = mapped_column(
+        String, ForeignKey("warehouse.items.sku")
+    )
+    quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
+    is_not_primary_child: Mapped[Optional[bool]] = mapped_column(Boolean)
+    created_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class ShopeeItem(Base):
+    __tablename__ = "shopee_items"
+    __table_args__ = {"schema": "warehouse"}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[Optional[str]] = mapped_column(String)
+    item_name: Mapped[Optional[str]] = mapped_column(String)
+    model_id: Mapped[Optional[str]] = mapped_column(String)
+    model_name: Mapped[Optional[str]] = mapped_column(String)
+    has_variant: Mapped[Optional[bool]] = mapped_column(Boolean)
+    sku: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("warehouse.items.sku")
+    )
+    sell_price_factor: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    factor_x: Mapped[Optional[float]] = mapped_column(Float)
+    factor_plus: Mapped[Optional[float]] = mapped_column(Float)
 
 
 # Pydantic Models ----
@@ -339,6 +473,14 @@ class ShopeeOrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ShopeeOrderItemBOMResponse(BaseModel):
+    component_sku: str
+    component_name: Optional[str] = None
+    quantity: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ShopeeOrderRecipientResponse(BaseModel):
     id: int
     name: Optional[str] = None
@@ -367,7 +509,7 @@ class ShopeeOrderResponse(BaseModel):
     shipping_carrier: Optional[str] = None
     done: bool = False
     done_at: Optional[datetime] = None
-    item_list: List[ShopeeOrderItemResponse] = []
+    item_list: List[ShopeeOrderItemBOMResponse] = []
     recipient_address: Optional[ShopeeOrderRecipientResponse] = None
     info: List[ShopeeOrderInfoResponse] = []
 
