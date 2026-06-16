@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
+import '../models.dart';
 
 class StocksView extends StatelessWidget {
   final int subIndex;
@@ -26,14 +28,26 @@ class StocksInput extends StatefulWidget {
 class _StocksInputState extends State<StocksInput> {
   final _skuController = TextEditingController();
   final _qtyController = TextEditingController();
+  final _locController = TextEditingController();
+  final _destController = TextEditingController();
+
   final _focusNode = FocusNode();
   final _qtyFocusNode = FocusNode();
+  final _locFocusNode = FocusNode();
+  final _destFocusNode = FocusNode();
+
+  bool _isMove = false;
+  String? _lastLookupSku;
 
   @override
   void initState() {
     super.initState();
+    _skuController.addListener(_onSkuChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = Provider.of<AppState>(context, listen: false);
+      if (appState.stocks.isEmpty) {
+        appState.fetchStocks();
+      }
       appState.onShowMessage = (message, {isError = false, isAlert = false}) {
         if (!mounted) return;
         if (isAlert) {
@@ -70,11 +84,87 @@ class _StocksInputState extends State<StocksInput> {
         appState.onShowMessage = null;
       }
     });
+    _skuController.removeListener(_onSkuChanged);
     _skuController.dispose();
     _qtyController.dispose();
+    _locController.dispose();
+    _destController.dispose();
     _focusNode.dispose();
     _qtyFocusNode.dispose();
+    _locFocusNode.dispose();
+    _destFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onSkuChanged() {
+    final sku = _skuController.text.trim();
+    if (sku == _lastLookupSku) return;
+    _lastLookupSku = sku;
+
+    if (sku.isEmpty) {
+      setState(() {
+        _locController.clear();
+      });
+      return;
+    }
+
+    final appState = Provider.of<AppState>(context, listen: false);
+    Stock? existingStock;
+    for (var s in appState.stocks) {
+      if (s.sku.toLowerCase() == sku.toLowerCase()) {
+        existingStock = s;
+        break;
+      }
+    }
+
+    setState(() {
+      if (existingStock != null) {
+        _locController.text = existingStock.location ?? "";
+      } else {
+        _locController.clear();
+      }
+    });
+  }
+
+  List<String> _getLocationsForSku(String sku) {
+    if (sku.isEmpty) return [];
+    final appState = Provider.of<AppState>(context, listen: false);
+    return appState.stocks
+        .where(
+          (s) =>
+              s.sku.toLowerCase() == sku.toLowerCase() &&
+              s.location != null &&
+              s.location!.isNotEmpty,
+        )
+        .map((s) => s.location!)
+        .toSet()
+        .toList();
+  }
+
+  void _handleMoveToggled() {
+    if (_isMove) {
+      final sku = _skuController.text.trim();
+      final location = _locController.text.trim();
+      final locations = _getLocationsForSku(sku);
+
+      if (locations.any((l) => l.toLowerCase() == location.toLowerCase())) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _destFocusNode.requestFocus();
+        });
+      } else {
+        setState(() {
+          _destController.text = location;
+          _locController.clear();
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _locFocusNode.requestFocus();
+        });
+      }
+    } else {
+      setState(() {
+        _destController.clear();
+      });
+    }
   }
 
   void _parseBarcode(String barcode) {
@@ -94,6 +184,8 @@ class _StocksInputState extends State<StocksInput> {
     final appState = Provider.of<AppState>(context, listen: false);
     final sku = _skuController.text.trim();
     final qty = int.tryParse(_qtyController.text.trim());
+    final location = _locController.text.trim();
+    final moveTo = _isMove ? _destController.text.trim() : null;
 
     if (sku.isEmpty || qty == null) {
       appState.onShowMessage?.call(
@@ -103,18 +195,32 @@ class _StocksInputState extends State<StocksInput> {
       return;
     }
 
-    appState.updateStock(sku, qty, mode: mode).then((_) {
-      setState(() {
-        _skuController.clear();
-        _qtyController.clear();
-        _focusNode.requestFocus();
-      });
-    });
+    appState
+        .updateStock(
+          sku,
+          qty,
+          mode: mode,
+          location: location.isNotEmpty ? location : null,
+          moveTo: moveTo != null && moveTo.isNotEmpty ? moveTo : null,
+        )
+        .then((_) {
+          setState(() {
+            _skuController.clear();
+            _qtyController.clear();
+            _locController.clear();
+            _destController.clear();
+            _isMove = false;
+            _focusNode.requestFocus();
+          });
+        });
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final sku = _skuController.text.trim();
+    final locations = _getLocationsForSku(sku);
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -143,8 +249,74 @@ class _StocksInputState extends State<StocksInput> {
               border: OutlineInputBorder(),
             ),
             keyboardType: TextInputType.number,
-            onSubmitted: (_) => _submit("set"),
+            onSubmitted: (_) {
+              _locFocusNode.requestFocus();
+            },
           ),
+          const SizedBox(height: 16),
+          Focus(
+            onKeyEvent: (FocusNode node, KeyEvent event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.enter) {
+                if (_isMove) {
+                  _destFocusNode.requestFocus();
+                } else {
+                  _submit("set");
+                }
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: DropdownMenu<String>(
+              controller: _locController,
+              focusNode: _locFocusNode,
+              expandedInsets: EdgeInsets.zero,
+              label: const Text("Location"),
+              dropdownMenuEntries: locations.map<DropdownMenuEntry<String>>((
+                String value,
+              ) {
+                return DropdownMenuEntry<String>(value: value, label: value);
+              }).toList(),
+              onSelected: (String? value) {
+                setState(() {
+                  if (value != null) {
+                    _locController.text = value;
+                    if (_isMove) {
+                      _destFocusNode.requestFocus();
+                    }
+                  }
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Checkbox(
+                value: _isMove,
+                onChanged: (val) {
+                  setState(() {
+                    _isMove = val ?? false;
+                    _handleMoveToggled();
+                  });
+                },
+              ),
+              const Text("Move"),
+            ],
+          ),
+          if (_isMove) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _destController,
+              focusNode: _destFocusNode,
+              decoration: const InputDecoration(
+                labelText: "Destination Location",
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.location_on_outlined),
+              ),
+              onSubmitted: (_) => _submit("set"),
+            ),
+          ],
           const SizedBox(height: 24),
           Row(
             children: [

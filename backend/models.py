@@ -548,6 +548,8 @@ class StockCreate(BaseModel):
     sku: str
     stock: int
     mode: str = "set"  # "add" or "set"
+    location: Optional[str] = None
+    move_to: Optional[str] = None
 
 
 class StockResponse(BaseModel):

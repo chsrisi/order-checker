@@ -781,14 +781,23 @@ class AppState extends ChangeNotifier {
     String idbrng,
     int qty, {
     String mode = "set",
+    String? location,
+    String? moveTo,
   }) async {
     _isSaving = true;
     notifyListeners();
     try {
+      final body = {
+        'sku': idbrng,
+        'stock': qty,
+        'mode': mode,
+        if (location != null) 'location': location,
+        if (moveTo != null) 'move_to': moveTo,
+      };
       final response = await makeRequest(
         '$_baseUrl/stocks',
         method: 'POST',
-        body: {'sku': idbrng, 'stock': qty, 'mode': mode},
+        body: body,
       );
       if (response?.statusCode == 200) {
         await fetchStocks();
