@@ -120,13 +120,44 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
       return const Center(child: Text("No ongoing orders found"));
     }
 
+    const statusOrder = ['READY_TO_SHIP', 'PROCESSED'];
+    final Map<String, List<ShopeeOrder>> grouped = {};
+    for (final o in orders) {
+      final statusKey = o.status == 'RETRY_SHIP' ? 'PROCESSED' : o.status;
+      grouped.putIfAbsent(statusKey, () => []).add(o);
+    }
+
+    final sortedStatuses = grouped.keys.toList()
+      ..sort((a, b) {
+        final idxA = statusOrder.indexOf(a);
+        final idxB = statusOrder.indexOf(b);
+        if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+        if (idxA != -1) return -1;
+        if (idxB != -1) return 1;
+        return a.compareTo(b);
+      });
+
+    final List<_OngoingListItem> listItems = [];
+    for (final status in sortedStatuses) {
+      final statusOrders = grouped[status]!;
+      listItems.add(_OngoingHeaderItem(status, statusOrders.length));
+      for (final order in statusOrders) {
+        listItems.add(_OngoingOrderItem(order));
+      }
+    }
+
     return RefreshIndicator(
       onRefresh: appState.fetchAdminLabels,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: orders.length,
+        itemCount: listItems.length,
         itemBuilder: (context, index) {
-          final order = orders[index];
+          final item = listItems[index];
+          if (item is _OngoingHeaderItem) {
+            return _OngoingStatusHeader(status: item.status, count: item.count);
+          }
+
+          final order = (item as _OngoingOrderItem).order;
           final requirements = order.itemList;
           final pickItemEntries = appState.pickItemEntries
               .where((e) => e.orderSn == order.orderSn)
@@ -195,14 +226,18 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
           });
 
           return Card(
-            color: isUnassigned ? Colors.grey.shade300 : null,
+            color: hasOutboundMatch
+                ? Colors.green.shade50
+                : (isUnassigned ? Colors.grey.shade300 : null),
             margin: const EdgeInsets.only(bottom: 12),
             child: ExpansionTile(
               shape: Border.all(color: Colors.transparent),
               collapsedShape: Border.all(color: Colors.transparent),
               leading: Icon(
                 Icons.pending_actions,
-                color: isUnassigned ? Colors.grey : Colors.orange,
+                color: hasOutboundMatch
+                    ? Colors.green
+                    : (isUnassigned ? Colors.grey : Colors.orange),
               ),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -689,6 +724,102 @@ class _OrderT extends _OrderItemT {
 class _OutboundItemT extends _OrderItemT {
   final OutboundItem outboundItem;
   _OutboundItemT(this.outboundItem);
+}
+
+sealed class _OngoingListItem {}
+
+class _OngoingHeaderItem extends _OngoingListItem {
+  final String status;
+  final int count;
+  _OngoingHeaderItem(this.status, this.count);
+}
+
+class _OngoingOrderItem extends _OngoingListItem {
+  final ShopeeOrder order;
+  _OngoingOrderItem(this.order);
+}
+
+class _OngoingStatusHeader extends StatelessWidget {
+  final String status;
+  final int count;
+
+  const _OngoingStatusHeader({required this.status, required this.count});
+
+  String _formatStatus(String status) {
+    switch (status) {
+      case 'READY_TO_SHIP':
+        return 'Ready to Ship';
+      case 'PROCESSED':
+        return 'Processed';
+      default:
+        return status.replaceAll('_', ' ').toLowerCase().split(' ').map((word) {
+          if (word.isEmpty) return '';
+          return word[0].toUpperCase() + word.substring(1);
+        }).join(' ');
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'READY_TO_SHIP':
+        return Icons.local_shipping_outlined;
+      case 'PROCESSED':
+        return Icons.check_circle_outline;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final headerColor = status == 'READY_TO_SHIP'
+        ? theme.colorScheme.primary
+        : theme.colorScheme.secondary;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+      child: Row(
+        children: [
+          Icon(_getStatusIcon(status), color: headerColor, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            _formatStatus(status),
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: headerColor,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: headerColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: headerColor.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: headerColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Divider(
+              color: headerColor.withValues(alpha: 0.2),
+              thickness: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _HistoryOrdersTab extends StatefulWidget {
