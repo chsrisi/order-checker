@@ -173,7 +173,24 @@ class AppState extends ChangeNotifier {
     _isConnecting = true;
 
     try {
-      final ticket = await fetchWebSocketTicket();
+      final response = await fetchWebSocketTicket();
+      if (response == null || response.statusCode >= 500) {
+        _isConnecting = false;
+        _reconnectWebSocket(error: response != null ? "Status ${response.statusCode}" : "Connection error");
+        return;
+      }
+      if (response.statusCode != 200) {
+        _isConnecting = false;
+        handleLogout(sessionExpired: true);
+        onShowMessage?.call(
+          "Session expired. Please log in again.",
+          isError: true,
+        );
+        return;
+      }
+
+      final data = jsonDecode(response.body);
+      final ticket = data['token'] as String?;
       if (ticket == null) {
         _isConnecting = false;
         handleLogout(sessionExpired: true);
@@ -345,18 +362,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> fetchWebSocketTicket() async {
-    final response = await makeRequest(
+  Future<http.Response?> fetchWebSocketTicket() async {
+    return await makeRequest(
       '$_baseUrl/auth/ws-token',
       method: 'POST',
       requiresAuth: true,
     );
-
-    if (response?.statusCode == 200) {
-      final data = jsonDecode(response!.body);
-      return data['token'] as String?;
-    }
-    return null;
   }
 
   Future<http.Response?> makeRequest(
