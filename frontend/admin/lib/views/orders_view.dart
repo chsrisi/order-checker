@@ -491,13 +491,6 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                           subtitle: Text(
                             "By: ${item.ownerUser ?? 'Unknown'}\nScan time: ${date.hour}:${date.minute.toString().padLeft(2, '0')} - ${date.day}/${date.month}",
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.red,
-                            ),
-                            onPressed: () => _deleteEntry(appState, item.id),
-                          ),
                         ),
                       );
                     },
@@ -559,6 +552,15 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                       ),
                     ),
                   ],
+                  const Spacer(),
+                  Text(
+                    "Count: ${filteredItems.length}",
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -593,64 +595,11 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                   ),
                 ],
               ),
-              if (_selectedItemIds.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => _deleteSelectedItems(appState),
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  label: Text("Delete Selected ${_selectedItemIds.length}"),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                ),
-              ],
             ],
           ),
         ),
       ],
     );
-  }
-
-  Future<void> _deleteEntry(AppState appState, int id) async {
-    final success = await appState.deleteEntry(id);
-    if (!mounted) return;
-    if (success) {
-      setState(() => _selectedItemIds.remove(id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry deleted successfully')),
-      );
-    }
-  }
-
-  Future<void> _deleteSelectedItems(AppState appState) async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Selected"),
-        content: Text(
-          "Are you sure you want to delete ${_selectedItemIds.length} items?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    final success = await appState.deleteSelectedItems(
-      _selectedItemIds.toList(),
-    );
-    if (!mounted) return;
-    if (success) {
-      setState(() => _selectedItemIds.clear());
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Selected items deleted')));
-    }
   }
 
   Future<void> _exportScans(AppState appState) async {

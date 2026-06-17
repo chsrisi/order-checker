@@ -652,48 +652,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteEntry(int id) async {
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/outbound?item_id=$id',
-        method: 'DELETE',
-      );
-      if (response?.statusCode == 200) {
-        fetchHistory();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      log("Delete Error: $e");
-      return false;
-    }
-  }
-
-  Future<bool> deleteSelectedItems(List<int> ids) async {
-    if (ids.isEmpty) return false;
-
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/outbound/batch',
-        method: 'DELETE',
-        body: ids,
-      );
-      if (response?.statusCode == 200) {
-        fetchHistory();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      log("Batch Delete Error: $e");
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
   Future<bool> deleteUser(String username) async {
     try {
       final response = await makeRequest(
