@@ -810,4 +810,19 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<String?> resolveSupplierBarcode(String barcode) async {
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/items/resolve-supplier-barcode?barcode=${Uri.encodeComponent(barcode)}',
+      );
+      if (response?.statusCode == 200) {
+        final data = jsonDecode(response!.body);
+        return data['sku'] as String?;
+      }
+    } catch (e) {
+      log("Resolve Barcode Error: $e");
+    }
+    return null;
+  }
 }

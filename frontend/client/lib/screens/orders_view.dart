@@ -79,7 +79,43 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
     }
   }
 
-  void _handleSubmit(AppState appState) {
+  Future<void> _handleSkuSubmitted(AppState appState) async {
+    final barcode = _scanController.text.trim();
+    if (barcode.isEmpty) return;
+
+    if (barcode.contains('*')) {
+      _parseBarcode(barcode);
+      _qtyFocusNode.requestFocus();
+      return;
+    }
+
+    final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
+    final match = regExp.firstMatch(barcode);
+    if (match != null) {
+      final type = match.group(2);
+      final id = match.group(3);
+      final supplierBarcode = "$type-$id";
+
+      appState.onShowMessage?.call("Resolving supplier barcode...");
+
+      final sku = await appState.resolveSupplierBarcode(supplierBarcode);
+      if (sku != null) {
+        setState(() {
+          _scanController.text = sku;
+        });
+        _qtyFocusNode.requestFocus();
+      } else {
+        appState.onShowMessage?.call(
+          "Supplier barcode '$supplierBarcode' not found.",
+          isError: true,
+        );
+      }
+    } else {
+      _qtyFocusNode.requestFocus();
+    }
+  }
+
+  Future<void> _handleSubmit(AppState appState) async {
     if (_selectedMode == 'order') {
       final orderSn = _scanController.text.trim();
       if (!RegExp(r'^\d{6}.*').hasMatch(orderSn)) {
@@ -100,6 +136,26 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
           sku = parts[0];
         }
       }
+
+      final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
+      final match = regExp.firstMatch(sku);
+      if (match != null) {
+        final type = match.group(2);
+        final id = match.group(3);
+        final supplierBarcode = "$type-$id";
+
+        final resolvedSku = await appState.resolveSupplierBarcode(supplierBarcode);
+        if (resolvedSku != null) {
+          sku = resolvedSku;
+        } else {
+          appState.onShowMessage?.call(
+            "Supplier barcode '$supplierBarcode' not found.",
+            isError: true,
+          );
+          return;
+        }
+      }
+
       final qtyStr = _orderQtyController.text.trim();
       final int qty = int.tryParse(qtyStr) ?? 1;
 
@@ -202,12 +258,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
                       hintText: "SKU",
                       border: OutlineInputBorder(),
                     ),
-                    onSubmitted: (_) {
-                      if (_scanController.text.contains('*')) {
-                        _parseBarcode(_scanController.text);
-                      }
-                      _qtyFocusNode.requestFocus();
-                    },
+                    onSubmitted: (_) => _handleSkuSubmitted(appState),
                   ),
                 ),
                 const SizedBox(width: 8),

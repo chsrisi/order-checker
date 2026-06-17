@@ -215,6 +215,43 @@ class _StocksInputState extends State<StocksInput> {
         });
   }
 
+  Future<void> _handleSkuSubmitted() async {
+    final barcode = _skuController.text.trim();
+    if (barcode.isEmpty) return;
+
+    if (barcode.contains('*')) {
+      _parseBarcode(barcode);
+      _qtyFocusNode.requestFocus();
+      return;
+    }
+
+    final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
+    final match = regExp.firstMatch(barcode);
+    if (match != null) {
+      final type = match.group(2);
+      final id = match.group(3);
+      final supplierBarcode = "$type-$id";
+
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.onShowMessage?.call("Resolving supplier barcode...");
+
+      final sku = await appState.resolveSupplierBarcode(supplierBarcode);
+      if (sku != null) {
+        setState(() {
+          _skuController.text = sku;
+        });
+        _qtyFocusNode.requestFocus();
+      } else {
+        appState.onShowMessage?.call(
+          "Supplier barcode '$supplierBarcode' not found.",
+          isError: true,
+        );
+      }
+    } else {
+      _qtyFocusNode.requestFocus();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
@@ -233,12 +270,7 @@ class _StocksInputState extends State<StocksInput> {
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.qr_code_scanner),
             ),
-            onSubmitted: (_) {
-              if (_skuController.text.contains('*')) {
-                _parseBarcode(_skuController.text);
-              }
-              _qtyFocusNode.requestFocus();
-            },
+            onSubmitted: (_) => _handleSkuSubmitted(),
           ),
           const SizedBox(height: 16),
           TextField(

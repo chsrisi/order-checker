@@ -411,12 +411,18 @@ def get_all_shopee_order_data(db: Session) -> Sequence[ShopeeOrder]:
 
 def resolve_standard_bom(sku: str, qty: int, db: Session) -> List[tuple[str, int]]:
     # Check if this sku has a BOMHeader
-    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
+    hdr = db.execute(
+        select(BOMHeader).filter(BOMHeader.sku == sku)
+    ).scalar_one_or_none()
     if not hdr:
         return [(sku, qty)]
 
     # Get details
-    details = db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
+    details = (
+        db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id))
+        .scalars()
+        .all()
+    )
     if not details:
         return [(sku, qty)]
 
@@ -434,20 +440,28 @@ def resolve_shopee_item_bom(
     item_sku: Optional[str],
     model_sku: Optional[str],
     qty: int,
-    db: Session
+    db: Session,
 ) -> List[tuple[str, int]]:
     # 1. Check Marketplace BOM
     # Shopee model_id or item_id (exclude 0 or None)
     shopee_id = model_id if (model_id and model_id != 0) else item_id
     if shopee_id:
         mp_hdr = db.execute(
-            select(BOMHeaderMarketplace).filter(BOMHeaderMarketplace.shopee_id == shopee_id)
+            select(BOMHeaderMarketplace).filter(
+                BOMHeaderMarketplace.shopee_id == shopee_id
+            )
         ).scalar_one_or_none()
 
         if mp_hdr:
-            mp_details = db.execute(
-                select(BOMDetailMarketplace).filter(BOMDetailMarketplace.shopee_id == shopee_id)
-            ).scalars().all()
+            mp_details = (
+                db.execute(
+                    select(BOMDetailMarketplace).filter(
+                        BOMDetailMarketplace.shopee_id == shopee_id
+                    )
+                )
+                .scalars()
+                .all()
+            )
             if mp_details:
                 resolved = []
                 for detail in mp_details:
@@ -459,11 +473,16 @@ def resolve_shopee_item_bom(
     # 2. Check Shopee Item Mapping (shopee_items table)
     mapped_sku = None
     if shopee_id:
-        shopee_item = db.execute(
-            select(ShopeeItem).filter(
-                (ShopeeItem.model_id == str(shopee_id)) | (ShopeeItem.item_id == str(shopee_id))
+        shopee_item = (
+            db.execute(
+                select(ShopeeItem).filter(
+                    (ShopeeItem.model_id == str(shopee_id))
+                    | (ShopeeItem.item_id == str(shopee_id))
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if shopee_item and shopee_item.sku:
             mapped_sku = shopee_item.sku
 
@@ -488,7 +507,7 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
             item_sku=item.item_sku,
             model_sku=item.model_sku,
             qty=item.model_quantity_purchased or 0,
-            db=db
+            db=db,
         )
         for comp_sku, comp_qty in components:
             resolved_items[comp_sku] = resolved_items.get(comp_sku, 0) + comp_qty
@@ -498,7 +517,9 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
     item_names = {}
     if sku_list:
         items_db = db.execute(
-            select(WarehouseItem.sku, WarehouseItem.item_name).filter(WarehouseItem.sku.in_(sku_list))
+            select(WarehouseItem.sku, WarehouseItem.item_name).filter(
+                WarehouseItem.sku.in_(sku_list)
+            )
         ).all()
         item_names = {row.sku: row.item_name for row in items_db}
 
@@ -515,7 +536,9 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
 
     recipient_address = None
     if order.recipient_address:
-        recipient_address = ShopeeOrderRecipientResponse.model_validate(order.recipient_address)
+        recipient_address = ShopeeOrderRecipientResponse.model_validate(
+            order.recipient_address
+        )
 
     info_list = []
     if order.info:
@@ -532,7 +555,7 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
         done_at=order.done_at,
         item_list=item_responses,
         recipient_address=recipient_address,
-        info=info_list
+        info=info_list,
     )
 
 
@@ -1770,8 +1793,31 @@ def find_warehouse_items(
     return results
 
 
+@app.get("/items/resolve-supplier-barcode", response_model=WarehouseItemResponse)
+def resolve_supplier_barcode(
+    barcode: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    logger.info(f"User {current_user.username} resolving supplier barcode: {barcode}")
+    result = (
+        db.execute(
+            select(WarehouseItem).filter(WarehouseItem.barcode_supplier.ilike(barcode))
+        )
+        .scalars()
+        .first()
+    )
+    if not result:
+        raise HTTPException(
+            status_code=404, detail=f"No item found for supplier barcode '{barcode}'"
+        )
+    return result
+
+
 # Stocks Endpoints ----
-def get_or_merge_stock(db: Session, sku: str, location: Optional[str]) -> Optional[Stock]:
+def get_or_merge_stock(
+    db: Session, sku: str, location: Optional[str]
+) -> Optional[Stock]:
     # Query all records matching sku and location
     if location:
         records = (
@@ -1786,7 +1832,7 @@ def get_or_merge_stock(db: Session, sku: str, location: Optional[str]) -> Option
             db.execute(
                 select(Stock).filter(
                     Stock.sku == sku,
-                    (Stock.location == None) | (Stock.location == ""),
+                    (Stock.location == None) | (Stock.location == ""),  # noqa: E711
                 )
             )
             .scalars()
@@ -1830,9 +1876,7 @@ async def set_stock(
     )
     if not item:
         logger.warning(f"Stock update failed: SKU {sku} not found")
-        raise HTTPException(
-            status_code=404, detail=f"Item with SKU {sku} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Item with SKU {sku} not found")
 
     if move_to is not None:
         # Move operation
@@ -1880,7 +1924,9 @@ async def set_stock(
                 db_stock.stock = stock_in.stock
             logger.info(f"Updated existing stock record for {sku} at {location}")
         else:
-            location_val = location if "location" in stock_in.model_fields_set else item.location
+            location_val = (
+                location if "location" in stock_in.model_fields_set else item.location
+            )
             db_stock = Stock(
                 sku=sku,
                 stock=stock_in.stock,
@@ -1912,7 +1958,6 @@ async def set_stock(
         location=db_stock_res.location,
         item_name=item.item_name,
     )
-
 
 
 # Shopee Orders Endpoints ----
@@ -2069,7 +2114,10 @@ async def get_shopee_orders(
             logger.info(
                 "[CACHE HIT] Cache valid inside lock block (parallel sync resolved). Avoiding dual sync."
             )
-            return [build_shopee_order_response(o, db) for o in get_all_shopee_order_data(db)]
+            return [
+                build_shopee_order_response(o, db)
+                for o in get_all_shopee_order_data(db)
+            ]
 
         now = int(time.time())
         time_from = now - (2 * 24 * 60 * 60)
