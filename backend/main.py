@@ -2113,13 +2113,17 @@ lection_query = (
 
 @app.get("/shopee/orders", response_model=List[ShopeeOrderResponse])
 async def get_shopee_orders(
+    refresh: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     start_time = time.perf_counter()
     logger.info(
-        f"[START] User '{current_user.username}' requested Shopee synchronization."
+        f"[START] User '{current_user.username}' requested Shopee synchronization. (refresh={refresh})"
     )
+
+    if refresh:
+        shopee_cache.invalidate()
 
     # 1. Fast path check
     if shopee_cache.is_valid():

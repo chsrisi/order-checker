@@ -621,8 +621,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> acquireOrder(String orderSn) async {
-    if (orderSn.isEmpty) return;
+  Future<int?> acquireOrder(String orderSn) async {
+    if (orderSn.isEmpty) return null;
 
     _isSaving = true;
     notifyListeners();
@@ -633,13 +633,12 @@ class AppState extends ChangeNotifier {
       );
       if (response?.statusCode == 200) {
         onShowMessage?.call("Order acquired successfully.");
+        return 200;
       } else if (response?.statusCode == 404) {
-        onShowMessage?.call(
-          "Order not found in database. Please ask admin to fetch orders.",
-          isError: true,
-        );
+        return 404;
       } else {
         onShowMessage?.call("Failed to acquire order.", isError: true);
+        return response?.statusCode;
       }
     } catch (e) {
       log("Acquire Order Error: $e");
@@ -647,9 +646,23 @@ class AppState extends ChangeNotifier {
         "An error occurred while acquiring order.",
         isError: true,
       );
+      return null;
     } finally {
       _isSaving = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> refreshShopeeOrders() async {
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/shopee/orders?refresh=true',
+        method: 'GET',
+      );
+      return response?.statusCode == 200;
+    } catch (e) {
+      log("Refresh Shopee Orders Error: $e");
+      return false;
     }
   }
 
