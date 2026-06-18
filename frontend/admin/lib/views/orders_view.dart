@@ -48,9 +48,19 @@ class _OngoingOrdersTab extends StatefulWidget {
 class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
   String? _adminHistoryFilterTag;
   final Set<int> _selectedItemIds = {};
+  final Set<String> _manuallyCheckedOrderSns = {};
+
+  final Set<String> _collapsedStatuses = {};
+  String? _selectedCategory;
+  String? _selectedCourier;
+  bool _hidePartialDone = false;
+
+  bool get _isFilterActive =>
+      _selectedCategory != null || _selectedCourier != null || _hidePartialDone;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final appState = Provider.of<AppState>(context);
     final orders = appState.orders;
     final outboundItems = appState.outboundItems;
@@ -85,6 +95,27 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _showFilterDialog(context, orders),
+                      icon: Icon(
+                        _isFilterActive
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_outlined,
+                        size: 18,
+                      ),
+                      label: const Text("Filter"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _isFilterActive
+                            ? theme.colorScheme.primary
+                            : Colors.grey.shade700,
+                        side: BorderSide(
+                          color: _isFilterActive
+                              ? theme.colorScheme.primary
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: appState.isLoading
                           ? null
@@ -108,6 +139,161 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
     );
   }
 
+  void _showFilterDialog(BuildContext context, List<ShopeeOrder> orders) {
+    final couriers = orders
+        .map((o) => o.shippingCarrier)
+        .whereType<String>()
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .toList();
+    couriers.sort();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final theme = Theme.of(context);
+            return AlertDialog(
+              title: const Text("Filter Ongoing Orders"),
+              content: SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Category",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text("All"),
+                          selected: _selectedCategory == null,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setDialogState(() => _selectedCategory = null);
+                            }
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text("Instant / Sameday"),
+                          selected: _selectedCategory == 'instant_sameday',
+                          onSelected: (selected) {
+                            if (selected) {
+                              setDialogState(
+                                () => _selectedCategory = 'instant_sameday',
+                              );
+                            }
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text("Reguler"),
+                          selected: _selectedCategory == 'reguler',
+                          onSelected: (selected) {
+                            if (selected) {
+                              setDialogState(
+                                () => _selectedCategory = 'reguler',
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Shipping Courier",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String?>(
+                      initialValue: _selectedCourier,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      hint: const Text("All Couriers"),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text("All Couriers"),
+                        ),
+                        ...couriers.map(
+                          (c) => DropdownMenuItem<String?>(
+                            value: c,
+                            child: Text(c),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() => _selectedCourier = val);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        "Hide Checked/Matched Orders",
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      value: _hidePartialDone,
+                      onChanged: (val) {
+                        setDialogState(() => _hidePartialDone = val ?? false);
+                      },
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      _selectedCategory = null;
+                      _selectedCourier = null;
+                      _hidePartialDone = false;
+                    });
+                    setState(() {});
+                    Navigator.pop(context);
+                  },
+                  child: const Text("Clear Filters"),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {});
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                  ),
+                  child: const Text("Apply"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildOrdersList(
     BuildContext context,
     AppState appState,
@@ -120,9 +306,66 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
       return const Center(child: Text("No ongoing orders found"));
     }
 
+    final filteredOrders = orders.where((o) {
+      // 1. Category filter
+      if (_selectedCategory != null) {
+        final carrier = (o.shippingCarrier ?? '').toLowerCase();
+        final isInstantSameday =
+            carrier.contains('instant') ||
+            carrier.contains('same day') ||
+            carrier.contains('sameday');
+        if (_selectedCategory == 'instant_sameday' && !isInstantSameday) {
+          return false;
+        }
+        if (_selectedCategory == 'reguler' && isInstantSameday) {
+          return false;
+        }
+      }
+
+      // 2. Shipping courier filter
+      if (_selectedCourier != null && o.shippingCarrier != _selectedCourier) {
+        return false;
+      }
+
+      // 3. Hide Checked/Matched filter
+      if (_hidePartialDone) {
+        final orderSnClean = o.orderSn.trim().toLowerCase();
+        final trackingNumbers = o.info
+            .map((i) => i.trackingNumber?.trim().toLowerCase())
+            .whereType<String>()
+            .toSet();
+
+        final hasOutboundMatch = appState.outboundItems.any((item) {
+          final contentClean = item.content.trim().toLowerCase();
+          return contentClean == orderSnClean ||
+              trackingNumbers.contains(contentClean);
+        });
+
+        final isChecked =
+            hasOutboundMatch || _manuallyCheckedOrderSns.contains(o.orderSn);
+        if (isChecked) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+
+    if (filteredOrders.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: appState.fetchAdminLabels,
+        child: const Center(
+          child: Text(
+            "No ongoing orders matching the filters",
+            style: TextStyle(color: Colors.grey, fontSize: 15),
+          ),
+        ),
+      );
+    }
+
     const statusOrder = ['READY_TO_SHIP', 'PROCESSED'];
     final Map<String, List<ShopeeOrder>> grouped = {};
-    for (final o in orders) {
+    for (final o in filteredOrders) {
       final statusKey = o.status == 'RETRY_SHIP' ? 'PROCESSED' : o.status;
       grouped.putIfAbsent(statusKey, () => []).add(o);
     }
@@ -140,9 +383,12 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
     final List<_OngoingListItem> listItems = [];
     for (final status in sortedStatuses) {
       final statusOrders = grouped[status]!;
+      final isCollapsed = _collapsedStatuses.contains(status);
       listItems.add(_OngoingHeaderItem(status, statusOrders.length));
-      for (final order in statusOrders) {
-        listItems.add(_OngoingOrderItem(order));
+      if (!isCollapsed) {
+        for (final order in statusOrders) {
+          listItems.add(_OngoingOrderItem(order));
+        }
       }
     }
 
@@ -154,7 +400,21 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
         itemBuilder: (context, index) {
           final item = listItems[index];
           if (item is _OngoingHeaderItem) {
-            return _OngoingStatusHeader(status: item.status, count: item.count);
+            final isCollapsed = _collapsedStatuses.contains(item.status);
+            return _OngoingStatusHeader(
+              status: item.status,
+              count: item.count,
+              isCollapsed: isCollapsed,
+              onTap: () {
+                setState(() {
+                  if (isCollapsed) {
+                    _collapsedStatuses.remove(item.status);
+                  } else {
+                    _collapsedStatuses.add(item.status);
+                  }
+                });
+              },
+            );
           }
 
           final order = (item as _OngoingOrderItem).order;
@@ -173,7 +433,9 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                   requirements
                       .where(
                         (e) =>
-                            (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
+                            (e.componentSku.isNotEmpty
+                                ? e.componentSku
+                                : 'unknown') ==
                             sku,
                       )
                       .map((e) => e.quantity)
@@ -225,19 +487,32 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                 trackingNumbers.contains(contentClean);
           });
 
+          final isChecked =
+              hasOutboundMatch ||
+              _manuallyCheckedOrderSns.contains(order.orderSn);
+
           return Card(
-            color: hasOutboundMatch
+            color: isChecked
                 ? Colors.green.shade50
                 : (isUnassigned ? Colors.grey.shade300 : null),
             margin: const EdgeInsets.only(bottom: 12),
             child: ExpansionTile(
               shape: Border.all(color: Colors.transparent),
               collapsedShape: Border.all(color: Colors.transparent),
-              leading: Icon(
-                Icons.pending_actions,
-                color: hasOutboundMatch
-                    ? Colors.green
-                    : (isUnassigned ? Colors.grey : Colors.orange),
+              leading: Checkbox(
+                value: isChecked,
+                onChanged: hasOutboundMatch
+                    ? null
+                    : (bool? val) {
+                        setState(() {
+                          if (val == true) {
+                            _manuallyCheckedOrderSns.add(order.orderSn);
+                          } else {
+                            _manuallyCheckedOrderSns.remove(order.orderSn);
+                          }
+                        });
+                      },
+                activeColor: Colors.green,
               ),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -326,7 +601,8 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                   final isSkuEmpty = sku.trim().isEmpty || sku == 'unknown';
                   final matchingItem = requirements.firstWhere(
                     (item) => (isSkuEmpty
-                        ? (item.componentSku == 'unknown' || item.componentSku.isEmpty)
+                        ? (item.componentSku == 'unknown' ||
+                              item.componentSku.isEmpty)
                         : (item.componentSku == sku)),
                     orElse: () => ShopeeOrderItemBOM(
                       componentSku: '',
@@ -335,9 +611,14 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                     ),
                   );
 
-                  final scanMatch = pickItemEntries.where(
-                    (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
-                  ).firstOrNull;
+                  final scanMatch = pickItemEntries
+                      .where(
+                        (e) =>
+                            e.sku == sku &&
+                            e.itemName != null &&
+                            e.itemName!.isNotEmpty,
+                      )
+                      .firstOrNull;
 
                   String displayName = matchingItem.componentName.isNotEmpty
                       ? matchingItem.componentName
@@ -377,10 +658,7 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
               .where((item) => item.tags.contains(_adminHistoryFilterTag))
               .toList();
 
-    final allTags = outboundItems
-        .expand((e) => e.tags)
-        .toSet()
-        .toList();
+    final allTags = outboundItems.expand((e) => e.tags).toSet().toList();
     allTags.sort();
 
     return Column(
@@ -467,24 +745,30 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                               ),
                               Wrap(
                                 spacing: 4,
-                                children: item.tags.map((tag) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.shade100,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    tag,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.red.shade900,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                )).toList(),
+                                children: item.tags
+                                    .map(
+                                      (tag) => Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          tag,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.red.shade900,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                             ],
                           ),
@@ -691,8 +975,15 @@ class _OngoingOrderItem extends _OngoingListItem {
 class _OngoingStatusHeader extends StatelessWidget {
   final String status;
   final int count;
+  final bool isCollapsed;
+  final VoidCallback onTap;
 
-  const _OngoingStatusHeader({required this.status, required this.count});
+  const _OngoingStatusHeader({
+    required this.status,
+    required this.count,
+    required this.isCollapsed,
+    required this.onTap,
+  });
 
   String _formatStatus(String status) {
     switch (status) {
@@ -701,10 +992,15 @@ class _OngoingStatusHeader extends StatelessWidget {
       case 'PROCESSED':
         return 'Processed';
       default:
-        return status.replaceAll('_', ' ').toLowerCase().split(' ').map((word) {
-          if (word.isEmpty) return '';
-          return word[0].toUpperCase() + word.substring(1);
-        }).join(' ');
+        return status
+            .replaceAll('_', ' ')
+            .toLowerCase()
+            .split(' ')
+            .map((word) {
+              if (word.isEmpty) return '';
+              return word[0].toUpperCase() + word.substring(1);
+            })
+            .join(' ');
     }
   }
 
@@ -728,44 +1024,56 @@ class _OngoingStatusHeader extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-      child: Row(
-        children: [
-          Icon(_getStatusIcon(status), color: headerColor, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            _formatStatus(status),
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: headerColor,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: headerColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: headerColor.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+          child: Row(
+            children: [
+              Icon(_getStatusIcon(status), color: headerColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                _formatStatus(status),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: headerColor,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: headerColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: headerColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: headerColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Divider(
+                  color: headerColor.withValues(alpha: 0.2),
+                  thickness: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                isCollapsed ? Icons.chevron_right : Icons.keyboard_arrow_down,
                 color: headerColor,
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Divider(
-              color: headerColor.withValues(alpha: 0.2),
-              thickness: 1,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1027,12 +1335,16 @@ class _HistoryOrdersTabState extends State<_HistoryOrdersTab> {
                                 padding: const EdgeInsets.only(left: 8.0),
                                 child: Wrap(
                                   spacing: 4,
-                                  children: o.tags.map((tag) => Chip(
-                                    label: Text(tag),
-                                    visualDensity: VisualDensity.compact,
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  )).toList(),
+                                  children: o.tags
+                                      .map(
+                                        (tag) => Chip(
+                                          label: Text(tag),
+                                          visualDensity: VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                      )
+                                      .toList(),
                                 ),
                               ),
                           ],
