@@ -346,6 +346,8 @@ class OrdersHistoryScreen extends StatefulWidget {
 }
 
 class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -381,6 +383,7 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final appState = Provider.of<AppState>(context, listen: false);
@@ -511,8 +514,68 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
 
+    final query = _searchController.text.toLowerCase().trim();
+    final filteredOrders = query.isEmpty
+        ? appState.orders
+        : appState.orders.where((order) {
+            if (order.orderSn.toLowerCase().contains(query)) return true;
+
+            final pickupCode = order.info
+                .firstWhere(
+                  (i) => i.pickupCode != null && i.pickupCode!.isNotEmpty,
+                  orElse: () => ShopeeOrderInfo(id: 0),
+                )
+                .pickupCode;
+            if (pickupCode != null && pickupCode.toLowerCase().contains(query)) {
+              return true;
+            }
+
+            final requirements = order.itemList;
+            for (final req in requirements) {
+              if (req.componentSku.toLowerCase().contains(query)) return true;
+              if (req.componentName.toLowerCase().contains(query)) return true;
+            }
+
+            final scanned = appState.pickItemEntries.where(
+              (e) => e.orderSn == order.orderSn,
+            );
+            for (final pie in scanned) {
+              if (pie.sku.toLowerCase().contains(query)) return true;
+              if (pie.itemName != null && pie.itemName!.toLowerCase().contains(query)) {
+                return true;
+              }
+            }
+
+            return false;
+          }).toList();
+
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: "Search orders (SN, pickup code, SKU, name, scans)...",
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                        });
+                      },
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            onChanged: (val) {
+              setState(() {});
+            },
+          ),
+        ),
         Expanded(
           child: RadioGroup<String>(
             groupValue: widget.activeOrder,
@@ -528,190 +591,201 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                     color: Colors.grey,
                   ),
                 ),
-                ...appState.orders.map((order) {
-                  final requirements = order.itemList;
-                  final scanned = appState.pickItemEntries.where(
-                    (e) => e.orderSn == order.orderSn,
-                  );
-                  final skuMap = Map.fromEntries(
-                    {
-                      ...requirements.map(
-                        (e) =>
-                            e.componentSku.isNotEmpty ? e.componentSku : 'unknown',
+                if (filteredOrders.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32.0),
+                    child: Center(
+                      child: Text(
+                        "No matching orders found",
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
                       ),
-                      ...scanned.map((e) => e.sku),
-                    }.map((sku) {
-                      final reqQty = requirements
-                          .where(
-                            (e) =>
-                                (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
-                                sku,
-                          )
-                          .map((e) => e.quantity)
-                          .firstOrNull ?? 0;
-                      final scanQty = scanned
-                          .where((e) => e.sku == sku)
-                          .fold(0, (sum, e) => sum + e.qty);
-                      return MapEntry(sku, (reqQty, scanQty));
-                    }),
-                  );
-                  final progress = skuMap.values.fold(0, (sum, e) {
-                    var (req, scan) = e;
-                    if (req == scan) return sum + 1;
-                    return sum;
-                  });
-                  Color? textColor;
-                  if (skuMap.values.any((pair) {
-                    var (req, scan) = pair;
-                    return req == 0;
-                  })) {
-                    textColor = Colors.red;
-                  } else if (progress == 0) {
-                    textColor = Colors.grey;
-                  } else if (progress < requirements.length) {
-                    textColor = Colors.orange;
-                  } else {
-                    textColor = Colors.green;
-                  }
-                  return Card(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0, top: 16.0),
-                          child: Radio<String>(
-                            toggleable: true,
-                            value: order.orderSn,
-                          ),
+                    ),
+                  )
+                else
+                  ...filteredOrders.map((order) {
+                    final requirements = order.itemList;
+                    final scanned = appState.pickItemEntries.where(
+                      (e) => e.orderSn == order.orderSn,
+                    );
+                    final skuMap = Map.fromEntries(
+                      {
+                        ...requirements.map(
+                          (e) =>
+                              e.componentSku.isNotEmpty ? e.componentSku : 'unknown',
                         ),
-                        Expanded(
-                          child: Builder(
-                            builder: (context) {
-                              final pickupCode = order.info
-                                  .firstWhere(
-                                    (i) =>
-                                        i.pickupCode != null &&
-                                        i.pickupCode!.isNotEmpty,
-                                    orElse: () => ShopeeOrderInfo(id: 0),
-                                  )
-                                  .pickupCode;
-                              final displaySn =
-                                  (pickupCode != null && pickupCode.isNotEmpty)
-                                  ? pickupCode
-                                  : order.orderSn;
-                              return ExpansionTile(
-                                shape: Border.all(color: Colors.transparent),
-                                collapsedShape: Border.all(
-                                  color: Colors.transparent,
-                                ),
-                                title: Text(
-                                  displaySn,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
+                        ...scanned.map((e) => e.sku),
+                      }.map((sku) {
+                        final reqQty = requirements
+                            .where(
+                              (e) =>
+                                  (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
+                                  sku,
+                            )
+                            .map((e) => e.quantity)
+                            .firstOrNull ?? 0;
+                        final scanQty = scanned
+                            .where((e) => e.sku == sku)
+                            .fold(0, (sum, e) => sum + e.qty);
+                        return MapEntry(sku, (reqQty, scanQty));
+                      }),
+                    );
+                    final progress = skuMap.values.fold(0, (sum, e) {
+                      var (req, scan) = e;
+                      if (req == scan) return sum + 1;
+                      return sum;
+                    });
+                    Color? textColor;
+                    if (skuMap.values.any((pair) {
+                      var (req, scan) = pair;
+                      return req == 0;
+                    })) {
+                      textColor = Colors.red;
+                    } else if (progress == 0) {
+                      textColor = Colors.grey;
+                    } else if (progress < requirements.length) {
+                      textColor = Colors.orange;
+                    } else {
+                      textColor = Colors.green;
+                    }
+                    return Card(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0, top: 16.0),
+                            child: Radio<String>(
+                              toggleable: true,
+                              value: order.orderSn,
+                            ),
+                          ),
+                          Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                final pickupCode = order.info
+                                    .firstWhere(
+                                      (i) =>
+                                          i.pickupCode != null &&
+                                          i.pickupCode!.isNotEmpty,
+                                      orElse: () => ShopeeOrderInfo(id: 0),
+                                    )
+                                    .pickupCode;
+                                final displaySn =
+                                    (pickupCode != null && pickupCode.isNotEmpty)
+                                    ? pickupCode
+                                    : order.orderSn;
+                                return ExpansionTile(
+                                  shape: Border.all(color: Colors.transparent),
+                                  collapsedShape: Border.all(
+                                    color: Colors.transparent,
                                   ),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Text("Progress: "),
+                                  title: Text(
+                                    displaySn,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Text("Progress: "),
+                                          Text(
+                                            "$progress/${requirements.length} SKUs",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: textColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (order.recipientAddress != null) ...[
+                                        const SizedBox(height: 4),
                                         Text(
-                                          "$progress/${requirements.length} SKUs",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: textColor,
+                                          "Recipient: ${order.recipientAddress!.name ?? 'N/A'} (${order.recipientAddress!.city ?? 'N/A'})",
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
                                           ),
                                         ),
                                       ],
-                                    ),
-                                    if (order.recipientAddress != null) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        "Recipient: ${order.recipientAddress!.name ?? 'N/A'} (${order.recipientAddress!.city ?? 'N/A'})",
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
+                                    ],
+                                  ),
+                                  onExpansionChanged: (expanded) {
+                                    if (expanded) {
+                                      widget.setActiveOrder(order.orderSn);
+                                    } else {
+                                      widget.setActiveOrder(null);
+                                    }
+                                  },
+                                  children: skuMap.entries.map((entry) {
+                                    final sku = entry.key;
+                                    final (reqQty, scanQty) = entry.value;
+
+                                    Color? textColor;
+                                    if (scanQty == 0) {
+                                      textColor = Colors.grey;
+                                    } else if (scanQty < reqQty) {
+                                      textColor = Colors.orange;
+                                    } else if (scanQty == reqQty) {
+                                      textColor = Colors.green;
+                                    } else {
+                                      textColor = Colors.red;
+                                    }
+
+                                     final isSkuEmpty =
+                                        sku.trim().isEmpty || sku == 'unknown';
+                                    final matchingItem = requirements.firstWhere(
+                                      (item) => (isSkuEmpty
+                                          ? (item.componentSku == 'unknown' ||
+                                                item.componentSku.isEmpty)
+                                          : (item.componentSku == sku)),
+                                      orElse: () => ShopeeOrderItemBOM(
+                                        componentSku: '',
+                                        componentName: '',
+                                        quantity: 0,
+                                      ),
+                                    );
+
+                                    final scanMatch = scanned.where(
+                                      (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
+                                    ).firstOrNull;
+
+                                    String displayName = matchingItem.componentName.isNotEmpty
+                                        ? matchingItem.componentName
+                                        : (scanMatch?.itemName ?? 'Unknown Item');
+
+                                    final skuPart = isSkuEmpty ? "No SKU" : sku;
+                                    final displaySubtext = skuPart;
+
+                                    return ListTile(
+                                      title: Text(displayName),
+                                      subtitle: Text(displaySubtext),
+                                      trailing: Text(
+                                        "$scanQty / $reqQty",
+                                        style: TextStyle(
+                                          color: textColor,
+                                          fontWeight: FontWeight.bold,
                                         ),
                                       ),
-                                    ],
-                                  ],
-                                ),
-                                onExpansionChanged: (expanded) {
-                                  if (expanded) {
-                                    widget.setActiveOrder(order.orderSn);
-                                  } else {
-                                    widget.setActiveOrder(null);
-                                  }
-                                },
-                                children: skuMap.entries.map((entry) {
-                                  final sku = entry.key;
-                                  final (reqQty, scanQty) = entry.value;
-
-                                  Color? textColor;
-                                  if (scanQty == 0) {
-                                    textColor = Colors.grey;
-                                  } else if (scanQty < reqQty) {
-                                    textColor = Colors.orange;
-                                  } else if (scanQty == reqQty) {
-                                    textColor = Colors.green;
-                                  } else {
-                                    textColor = Colors.red;
-                                  }
-
-                                   final isSkuEmpty =
-                                      sku.trim().isEmpty || sku == 'unknown';
-                                  final matchingItem = requirements.firstWhere(
-                                    (item) => (isSkuEmpty
-                                        ? (item.componentSku == 'unknown' ||
-                                              item.componentSku.isEmpty)
-                                        : (item.componentSku == sku)),
-                                    orElse: () => ShopeeOrderItemBOM(
-                                      componentSku: '',
-                                      componentName: '',
-                                      quantity: 0,
-                                    ),
-                                  );
-
-                                  final scanMatch = scanned.where(
-                                    (e) => e.sku == sku && e.itemName != null && e.itemName!.isNotEmpty,
-                                  ).firstOrNull;
-
-                                  String displayName = matchingItem.componentName.isNotEmpty
-                                      ? matchingItem.componentName
-                                      : (scanMatch?.itemName ?? 'Unknown Item');
-
-                                  final skuPart = isSkuEmpty ? "No SKU" : sku;
-                                  final displaySubtext = skuPart;
-
-                                  return ListTile(
-                                    title: Text(displayName),
-                                    subtitle: Text(displaySubtext),
-                                    trailing: Text(
-                                      "$scanQty / $reqQty",
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontWeight: FontWeight.bold,
+                                      onLongPress: () => _showUnassignDialog(
+                                        context,
+                                        appState,
+                                        order.orderSn,
+                                        sku,
+                                        scanQty,
+                                        reqQty,
                                       ),
-                                    ),
-                                    onLongPress: () => _showUnassignDialog(
-                                      context,
-                                      appState,
-                                      order.orderSn,
-                                      sku,
-                                      scanQty,
-                                      reqQty,
-                                    ),
-                                  );
-                                }).toList(),
-                              );
-                            },
+                                    );
+                                  }).toList(),
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                        ],
+                      ),
+                    );
+                  }),
                 const SizedBox(height: 16),
                 const Text(
                   "Unknown / Split Scans",
