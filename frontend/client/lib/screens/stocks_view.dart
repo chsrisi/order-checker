@@ -225,14 +225,9 @@ class _StocksInputState extends State<StocksInput> {
       return;
     }
 
-    final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
-    final match = regExp.firstMatch(barcode);
-    if (match != null) {
-      final type = match.group(2);
-      final id = match.group(3);
-      final supplierBarcode = "$type-$id";
-
-      final appState = Provider.of<AppState>(context, listen: false);
+    final appState = Provider.of<AppState>(context, listen: false);
+    final supplierBarcode = appState.parseSupplierBarcode(barcode);
+    if (supplierBarcode != null) {
       appState.onShowMessage?.call("Resolving supplier barcode...");
 
       final sku = await appState.resolveSupplierBarcode(supplierBarcode);
@@ -248,6 +243,14 @@ class _StocksInputState extends State<StocksInput> {
         );
       }
     } else {
+      final lines = barcode.split('\n');
+      final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
+      final cleaned = firstLine.contains(' ') ? firstLine.split(' ')[0].trim() : firstLine;
+      if (cleaned.isNotEmpty && cleaned != barcode) {
+        setState(() {
+          _skuController.text = cleaned;
+        });
+      }
       _qtyFocusNode.requestFocus();
     }
   }

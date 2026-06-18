@@ -89,13 +89,8 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
       return;
     }
 
-    final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
-    final match = regExp.firstMatch(barcode);
-    if (match != null) {
-      final type = match.group(2);
-      final id = match.group(3);
-      final supplierBarcode = "$type-$id";
-
+    final supplierBarcode = appState.parseSupplierBarcode(barcode);
+    if (supplierBarcode != null) {
       appState.onShowMessage?.call("Resolving supplier barcode...");
 
       final sku = await appState.resolveSupplierBarcode(supplierBarcode);
@@ -111,6 +106,14 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         );
       }
     } else {
+      final lines = barcode.split('\n');
+      final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
+      final cleaned = firstLine.contains(' ') ? firstLine.split(' ')[0].trim() : firstLine;
+      if (cleaned.isNotEmpty && cleaned != barcode) {
+        setState(() {
+          _scanController.text = cleaned;
+        });
+      }
       _qtyFocusNode.requestFocus();
     }
   }
@@ -137,13 +140,8 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         }
       }
 
-      final regExp = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
-      final match = regExp.firstMatch(sku);
-      if (match != null) {
-        final type = match.group(2);
-        final id = match.group(3);
-        final supplierBarcode = "$type-$id";
-
+      final supplierBarcode = appState.parseSupplierBarcode(sku);
+      if (supplierBarcode != null) {
         final resolvedSku = await appState.resolveSupplierBarcode(supplierBarcode);
         if (resolvedSku != null) {
           sku = resolvedSku;
@@ -154,6 +152,10 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
           );
           return;
         }
+      } else {
+        final lines = sku.split('\n');
+        final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
+        sku = firstLine.contains(' ') ? firstLine.split(' ')[0].trim() : firstLine;
       }
 
       final qtyStr = _orderQtyController.text.trim();

@@ -1799,17 +1799,50 @@ def resolve_supplier_barcode(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    import re
     logger.info(f"User {current_user.username} resolving supplier barcode: {barcode}")
+    
+    if not barcode:
+        raise HTTPException(status_code=400, detail="Barcode cannot be empty")
+        
+    lines = [line.strip() for line in barcode.splitlines() if line.strip()]
+    if not lines:
+        raise HTTPException(status_code=400, detail="Barcode cannot be empty")
+    first_line = lines[0]
+    cleaned = first_line.split()[0] if first_line.split() else ""
+    
+    parsed_barcode = cleaned
+    match_3 = re.match(r"^([^-]+)-([^-]+)-([^-]+)$", cleaned)
+    if match_3:
+        parsed_barcode = f"{match_3.group(2)}-{match_3.group(3)}"
+    else:
+        match_2 = re.match(r"^([^-]+)-([^-]+)$", cleaned)
+        if match_2:
+            parsed_barcode = match_2.group(2)
+            
+    logger.info(f"Parsed supplier barcode for resolution: '{parsed_barcode}' (cleaned input: '{cleaned}')")
+    
     result = (
         db.execute(
-            select(WarehouseItem).filter(WarehouseItem.barcode_supplier.ilike(barcode))
+            select(WarehouseItem).filter(WarehouseItem.barcode_supplier.ilike(parsed_barcode))
         )
         .scalars()
         .first()
     )
+    
+    # Fallback to direct SKU query if no supplier barcode match found
+    if not result and cleaned:
+        result = (
+            db.execute(
+                select(WarehouseItem).filter(WarehouseItem.sku.ilike(cleaned))
+            )
+            .scalars()
+            .first()
+        )
+        
     if not result:
         raise HTTPException(
-            status_code=404, detail=f"No item found for supplier barcode '{barcode}'"
+            status_code=404, detail=f"No item found for supplier barcode '{parsed_barcode}'"
         )
     return result
 
