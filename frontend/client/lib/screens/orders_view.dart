@@ -89,11 +89,10 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
       return;
     }
 
-    final supplierBarcode = appState.parseSupplierBarcode(barcode);
-    if (supplierBarcode != null) {
+    if (barcode.contains('-')) {
       appState.onShowMessage?.call("Resolving supplier barcode...");
 
-      final sku = await appState.resolveSupplierBarcode(supplierBarcode);
+      final sku = await appState.resolveSupplierBarcode(barcode);
       if (sku != null) {
         setState(() {
           _scanController.text = sku;
@@ -101,7 +100,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         _qtyFocusNode.requestFocus();
       } else {
         appState.onShowMessage?.call(
-          "Supplier barcode '$supplierBarcode' not found.",
+          "Supplier barcode '$barcode' not found.",
           isError: true,
         );
       }
@@ -132,7 +131,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         _scanFocusNode.requestFocus();
         return;
       }
-      
+
       final statusCode = await appState.acquireOrder(orderSn);
       if (statusCode == 404) {
         if (!mounted) return;
@@ -204,16 +203,13 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         }
       }
 
-      final supplierBarcode = appState.parseSupplierBarcode(sku);
-      if (supplierBarcode != null) {
-        final resolvedSku = await appState.resolveSupplierBarcode(
-          supplierBarcode,
-        );
+      if (sku.contains('-')) {
+        final resolvedSku = await appState.resolveSupplierBarcode(sku);
         if (resolvedSku != null) {
           sku = resolvedSku;
         } else {
           appState.onShowMessage?.call(
-            "Supplier barcode '$supplierBarcode' not found.",
+            "Supplier barcode '$sku' not found.",
             isError: true,
           );
           return;
