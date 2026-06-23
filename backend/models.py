@@ -477,6 +477,7 @@ class ShopeeOrderItemBOMResponse(BaseModel):
     component_sku: str
     component_name: Optional[str] = None
     quantity: int
+    location: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

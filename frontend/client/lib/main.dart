@@ -46,12 +46,12 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   // 0: Orders/Inbound, 1: Orders/Outbound, 2: Finder, 3: Stocks, 4: User
-  int _navIndex = 0;
   int _subIndex = 0; // 0: Input, 1: History
 
   void _navigateTo(int index, {VoidCallback? onFetch}) {
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.setNavIndex(index);
     setState(() {
-      _navIndex = index;
       _subIndex = 0;
     });
     onFetch?.call();
@@ -60,6 +60,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final navIndex = appState.navIndex;
 
     if (!appState.isLoggedIn) {
       return Scaffold(
@@ -71,7 +72,7 @@ class _MyHomePageState extends State<MyHomePage> {
     Widget body;
     String appBarTitle = widget.title;
 
-    switch (_navIndex) {
+    switch (navIndex) {
       case 0:
         appBarTitle = "Orders · Inbound";
         body = OrdersView(subIndex: _subIndex);
@@ -97,7 +98,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     // Sub-tabs apply to Inbound (0), Outbound (1), and Stocks (3)
-    final bool hasSubTabs = _navIndex == 0 || _navIndex == 1 || _navIndex == 3;
+    final bool hasSubTabs = navIndex == 0 || navIndex == 1 || navIndex == 3;
 
     return Scaffold(
       appBar: AppBar(
@@ -135,13 +136,13 @@ class _MyHomePageState extends State<MyHomePage> {
             ExpansionTile(
               leading: const Icon(Icons.shopping_basket),
               title: const Text('Orders'),
-              initiallyExpanded: _navIndex == 0 || _navIndex == 1,
+              initiallyExpanded: navIndex == 0 || navIndex == 1,
               children: [
                 ListTile(
                   contentPadding: const EdgeInsets.only(left: 56),
                   leading: const Icon(Icons.inbox, size: 20),
                   title: const Text('Inbound'),
-                  selected: _navIndex == 0,
+                  selected: navIndex == 0,
                   onTap: () {
                     _navigateTo(0, onFetch: appState.fetchOrdersData);
                     Navigator.pop(context);
@@ -151,7 +152,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   contentPadding: const EdgeInsets.only(left: 56),
                   leading: const Icon(Icons.outbox, size: 20),
                   title: const Text('Outbound'),
-                  selected: _navIndex == 1,
+                  selected: navIndex == 1,
                   onTap: () {
                     _navigateTo(1, onFetch: appState.fetchHistory);
                     Navigator.pop(context);
@@ -162,7 +163,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ListTile(
               leading: const Icon(Icons.search),
               title: const Text('Finder'),
-              selected: _navIndex == 2,
+              selected: navIndex == 2,
               onTap: () {
                 _navigateTo(2);
                 Navigator.pop(context);
@@ -171,7 +172,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ListTile(
               leading: const Icon(Icons.inventory),
               title: const Text('Stocks'),
-              selected: _navIndex == 3,
+              selected: navIndex == 3,
               onTap: () {
                 _navigateTo(3, onFetch: appState.fetchStocks);
                 Navigator.pop(context);
@@ -182,7 +183,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ListTile(
               leading: const Icon(Icons.person),
               title: const Text('Account'),
-              selected: _navIndex == 4,
+              selected: navIndex == 4,
               onTap: () {
                 _navigateTo(4);
                 Navigator.pop(context);

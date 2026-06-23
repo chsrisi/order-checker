@@ -122,6 +122,7 @@ class AppState extends ChangeNotifier {
   static const Duration _cacheTtl = Duration(minutes: 5);
   bool _isLoggedIn = false;
   String _username = '';
+  int _navIndex = 0;
 
   void Function(String message, {bool isError, bool isAlert})? onShowMessage;
 
@@ -150,6 +151,28 @@ class AppState extends ChangeNotifier {
   String get username => _username;
   bool get wsConnectionFailed => _wsConnectionFailed;
   String get baseUrl => _baseUrl;
+  int get navIndex => _navIndex;
+
+  void setNavIndex(int index) {
+    _navIndex = index;
+    notifyListeners();
+  }
+
+  void loadCurrentViewData() {
+    switch (_navIndex) {
+      case 0:
+        fetchOrdersData();
+        break;
+      case 1:
+        fetchHistory();
+        break;
+      case 3:
+        fetchStocks();
+        break;
+      default:
+        break;
+    }
+  }
 
   void initialize() {
     SecurityService.init(_baseUrl);
@@ -307,12 +330,12 @@ class AppState extends ChangeNotifier {
       if (newToken != null) {
         _isLoggedIn = true;
         initWebSocket();
-        fetchHistory();
+        loadCurrentViewData();
       }
     } else {
       _isLoggedIn = true;
       initWebSocket();
-      fetchHistory();
+      loadCurrentViewData();
     }
     notifyListeners();
   }
@@ -512,7 +535,7 @@ class AppState extends ChangeNotifier {
 
         _isLoggedIn = true;
         _username = username;
-        fetchHistory();
+        loadCurrentViewData();
         notifyListeners();
         return true;
       } else {
@@ -552,7 +575,7 @@ class AppState extends ChangeNotifier {
 
         _isLoggedIn = true;
         _username = username;
-        fetchHistory();
+        loadCurrentViewData();
         notifyListeners();
         return true;
       } else {

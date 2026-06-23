@@ -512,25 +512,28 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
         for comp_sku, comp_qty in components:
             resolved_items[comp_sku] = resolved_items.get(comp_sku, 0) + comp_qty
 
-    # Fetch names for component SKUs
+    # Fetch names and locations for component SKUs
     sku_list = list(resolved_items.keys())
-    item_names = {}
+    item_details = {}
     if sku_list:
+        from sqlalchemy.orm import selectinload
         items_db = db.execute(
-            select(WarehouseItem.sku, WarehouseItem.item_name).filter(
-                WarehouseItem.sku.in_(sku_list)
-            )
-        ).all()
-        item_names = {row.sku: row.item_name for row in items_db}
+            select(WarehouseItem)
+            .options(selectinload(WarehouseItem.stocks))
+            .filter(WarehouseItem.sku.in_(sku_list))
+        ).scalars().all()
+        item_details = {item.sku: (item.item_name, item.location) for item in items_db}
 
     # Construct ShopeeOrderItemBOMResponse list
     item_responses = []
     for comp_sku, comp_qty in resolved_items.items():
+        name, location = item_details.get(comp_sku, (None, None))
         item_responses.append(
             ShopeeOrderItemBOMResponse(
                 component_sku=comp_sku,
-                component_name=item_names.get(comp_sku) or comp_sku,
+                component_name=name or comp_sku,
                 quantity=comp_qty,
+                location=location,
             )
         )
 
