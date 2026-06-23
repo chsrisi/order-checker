@@ -57,19 +57,6 @@ class _ItemFinderScreenState extends State<ItemFinderScreen> {
     super.dispose();
   }
 
-  void _parseBarcode(String barcode) {
-    // Format: AAA_AAA*XX*Pcs***DEMO
-    // Interested in AAA_AAA (idbrng)
-    if (barcode.contains('*')) {
-      final parts = barcode.split('*');
-      if (parts.isNotEmpty) {
-        setState(() {
-          _searchController.text = parts[0];
-        });
-      }
-    }
-  }
-
   void _handleSearch(AppState appState) {
     appState.searchItems(_searchController.text.trim());
   }
@@ -96,9 +83,6 @@ class _ItemFinderScreenState extends State<ItemFinderScreen> {
               ),
             ),
             onSubmitted: (_) {
-              if (_searchController.text.contains('*')) {
-                _parseBarcode(_searchController.text);
-              }
               _handleSearch(appState);
             },
           ),

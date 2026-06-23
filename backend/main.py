@@ -1776,6 +1776,13 @@ def find_warehouse_items(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(f"User {current_user.username} searching for: {query}")
+    
+    # Try to resolve barcode first
+    resolved_item = resolve_barcode_to_item(query, db)
+    if resolved_item:
+        logger.debug(f"Resolved barcode '{query}' to item SKU '{resolved_item.sku}'")
+        return [resolved_item]
+
     search = f"%{query}%"
     results = (
         db.execute(
@@ -1793,62 +1800,73 @@ def find_warehouse_items(
     return results
 
 
-@app.get("/items/resolve-supplier-barcode", response_model=WarehouseItemResponse)
-def resolve_supplier_barcode(
-    barcode: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem]:
     import re
-
-    logger.info(f"User {current_user.username} resolving supplier barcode: {barcode}")
-
     if not barcode:
-        raise HTTPException(status_code=400, detail="Barcode cannot be empty")
+        return None
 
+    # Get the first non-empty line
     lines = [line.strip() for line in barcode.splitlines() if line.strip()]
     if not lines:
-        raise HTTPException(status_code=400, detail="Barcode cannot be empty")
+        return None
     first_line = lines[0]
-    cleaned = first_line.split()[0] if first_line.split() else ""
+    
+    # Get the first token
+    tokens = first_line.split()
+    if not tokens:
+        return None
+    token = tokens[0]
 
-    parsed_barcode = cleaned
-    match_3 = re.match(r"^([^-]+)-([^-]+)-([^-]+)$", cleaned)
-    if match_3:
-        parsed_barcode = f"{match_3.group(2)}-{match_3.group(3)}"
+    # Rule (a): {sku}**<some other meta * delimited>; extract sku, sku is the real sku in warehouse.items.
+    # this sku is exclusively XNN_NNN, where x is alphabet and n is numeric
+    sku_candidate = None
+    if '*' in token:
+        parts = token.split('*')
+        sku_candidate = parts[0]
     else:
-        match_2 = re.match(r"^([^-]+)-([^-]+)$", cleaned)
-        if match_2:
-            parsed_barcode = match_2.group(2)
+        # Check if the whole token matches XNN_NNN format directly as a candidate SKU
+        sku_candidate = token
 
-    logger.info(
-        f"Parsed supplier barcode for resolution: '{parsed_barcode}' (cleaned input: '{cleaned}')"
-    )
+    # Check if sku_candidate matches exclusively XNN_NNN format
+    # XNN_NNN means: alphabet character, followed by two digits, followed by underscore, followed by three digits.
+    if sku_candidate and re.match(r"^[a-zA-Z]\d{2}_\d{3}$", sku_candidate):
+        item = db.execute(
+            select(WarehouseItem).filter(WarehouseItem.sku.ilike(sku_candidate))
+        ).scalars().first()
+        if item:
+            return item
 
-    result = (
-        db.execute(
-            select(WarehouseItem).filter(
-                WarehouseItem.barcode_supplier.ilike(parsed_barcode)
-            )
-        )
-        .scalars()
-        .first()
-    )
+    # If it was not resolved as SKU rule (a), look for supplier barcode matches
+    supplier_barcode = None
+    
+    # Rule (f): regex x+-x+-x+-x+ where x is alphanum
+    if re.match(r"^[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+$", token):
+        supplier_barcode = token
+    else:
+        # Check number of parts separated by hyphens
+        parts = token.split('-')
+        if len(parts) == 3:
+            # Rule (c): {batch}-{type}-{id}; extract {type}-{id}
+            supplier_barcode = f"{parts[1]}-{parts[2]}"
+        elif len(parts) == 2:
+            # Rule (b): {batch}-{id}; extract id
+            supplier_barcode = parts[1]
+        else:
+            # Rule (e): {id}; extract id (the whole token)
+            supplier_barcode = token
 
-    # Fallback to direct SKU query if no supplier barcode match found
-    if not result and cleaned:
-        result = (
-            db.execute(select(WarehouseItem).filter(WarehouseItem.sku.ilike(cleaned)))
-            .scalars()
-            .first()
-        )
+    if supplier_barcode:
+        item = db.execute(
+            select(WarehouseItem).filter(WarehouseItem.barcode_supplier.ilike(supplier_barcode))
+        ).scalars().first()
+        if item:
+            return item
 
-    if not result:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No item found for supplier barcode '{parsed_barcode}'",
-        )
-    return result
+    # Fallback to direct SKU query using the cleaned token if no match found
+    item = db.execute(
+        select(WarehouseItem).filter(WarehouseItem.sku.ilike(token))
+    ).scalars().first()
+    return item
 
 
 # Stocks Endpoints ----
@@ -1897,23 +1915,19 @@ async def set_stock(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sku = stock_in.sku
+    # Resolve barcode to a warehouse item first
+    item = resolve_barcode_to_item(stock_in.sku, db)
+    if not item:
+        logger.warning(f"Stock update failed: SKU/barcode {stock_in.sku} not found")
+        raise HTTPException(status_code=404, detail=f"Item with SKU or barcode '{stock_in.sku}' not found")
+    sku = item.sku
+
     location = stock_in.location if stock_in.location != "" else None
     move_to = stock_in.move_to if stock_in.move_to != "" else None
 
     logger.info(
         f"User {current_user.username} {stock_in.mode} stock for {sku} value {stock_in.stock} at {location} (move_to: {move_to})"
     )
-
-    # Verify item exists in warehouse_items
-    item = (
-        db.execute(select(WarehouseItem).filter(WarehouseItem.sku == sku))
-        .scalars()
-        .first()
-    )
-    if not item:
-        logger.warning(f"Stock update failed: SKU {sku} not found")
-        raise HTTPException(status_code=404, detail=f"Item with SKU {sku} not found")
 
     if move_to is not None:
         # Move operation
@@ -2462,11 +2476,20 @@ async def create_pie(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Resolve sku/barcode to a warehouse item first
+    item = resolve_barcode_to_item(entry_in.sku, db)
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Item with SKU or barcode '{entry_in.sku}' not found",
+        )
+    sku = item.sku
+
     # Using the merge logic
     entry = merge_or_create_pie(
         db,
         current_user.username,
-        entry_in.sku,
+        sku,
         entry_in.qty,
         order_sn=entry_in.order_sn,
     )

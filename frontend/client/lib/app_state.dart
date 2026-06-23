@@ -176,7 +176,11 @@ class AppState extends ChangeNotifier {
       final response = await fetchWebSocketTicket();
       if (response == null || response.statusCode >= 500) {
         _isConnecting = false;
-        _reconnectWebSocket(error: response != null ? "Status ${response.statusCode}" : "Connection error");
+        _reconnectWebSocket(
+          error: response != null
+              ? "Status ${response.statusCode}"
+              : "Connection error",
+        );
         return;
       }
       if (response.statusCode != 200) {
@@ -815,8 +819,8 @@ class AppState extends ChangeNotifier {
         'sku': idbrng,
         'stock': qty,
         'mode': mode,
-        if (location != null) 'location': location,
-        if (moveTo != null) 'move_to': moveTo,
+        'location': ?location,
+        'move_to': ?moveTo,
       };
       final response = await makeRequest(
         '$_baseUrl/stocks',
@@ -835,54 +839,4 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String? parseSupplierBarcode(String input) {
-    final lines = input.split('\n');
-    if (lines.isEmpty) return null;
-    var firstLine = lines[0].trim();
-    if (firstLine.isEmpty) return null;
-
-    if (firstLine.contains(' ')) {
-      firstLine = firstLine.split(' ')[0].trim();
-    }
-
-    final cleaned = firstLine;
-
-    // 3 segments: {batch}-{type}-{id} where id is numeric
-    final regExp3 = RegExp(r'^([a-zA-Z0-9]+)-([a-zA-Z0-9]+)-([0-9]+)$');
-    final match3 = regExp3.firstMatch(cleaned);
-    if (match3 != null) {
-      final type = match3.group(2);
-      final id = match3.group(3);
-      if (type != null && id != null) {
-        return "$type-$id";
-      }
-    }
-
-    // 2 segments: {batch}-{id} where id is numeric
-    final regExp2 = RegExp(r'^([a-zA-Z0-9]+)-([0-9]+)$');
-    final match2 = regExp2.firstMatch(cleaned);
-    if (match2 != null) {
-      final id = match2.group(2);
-      if (id != null) {
-        return id;
-      }
-    }
-
-    return null;
-  }
-
-  Future<String?> resolveSupplierBarcode(String barcode) async {
-    try {
-      final response = await makeRequest(
-        '$_baseUrl/items/resolve-supplier-barcode?barcode=${Uri.encodeComponent(barcode)}',
-      );
-      if (response?.statusCode == 200) {
-        final data = jsonDecode(response!.body);
-        return data['sku'] as String?;
-      }
-    } catch (e) {
-      log("Resolve Barcode Error: $e");
-    }
-    return null;
-  }
 }

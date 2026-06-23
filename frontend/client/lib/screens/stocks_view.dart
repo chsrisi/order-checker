@@ -167,19 +167,6 @@ class _StocksInputState extends State<StocksInput> {
     }
   }
 
-  void _parseBarcode(String barcode) {
-    // Format: AAA_AAA*XX*Pcs***DEMO
-    // Interested in AAA_AAA (idbrng)
-    if (barcode.contains('*')) {
-      final parts = barcode.split('*');
-      if (parts.isNotEmpty) {
-        setState(() {
-          _skuController.text = parts[0];
-        });
-      }
-    }
-  }
-
   void _submit(String mode) {
     final appState = Provider.of<AppState>(context, listen: false);
     final sku = _skuController.text.trim();
@@ -218,41 +205,7 @@ class _StocksInputState extends State<StocksInput> {
   Future<void> _handleSkuSubmitted() async {
     final barcode = _skuController.text.trim();
     if (barcode.isEmpty) return;
-
-    if (barcode.contains('*')) {
-      _parseBarcode(barcode);
-      _qtyFocusNode.requestFocus();
-      return;
-    }
-
-    final appState = Provider.of<AppState>(context, listen: false);
-    final supplierBarcode = appState.parseSupplierBarcode(barcode);
-    if (supplierBarcode != null) {
-      appState.onShowMessage?.call("Resolving supplier barcode...");
-
-      final sku = await appState.resolveSupplierBarcode(supplierBarcode);
-      if (sku != null) {
-        setState(() {
-          _skuController.text = sku;
-        });
-        _qtyFocusNode.requestFocus();
-      } else {
-        appState.onShowMessage?.call(
-          "Supplier barcode '$supplierBarcode' not found.",
-          isError: true,
-        );
-      }
-    } else {
-      final lines = barcode.split('\n');
-      final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
-      final cleaned = firstLine.contains(' ') ? firstLine.split(' ')[0].trim() : firstLine;
-      if (cleaned.isNotEmpty && cleaned != barcode) {
-        setState(() {
-          _skuController.text = cleaned;
-        });
-      }
-      _qtyFocusNode.requestFocus();
-    }
+    _qtyFocusNode.requestFocus();
   }
 
   @override

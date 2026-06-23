@@ -68,55 +68,10 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
     super.dispose();
   }
 
-  void _parseBarcode(String barcode) {
-    if (barcode.contains('*')) {
-      final parts = barcode.split('*');
-      if (parts.isNotEmpty) {
-        setState(() {
-          _scanController.text = parts[0];
-        });
-      }
-    }
-  }
-
   Future<void> _handleSkuSubmitted(AppState appState) async {
     final barcode = _scanController.text.trim();
     if (barcode.isEmpty) return;
-
-    if (barcode.contains('*')) {
-      _parseBarcode(barcode);
-      _qtyFocusNode.requestFocus();
-      return;
-    }
-
-    if (barcode.contains('-')) {
-      appState.onShowMessage?.call("Resolving supplier barcode...");
-
-      final sku = await appState.resolveSupplierBarcode(barcode);
-      if (sku != null) {
-        setState(() {
-          _scanController.text = sku;
-        });
-        _qtyFocusNode.requestFocus();
-      } else {
-        appState.onShowMessage?.call(
-          "Supplier barcode '$barcode' not found.",
-          isError: true,
-        );
-      }
-    } else {
-      final lines = barcode.split('\n');
-      final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
-      final cleaned = firstLine.contains(' ')
-          ? firstLine.split(' ')[0].trim()
-          : firstLine;
-      if (cleaned.isNotEmpty && cleaned != barcode) {
-        setState(() {
-          _scanController.text = cleaned;
-        });
-      }
-      _qtyFocusNode.requestFocus();
-    }
+    _qtyFocusNode.requestFocus();
   }
 
   Future<void> _handleSubmit(AppState appState) async {
@@ -195,33 +150,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
       }
       return;
     } else {
-      var sku = _scanController.text.trim();
-      if (sku.contains('*')) {
-        final parts = sku.split('*');
-        if (parts.isNotEmpty) {
-          sku = parts[0];
-        }
-      }
-
-      if (sku.contains('-')) {
-        final resolvedSku = await appState.resolveSupplierBarcode(sku);
-        if (resolvedSku != null) {
-          sku = resolvedSku;
-        } else {
-          appState.onShowMessage?.call(
-            "Supplier barcode '$sku' not found.",
-            isError: true,
-          );
-          return;
-        }
-      } else {
-        final lines = sku.split('\n');
-        final firstLine = lines.isNotEmpty ? lines[0].trim() : '';
-        sku = firstLine.contains(' ')
-            ? firstLine.split(' ')[0].trim()
-            : firstLine;
-      }
-
+      final sku = _scanController.text.trim();
       final qtyStr = _orderQtyController.text.trim();
       final int qty = int.tryParse(qtyStr) ?? 1;
 
@@ -232,28 +161,31 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
             .where((o) => o.orderSn == widget.selectedOrder)
             .firstOrNull;
         if (activeOrder != null) {
-          final reqQty =
-              activeOrder.itemList
-                  .where(
-                    (e) =>
-                        (e.componentSku.isNotEmpty
-                            ? e.componentSku
-                            : 'unknown') ==
-                        sku,
-                  )
-                  .map((e) => e.quantity)
-                  .firstOrNull ??
-              0;
+          final hasSku = activeOrder.itemList.any((e) => (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') == sku);
+          if (hasSku) {
+            final reqQty =
+                activeOrder.itemList
+                    .where(
+                      (e) =>
+                          (e.componentSku.isNotEmpty
+                              ? e.componentSku
+                              : 'unknown') ==
+                          sku,
+                    )
+                    .map((e) => e.quantity)
+                    .firstOrNull ??
+                0;
 
-          final scannedQty = appState.pickItemEntries
-              .where((e) => e.orderSn == widget.selectedOrder && e.sku == sku)
-              .fold(0, (sum, e) => sum + e.qty);
+            final scannedQty = appState.pickItemEntries
+                .where((e) => e.orderSn == widget.selectedOrder && e.sku == sku)
+                .fold(0, (sum, e) => sum + e.qty);
 
-          if (scannedQty + qty > reqQty) {
-            appState.onShowMessage?.call(
-              "Scan quantity (${scannedQty + qty}) exceeds requirement ($reqQty) for SKU: $sku",
-              isAlert: true,
-            );
+            if (scannedQty + qty > reqQty) {
+              appState.onShowMessage?.call(
+                "Scan quantity (${scannedQty + qty}) exceeds requirement ($reqQty) for SKU: $sku",
+                isAlert: true,
+              );
+            }
           }
         }
       }
