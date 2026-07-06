@@ -91,14 +91,15 @@ from cache import ShopeeOrderCache
 load_dotenv()
 
 # Logger configuration
-os.makedirs("logs", exist_ok=True)
+LOGS_DIR = "temp/logs"
+os.makedirs(LOGS_DIR, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
         logging.handlers.RotatingFileHandler(
-            "logs/backend.log",
+            os.path.join(LOGS_DIR, "backend.log"),
             maxBytes=10 * 1024 * 1024,  # 10 MB
             backupCount=5,
         ),
@@ -517,11 +518,16 @@ def build_shopee_order_response(order: ShopeeOrder, db: Session) -> ShopeeOrderR
     item_details = {}
     if sku_list:
         from sqlalchemy.orm import selectinload
-        items_db = db.execute(
-            select(WarehouseItem)
-            .options(selectinload(WarehouseItem.stocks))
-            .filter(WarehouseItem.sku.in_(sku_list))
-        ).scalars().all()
+
+        items_db = (
+            db.execute(
+                select(WarehouseItem)
+                .options(selectinload(WarehouseItem.stocks))
+                .filter(WarehouseItem.sku.in_(sku_list))
+            )
+            .scalars()
+            .all()
+        )
         item_details = {item.sku: (item.item_name, item.location) for item in items_db}
 
     # Construct ShopeeOrderItemBOMResponse list
@@ -1779,7 +1785,7 @@ def find_warehouse_items(
     current_user: User = Depends(get_current_user),
 ):
     logger.info(f"User {current_user.username} searching for: {query}")
-    
+
     # Try to resolve barcode first
     resolved_item = resolve_barcode_to_item(query, db)
     if resolved_item:
@@ -1805,6 +1811,7 @@ def find_warehouse_items(
 
 def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem]:
     import re
+
     if not barcode:
         return None
 
@@ -1813,7 +1820,7 @@ def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem
     if not lines:
         return None
     first_line = lines[0]
-    
+
     # Get the first token
     tokens = first_line.split()
     if not tokens:
@@ -1823,8 +1830,8 @@ def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem
     # Rule (a): {sku}**<some other meta * delimited>; extract sku, sku is the real sku in warehouse.items.
     # this sku is exclusively XNN_NNN, where x is alphabet and n is numeric
     sku_candidate = None
-    if '*' in token:
-        parts = token.split('*')
+    if "*" in token:
+        parts = token.split("*")
         sku_candidate = parts[0]
     else:
         # Check if the whole token matches XNN_NNN format directly as a candidate SKU
@@ -1833,21 +1840,25 @@ def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem
     # Check if sku_candidate matches exclusively XNN_NNN format
     # XNN_NNN means: alphabet character, followed by two digits, followed by underscore, followed by three digits.
     if sku_candidate and re.match(r"^[a-zA-Z]\d{2}_\d{3}$", sku_candidate):
-        item = db.execute(
-            select(WarehouseItem).filter(WarehouseItem.sku.ilike(sku_candidate))
-        ).scalars().first()
+        item = (
+            db.execute(
+                select(WarehouseItem).filter(WarehouseItem.sku.ilike(sku_candidate))
+            )
+            .scalars()
+            .first()
+        )
         if item:
             return item
 
     # If it was not resolved as SKU rule (a), look for supplier barcode matches
     supplier_barcode = None
-    
+
     # Rule (f): regex x+-x+-x+-x+ where x is alphanum
     if re.match(r"^[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+$", token):
         supplier_barcode = token
     else:
         # Check number of parts separated by hyphens
-        parts = token.split('-')
+        parts = token.split("-")
         if len(parts) == 3:
             # Rule (c): {batch}-{type}-{id}; extract {type}-{id}
             supplier_barcode = f"{parts[1]}-{parts[2]}"
@@ -1859,16 +1870,24 @@ def resolve_barcode_to_item(barcode: str, db: Session) -> Optional[WarehouseItem
             supplier_barcode = token
 
     if supplier_barcode:
-        item = db.execute(
-            select(WarehouseItem).filter(WarehouseItem.barcode_supplier.ilike(supplier_barcode))
-        ).scalars().first()
+        item = (
+            db.execute(
+                select(WarehouseItem).filter(
+                    WarehouseItem.barcode_supplier.ilike(supplier_barcode)
+                )
+            )
+            .scalars()
+            .first()
+        )
         if item:
             return item
 
     # Fallback to direct SKU query using the cleaned token if no match found
-    item = db.execute(
-        select(WarehouseItem).filter(WarehouseItem.sku.ilike(token))
-    ).scalars().first()
+    item = (
+        db.execute(select(WarehouseItem).filter(WarehouseItem.sku.ilike(token)))
+        .scalars()
+        .first()
+    )
     return item
 
 
@@ -1922,7 +1941,10 @@ async def set_stock(
     item = resolve_barcode_to_item(stock_in.sku, db)
     if not item:
         logger.warning(f"Stock update failed: SKU/barcode {stock_in.sku} not found")
-        raise HTTPException(status_code=404, detail=f"Item with SKU or barcode '{stock_in.sku}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Item with SKU or barcode '{stock_in.sku}' not found",
+        )
     sku = item.sku
 
     location = stock_in.location if stock_in.location != "" else None

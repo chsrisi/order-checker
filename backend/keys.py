@@ -11,7 +11,7 @@ from Crypto.PublicKey import RSA
 
 logger = logging.getLogger("backend.keys")
 
-KEYS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "keys")
+KEYS_DIR = "data/keys"
 CACHE_TTL_SECONDS = 300  # 5 minutes
 ACCESS_TTL_SECONDS = 900
 
