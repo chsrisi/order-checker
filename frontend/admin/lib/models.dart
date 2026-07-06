@@ -98,11 +98,13 @@ class ShopeeOrderItemBOM {
   final String componentSku;
   final String componentName;
   final int quantity;
+  final String? location;
 
   ShopeeOrderItemBOM({
     required this.componentSku,
     required this.componentName,
     required this.quantity,
+    this.location,
   });
 
   factory ShopeeOrderItemBOM.fromJson(Map<String, dynamic> json) {
@@ -110,6 +112,7 @@ class ShopeeOrderItemBOM {
       componentSku: json['component_sku'] ?? '',
       componentName: json['component_name'] ?? '',
       quantity: json['quantity'] ?? 0,
+      location: json['location'],
     );
   }
 }

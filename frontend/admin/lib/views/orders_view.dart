@@ -625,7 +625,10 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
                       : (scanMatch?.itemName ?? 'Unknown Item');
 
                   final skuPart = isSkuEmpty ? "No SKU" : sku;
-                  final displaySubtext = skuPart;
+                  final loc = matchingItem.location;
+                  final displaySubtext = (loc != null && loc.isNotEmpty)
+                      ? "$skuPart ($loc)"
+                      : skuPart;
 
                   return ListTile(
                     title: Text(displayName),
