@@ -32,7 +32,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import PyJWK
-from jwt.types import Options
 from passlib.context import CryptContext
 from sqlalchemy import (
     create_engine,
@@ -44,49 +43,100 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, sessionmaker
 
-from models import (
-    RefreshToken,
-    RefreshTokenRequest,
-    OutboundItem,
-    OutboundCreate,
-    OutboundResponse,
-    PickItemEntry,
-    PickItemEntryCreate,
-    PickItemEntryResponse,
-    Token,
-    User,
-    UserAuth,
-    WarehouseItem,
-    WarehouseItemResponse,
-    Stock,
-    StockCreate,
-    StockResponse,
-    WSMessageType,
-    ShopeeResponse,
-    ShopeeTokenResponse,
-    ShopeeOrder,
-    ShopeeOrderInfo,
-    ShopeeOrderItemList,
-    ShopeeOrderRecipientAddress,
-    ShopeeOrderResponse,
-    ShopeeOrderItemBOMResponse,
-    ShopeeOrderRecipientResponse,
-    ShopeeOrderInfoResponse,
-    ShpOrderList,
-    OrderListT,
-    ShpMassTrackingNumber,
-    ShpOrderDetails,
-    BOMHeader,
-    BOMDetail,
-    BOMHeaderMarketplace,
-    BOMDetailMarketplace,
-    ShopeeItem,
-)
-from keys import (
-    KeyManager,
-    ACCESS_TTL_SECONDS,
-)
-from cache import ShopeeOrderCache
+try:
+    from .models import (
+        RefreshToken,
+        RefreshTokenRequest,
+        OutboundItem,
+        OutboundCreate,
+        OutboundResponse,
+        PickItemEntry,
+        PickItemEntryCreate,
+        PickItemEntryResponse,
+        Token,
+        User,
+        UserAuth,
+        WarehouseItem,
+        WarehouseItemResponse,
+        Stock,
+        StockCreate,
+        StockResponse,
+        WSMessageType,
+        ShopeeResponse,
+        ShopeeTokenResponse,
+        ShopeeOrder,
+        ShopeeOrderInfo,
+        ShopeeOrderItemList,
+        ShopeeOrderRecipientAddress,
+        ShopeeOrderResponse,
+        ShopeeOrderItemBOMResponse,
+        ShopeeOrderRecipientResponse,
+        ShopeeOrderInfoResponse,
+        ShpOrderList,
+        OrderListT,
+        ShpMassTrackingNumber,
+        ShpOrderDetails,
+        BOMHeader,
+        BOMDetail,
+        BOMHeaderMarketplace,
+        BOMDetailMarketplace,
+        ShopeeItem,
+    )
+except ImportError:
+    from models import (
+        RefreshToken,
+        RefreshTokenRequest,
+        OutboundItem,
+        OutboundCreate,
+        OutboundResponse,
+        PickItemEntry,
+        PickItemEntryCreate,
+        PickItemEntryResponse,
+        Token,
+        User,
+        UserAuth,
+        WarehouseItem,
+        WarehouseItemResponse,
+        Stock,
+        StockCreate,
+        StockResponse,
+        WSMessageType,
+        ShopeeResponse,
+        ShopeeTokenResponse,
+        ShopeeOrder,
+        ShopeeOrderInfo,
+        ShopeeOrderItemList,
+        ShopeeOrderRecipientAddress,
+        ShopeeOrderResponse,
+        ShopeeOrderItemBOMResponse,
+        ShopeeOrderRecipientResponse,
+        ShopeeOrderInfoResponse,
+        ShpOrderList,
+        OrderListT,
+        ShpMassTrackingNumber,
+        ShpOrderDetails,
+        BOMHeader,
+        BOMDetail,
+        BOMHeaderMarketplace,
+        BOMDetailMarketplace,
+        ShopeeItem,
+    )
+try:
+    from .keys import (
+        KeyManager,
+        ACCESS_TTL_SECONDS,
+    )
+    from .cache import ShopeeOrderCache
+    from .config import get_config_value
+    from .redis_client import redis_client, get_shopee_token, set_shopee_token
+except ImportError:
+    from keys import (
+        KeyManager,
+        ACCESS_TTL_SECONDS,
+    )
+    from cache import ShopeeOrderCache
+    from config import get_config_value
+    from redis_client import redis_client, get_shopee_token, set_shopee_token
 
 load_dotenv()
 
@@ -108,12 +158,12 @@ logging.basicConfig(
 logger = logging.getLogger("backend")
 
 # Database setup
-SQLALCHEMY_DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
+SQLALCHEMY_DATABASE_URL: Optional[str] = get_config_value("DATABASE_URL")
 if not SQLALCHEMY_DATABASE_URL:
     # Use a default SQLite for local development if nothing is specified
     SQLALCHEMY_DATABASE_URL = "sqlite:///./local.db"
     logger.warning(
-        "DATABASE_URL not found in env, defaulting to: %s", SQLALCHEMY_DATABASE_URL
+        "DATABASE_URL not found in env/secrets, defaulting to: %s", SQLALCHEMY_DATABASE_URL
     )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
@@ -210,7 +260,7 @@ def get_user(token: str, db: Session) -> User:
         PyJWK.from_dict(jwk).key,
         audience="api.bakingholic:v0.2a",
         issuer="auth.bakingholic:v0.2a",
-        options=Options(require=["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]),
+        options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
         algorithms=[ALGORITHM],
         leeway=30.0,
     )
@@ -300,8 +350,8 @@ async def lifespan(_app: FastAPI):
     logger.info("Persistent aiohttp session initialized in app.state")
 
     with ctx_get_db() as db:
-        admin_user = os.getenv("ADMIN_USERNAME")
-        admin_pass = os.getenv("ADMIN_PASSWORD")
+        admin_user = get_config_value("ADMIN_USERNAME")
+        admin_pass = get_config_value("ADMIN_PASSWORD")
 
         admin = (
             db.execute(select(User).filter(User.username == admin_user))
@@ -330,6 +380,9 @@ async def lifespan(_app: FastAPI):
     if hasattr(_app.state, "aiohttp_session"):
         await _app.state.aiohttp_session.close()
         logger.info("Persistent aiohttp session closed")
+
+    await redis_client.close()
+    logger.info("Redis client connection pool closed")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -925,14 +978,14 @@ async def websocket_endpoint(
 # Shopee OpenAPI Utils ----
 async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
     logger.info("[TOKEN SYSTEM] Attempting to refresh Shopee access token...")
-    shop_id_env = os.getenv("SHOP_ID")
-    partner_id_env = os.getenv("PARTNER_ID")
-    partner_key_env = os.getenv("PARTNER_KEY")
-    refresh_token = os.getenv("REFRESH_TOKEN")
+    shop_id_env = get_config_value("SHOP_ID")
+    partner_id_env = get_config_value("PARTNER_ID")
+    partner_key_env = get_config_value("PARTNER_KEY")
+    refresh_token = await get_shopee_token("REFRESH_TOKEN")
 
     if not all([shop_id_env, partner_id_env, partner_key_env, refresh_token]):
         logger.error(
-            "[TOKEN SYSTEM] Missing Shopee environment variables for token refresh"
+            "[TOKEN SYSTEM] Missing Shopee environment variables/secrets/tokens for token refresh"
         )
         return None, None
 
@@ -941,7 +994,7 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
     partner_key = cast(str, partner_key_env).encode()
 
     timest = int(time.time())
-    host = os.getenv("SHOPEE_URL")
+    host = get_config_value("SHOPEE_URL")
     path = "/api/v2/auth/access_token/get"
     body = {
         "shop_id": shop_id,
@@ -968,15 +1021,10 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
                 return None, None
 
             if ret.access_token and ret.refresh_token:
-                from dotenv import set_key  # Assumed from your setup
-
-                set_key(".env", "ACCESS_TOKEN", ret.access_token)
-                set_key(".env", "REFRESH_TOKEN", ret.refresh_token)
-
-                os.environ["ACCESS_TOKEN"] = ret.access_token
-                os.environ["REFRESH_TOKEN"] = ret.refresh_token
+                await set_shopee_token("ACCESS_TOKEN", ret.access_token)
+                await set_shopee_token("REFRESH_TOKEN", ret.refresh_token)
                 logger.info(
-                    "[TOKEN SYSTEM SUCCESS] Shopee tokens successfully updated in file and memory."
+                    "[TOKEN SYSTEM SUCCESS] Shopee tokens successfully updated in Redis keystore."
                 )
                 return ret.access_token, ret.refresh_token
 
@@ -1015,14 +1063,14 @@ async def shopee_request(
     backoff_delay = 1.5  # Starting delay for 429 backoff
 
     for attempt in range(max_429_retries + 1):
-        host = os.getenv("SHOPEE_URL")
-        partner_id_env = os.getenv("PARTNER_ID")
-        partner_key_env = os.getenv("PARTNER_KEY")
-        shop_id_env = os.getenv("SHOP_ID")
-        access_token = os.getenv("ACCESS_TOKEN")
+        host = get_config_value("SHOPEE_URL")
+        partner_id_env = get_config_value("PARTNER_ID")
+        partner_key_env = get_config_value("PARTNER_KEY")
+        shop_id_env = get_config_value("SHOP_ID")
+        access_token = await get_shopee_token("ACCESS_TOKEN")
 
         if not all([partner_id_env, partner_key_env, shop_id_env, access_token]):
-            logger.error("Missing Shopee environment variables for API request")
+            logger.error("Missing Shopee environment variables/secrets/tokens for API request")
             return None
 
         partner_id = int(partner_id_env or "0")
@@ -1117,7 +1165,8 @@ async def shopee_request(
                                 )
 
                             # Worker check 2: Are we the chosen one to execute the refresh?
-                            if os.getenv("ACCESS_TOKEN") == access_token:
+                            current_at = await get_shopee_token("ACCESS_TOKEN")
+                            if current_at == access_token:
                                 logger.info(
                                     "[TOKEN REFRESH] Lock acquired. Executing token renewal..."
                                 )
@@ -1248,7 +1297,7 @@ def logout(body: RefreshTokenRequest, db: Session = Depends(get_db)):
             PyJWK.from_dict(jwk).key,
             audience="api.bakingholic:v0.2a",
             issuer="auth.bakingholic:v0.2a",
-            options=Options(require=["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]),
+            options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
             algorithms=[ALGORITHM],
             leeway=30.0,
         )
@@ -1333,7 +1382,7 @@ def refresh(body: RefreshTokenRequest, db: Session = Depends(get_db)):
             PyJWK.from_dict(jwk).key,
             audience="api.bakingholic:v0.2a",
             issuer="auth.bakingholic:v0.2a",
-            options=Options(require=["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]),
+            options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
             algorithms=[ALGORITHM],
             leeway=30.0,
         )

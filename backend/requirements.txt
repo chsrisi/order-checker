@@ -29,12 +29,13 @@ psycopg==3.3.3
 psycopg-binary==3.3.3
 pyasn1==0.6.3
 pycparser==3.0
-pycryptodomex==3.23.0
+pycryptodome==3.23.0
 pydantic==2.12.5
 pydantic-core==2.41.5
 python-dotenv==1.2.2
-python-jose==3.5.0
+PyJWT==2.8.0
 python-multipart==0.0.24
+redis==5.0.1
 rsa==4.9.1
 six==1.17.0
 sqlalchemy==2.0.49
