@@ -55,8 +55,8 @@ services:
     ports:
       - 5432:5432
     secrets:
-      - secrets/postgres_password
-      - secrets/app_password
+      - postgres_password
+      - app_password
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres -d bakingholic" ]
       interval: 5s
