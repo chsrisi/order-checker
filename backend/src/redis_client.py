@@ -1,16 +1,15 @@
 import logging
 from typing import Optional
 import redis.asyncio as redis
-try:
-    from .config import get_config_value
-except ImportError:
-    from config import get_config_value
+
+from .config import get_config_value
 
 logger = logging.getLogger("backend.redis")
 
 # Initialize the async Redis client
 REDIS_URL = get_config_value("REDIS_URL", "redis://redis:6379/0")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
 
 async def get_shopee_token(key: str) -> Optional[str]:
     """
@@ -33,8 +32,9 @@ async def get_shopee_token(key: str) -> Optional[str]:
         logger.info(f"Seeding {redis_key} to Redis from initial configuration fallback")
         await set_shopee_token(key, fallback)
         return fallback
-    
+
     return None
+
 
 async def set_shopee_token(key: str, value: str):
     """

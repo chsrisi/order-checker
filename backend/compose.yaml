@@ -22,45 +22,49 @@ services:
       - REDIS_URL=redis://redis:6379/0
     secrets:
       - source: database_url
-        mode: 0444
+        mode: 444
       - source: admin_username
-        mode: 0444
+        mode: 444
       - source: admin_password
-        mode: 0444
+        mode: 444
       - source: partner_id
-        mode: 0444
+        mode: 444
       - source: partner_key
-        mode: 0444
+        mode: 444
       - source: shop_id
-        mode: 0444
+        mode: 444
       - source: shopee_url
-        mode: 0444
+        mode: 444
       - source: access_token
-        mode: 0444
+        mode: 444
       - source: refresh_token
-        mode: 0444
+        mode: 444
 
   db:
-    image: postgres:18-alpine
+    image: postgres:18.4-alpine
     restart: always
     user: postgres
     environment:
-      - POSTGRES_USER=bh_backend
-      - POSTGRES_PASSWORD=secret_password
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
       - POSTGRES_DB=bakingholic
+      - APP_PASSWORD=/run/secrets/app_password
     volumes:
       - db-data:/var/lib/postgresql
       - ./init-scripts:/docker-entrypoint-initdb.d
     ports:
       - 5432:5432
+    secrets:
+      - secrets/postgres_password
+      - secrets/app_password
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U bh_backend -d bakingholic" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d bakingholic" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.8-alpine
     restart: always
     ports:
       - 6379:6379
@@ -90,4 +94,7 @@ secrets:
     environment: ACCESS_TOKEN
   refresh_token:
     environment: REFRESH_TOKEN
-
+  postgres_password:
+    file: ./.secrets/postgres_password
+  app_password:
+    file: ./.secrets/app_password

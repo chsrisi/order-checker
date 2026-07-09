@@ -9,3 +9,7 @@ temp/
 keys/
 logs/
 data/
+.secrets/
+
+# ext
+.ruff_cache/

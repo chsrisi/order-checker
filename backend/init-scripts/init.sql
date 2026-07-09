@@ -1,4 +1,7 @@
-CREATE ROLE bh_backend WITH LOGIN PASSWORD 'secret_password'; -- change password to something secure!
+\getenv app_password APP_PASSWORD
+CREATE ROLE IF NOT EXISTS bh_backend WITH LOGIN PASSWORD :'app_password';
+
+CREATE DATABASE IF NOT EXISTS bakingholic OWNER postgres;
 
 GRANT CONNECT ON DATABASE bakingholic TO bh_backend;
 GRANT CREATE ON DATABASE bakingholic TO bh_backend;

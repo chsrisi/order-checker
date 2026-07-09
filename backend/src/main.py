@@ -43,100 +43,51 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, sessionmaker
 
-try:
-    from .models import (
-        RefreshToken,
-        RefreshTokenRequest,
-        OutboundItem,
-        OutboundCreate,
-        OutboundResponse,
-        PickItemEntry,
-        PickItemEntryCreate,
-        PickItemEntryResponse,
-        Token,
-        User,
-        UserAuth,
-        WarehouseItem,
-        WarehouseItemResponse,
-        Stock,
-        StockCreate,
-        StockResponse,
-        WSMessageType,
-        ShopeeResponse,
-        ShopeeTokenResponse,
-        ShopeeOrder,
-        ShopeeOrderInfo,
-        ShopeeOrderItemList,
-        ShopeeOrderRecipientAddress,
-        ShopeeOrderResponse,
-        ShopeeOrderItemBOMResponse,
-        ShopeeOrderRecipientResponse,
-        ShopeeOrderInfoResponse,
-        ShpOrderList,
-        OrderListT,
-        ShpMassTrackingNumber,
-        ShpOrderDetails,
-        BOMHeader,
-        BOMDetail,
-        BOMHeaderMarketplace,
-        BOMDetailMarketplace,
-        ShopeeItem,
-    )
-except ImportError:
-    from models import (
-        RefreshToken,
-        RefreshTokenRequest,
-        OutboundItem,
-        OutboundCreate,
-        OutboundResponse,
-        PickItemEntry,
-        PickItemEntryCreate,
-        PickItemEntryResponse,
-        Token,
-        User,
-        UserAuth,
-        WarehouseItem,
-        WarehouseItemResponse,
-        Stock,
-        StockCreate,
-        StockResponse,
-        WSMessageType,
-        ShopeeResponse,
-        ShopeeTokenResponse,
-        ShopeeOrder,
-        ShopeeOrderInfo,
-        ShopeeOrderItemList,
-        ShopeeOrderRecipientAddress,
-        ShopeeOrderResponse,
-        ShopeeOrderItemBOMResponse,
-        ShopeeOrderRecipientResponse,
-        ShopeeOrderInfoResponse,
-        ShpOrderList,
-        OrderListT,
-        ShpMassTrackingNumber,
-        ShpOrderDetails,
-        BOMHeader,
-        BOMDetail,
-        BOMHeaderMarketplace,
-        BOMDetailMarketplace,
-        ShopeeItem,
-    )
-try:
-    from .keys import (
-        KeyManager,
-        ACCESS_TTL_SECONDS,
-    )
-    from .cache import ShopeeOrderCache
-    from .config import get_config_value
-    from .redis_client import redis_client, get_shopee_token, set_shopee_token
-except ImportError:
-    from keys import (
-        KeyManager,
-        ACCESS_TTL_SECONDS,
-    )
-    from cache import ShopeeOrderCache
-    from config import get_config_value
-    from redis_client import redis_client, get_shopee_token, set_shopee_token
+from .models import (
+    RefreshToken,
+    RefreshTokenRequest,
+    OutboundItem,
+    OutboundCreate,
+    OutboundResponse,
+    PickItemEntry,
+    PickItemEntryCreate,
+    PickItemEntryResponse,
+    Token,
+    User,
+    UserAuth,
+    WarehouseItem,
+    WarehouseItemResponse,
+    Stock,
+    StockCreate,
+    StockResponse,
+    WSMessageType,
+    ShopeeResponse,
+    ShopeeTokenResponse,
+    ShopeeOrder,
+    ShopeeOrderInfo,
+    ShopeeOrderItemList,
+    ShopeeOrderRecipientAddress,
+    ShopeeOrderResponse,
+    ShopeeOrderItemBOMResponse,
+    ShopeeOrderRecipientResponse,
+    ShopeeOrderInfoResponse,
+    ShpOrderList,
+    OrderListT,
+    ShpMassTrackingNumber,
+    ShpOrderDetails,
+    BOMHeader,
+    BOMDetail,
+    BOMHeaderMarketplace,
+    BOMDetailMarketplace,
+    ShopeeItem,
+)
+from .keys import (
+    KeyManager,
+    ACCESS_TTL_SECONDS,
+)
+from .cache import ShopeeOrderCache
+from .config import get_config_value
+from .redis_client import redis_client, get_shopee_token, set_shopee_token
 
 load_dotenv()
 
@@ -163,7 +114,8 @@ if not SQLALCHEMY_DATABASE_URL:
     # Use a default SQLite for local development if nothing is specified
     SQLALCHEMY_DATABASE_URL = "sqlite:///./local.db"
     logger.warning(
-        "DATABASE_URL not found in env/secrets, defaulting to: %s", SQLALCHEMY_DATABASE_URL
+        "DATABASE_URL not found in env/secrets, defaulting to: %s",
+        SQLALCHEMY_DATABASE_URL,
     )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
@@ -1070,7 +1022,9 @@ async def shopee_request(
         access_token = await get_shopee_token("ACCESS_TOKEN")
 
         if not all([partner_id_env, partner_key_env, shop_id_env, access_token]):
-            logger.error("Missing Shopee environment variables/secrets/tokens for API request")
+            logger.error(
+                "Missing Shopee environment variables/secrets/tokens for API request"
+            )
             return None
 
         partner_id = int(partner_id_env or "0")
