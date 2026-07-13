@@ -6,8 +6,9 @@ import io
 import logging
 import logging.handlers
 import os
+import re
 import secrets
-import threading
+from pydantic import BaseModel
 import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,7 @@ from typing import Any, Dict, List, Optional, cast, Generator
 import aiohttp
 import jwt
 import jwt.exceptions as jwt_exc
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from fastapi import (
     Depends,
     FastAPI,
@@ -89,7 +90,7 @@ from .cache import ShopeeOrderCache
 from .config import get_config_value
 from .redis_client import redis_client, get_shopee_token, set_shopee_token
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # Logger configuration
 LOGS_DIR = "temp/logs"
@@ -276,16 +277,6 @@ async def remove_outdated_refresh():
         raise
 
 
-async def clean_expired_tickets():
-    try:
-        while True:
-            await asyncio.sleep(60)
-            ticket_manager.purge_expired()
-    except asyncio.CancelledError:
-        logger.info("Clean expired tickets task cancelled")
-        raise
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Startup logic
@@ -295,7 +286,6 @@ async def lifespan(_app: FastAPI):
     bg_tasks: list[asyncio.Task[Any]] = []
     bg_tasks.append(asyncio.create_task(key_manager.rotate_keys_task()))
     bg_tasks.append(asyncio.create_task(remove_outdated_refresh()))
-    bg_tasks.append(asyncio.create_task(clean_expired_tickets()))
 
     # Initialize Persistent aiohttp Session
     _app.state.aiohttp_session = aiohttp.ClientSession()
@@ -647,39 +637,27 @@ def get_all_stocks_data(db: Session, join_warehouse: bool = False):
     return get_stocks_data(db, join_warehouse=join_warehouse)
 
 
-class TicketInfo:
-    def __init__(self, username: str, expires_at: float):
-        self.username = username
-        self.expires_at = expires_at
-
-
 class TicketManager:
-    def __init__(self):
-        self._tickets: Dict[str, TicketInfo] = {}
-        self._lock = threading.Lock()
-
-    def generate_ticket(self, username: str, ttl_seconds: int = 30) -> str:
+    async def generate_ticket(self, username: str, ttl_seconds: int = 30) -> str:
         ticket = secrets.token_urlsafe(32)
-        expires_at = time.time() + ttl_seconds
-        with self._lock:
-            self._tickets[ticket] = TicketInfo(username, expires_at)
+        key = f"ws_token:{ticket}"
+        try:
+            await redis_client.set(key, username, ex=ttl_seconds)
+            logger.debug(f"Generated WS ticket in Redis for user {username}: {ticket}")
+        except Exception as e:
+            logger.error(f"Failed to save WS ticket in Redis: {e}")
         return ticket
 
-    def consume_ticket(self, ticket: str) -> Optional[str]:
-        with self._lock:
-            info = self._tickets.pop(ticket, None)
-            if info is None:
-                return None
-            if time.time() > info.expires_at:
-                return None
-            return info.username
-
-    def purge_expired(self):
-        now = time.time()
-        with self._lock:
-            expired_keys = [k for k, v in self._tickets.items() if now > v.expires_at]
-            for k in expired_keys:
-                self._tickets.pop(k, None)
+    async def consume_ticket(self, ticket: str) -> Optional[str]:
+        key = f"ws_token:{ticket}"
+        try:
+            username = await redis_client.get(key)
+            if username:
+                await redis_client.delete(key)
+                return username
+        except Exception as e:
+            logger.error(f"Failed to consume WS ticket from Redis: {e}")
+        return None
 
 
 ticket_manager = TicketManager()
@@ -841,7 +819,7 @@ async def websocket_endpoint(
             detail="Forbidden",
         )
 
-    username = ticket_manager.consume_ticket(token)
+    username = await ticket_manager.consume_ticket(token)
     if not username:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1086,6 +1064,28 @@ async def shopee_request(
                         f"[SHOPEE API ERROR] {ret.error} - {ret.message} (ReqID: {ret.request_id})"
                     )
 
+                    if ret.error == "source_ip_undeclared":
+                        ip_match = re.search(
+                            r"\b(?:\d{1,3}\.){3}\d{1,3}\b", ret.message
+                        )
+                        if ip_match:
+                            current_ip = ip_match.group(0)
+                        else:
+                            ipv6_match = re.search(
+                                r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b",
+                                ret.message,
+                            )
+                            current_ip = (
+                                ipv6_match.group(0) if ipv6_match else "unknown"
+                            )
+                        try:
+                            await redis_client.set("shopee:current_ip", current_ip)
+                            logger.info(
+                                f"Updated Shopee current IP in Redis: {current_ip}"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to set current IP in Redis: {e}")
+
                     # Handle Payload-level Rate Limits
                     if ret.error in ["request_limit_exceeded", "frequency_limited"]:
                         if attempt < max_429_retries:
@@ -1302,10 +1302,10 @@ def login_admin(auth: UserAuth, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/ws-token")
-def create_ws_token(
+async def create_ws_token(
     current_user: User = Depends(get_current_user),
 ):
-    ticket = ticket_manager.generate_ticket(current_user.username, ttl_seconds=30)
+    ticket = await ticket_manager.generate_ticket(current_user.username, ttl_seconds=30)
     return {"token": ticket, "expires_in": 30}
 
 
@@ -2451,6 +2451,117 @@ async def reset_shopee_cache_state(
     shopee_cache.set_token_fatal(False)
     shopee_cache.invalidate()
     return {"message": "Shopee cache state reset successfully"}
+
+
+class ShopeeConfigUnlockRequest(BaseModel):
+    password: str
+
+
+class ShopeeConfigUpdateRequest(BaseModel):
+    access_token: str
+    refresh_token: str
+
+
+@app.post("/admin/shopee-config/unlock")
+async def unlock_shopee_config(
+    body: ShopeeConfigUnlockRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not verify_password(body.password, current_user.password_hash or ""):
+        logger.warning(
+            f"Shopee config unlock failed: Incorrect password for admin {current_user.username}"
+        )
+        raise HTTPException(status_code=401, detail="Incorrect password")
+
+    # Generate a secure 2-min temporary config token in Redis
+    config_token = secrets.token_hex(32)
+    redis_key = f"cfg_token:{config_token}"
+    try:
+        await redis_client.set(redis_key, current_user.username, ex=120)
+        logger.info(
+            f"Admin {current_user.username} unlocked Shopee config view. Temporary token generated."
+        )
+    except Exception as e:
+        logger.error(f"Failed to save shopee config temporary token in Redis: {e}")
+        raise HTTPException(status_code=500, detail="Redis connection failed")
+
+    return {"token": config_token, "expires_in": 120}
+
+
+@app.post("/admin/shopee-config/lock")
+async def lock_shopee_config(
+    token: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    redis_key = f"cfg_token:{token}"
+    try:
+        await redis_client.delete(redis_key)
+        logger.info(
+            f"Admin {current_user.username} manually locked Shopee config session."
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete shopee config token from Redis: {e}")
+
+    return {"message": "Config locked successfully"}
+
+
+@app.get("/admin/shopee-config")
+async def get_shopee_config(
+    token: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Verify short-lived token in Redis
+    redis_key = f"cfg_token:{token}"
+    token_user = await redis_client.get(redis_key)
+    if not token_user:
+        raise HTTPException(status_code=401, detail="Secure session expired or invalid")
+
+    access_token = await get_shopee_token("ACCESS_TOKEN")
+    refresh_token = await get_shopee_token("REFRESH_TOKEN")
+    current_ip = await redis_client.get("shopee:current_ip")
+
+    return {
+        "access_token": access_token or "",
+        "refresh_token": refresh_token or "",
+        "current_ip": current_ip or "unknown",
+    }
+
+
+@app.post("/admin/shopee-config")
+async def save_shopee_config(
+    body: ShopeeConfigUpdateRequest,
+    token: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Verify short-lived token in Redis
+    redis_key = f"cfg_token:{token}"
+    token_user = await redis_client.get(redis_key)
+    if not token_user:
+        raise HTTPException(status_code=401, detail="Secure session expired or invalid")
+
+    await set_shopee_token("ACCESS_TOKEN", body.access_token)
+    await set_shopee_token("REFRESH_TOKEN", body.refresh_token)
+
+    # Reset Shopee token fatal status / circuit breaker
+    shopee_cache.set_token_fatal(False)
+    shopee_cache.invalidate()
+
+    logger.info(
+        f"Admin {current_user.username} successfully updated Shopee credentials."
+    )
+    return {"message": "Shopee credentials updated successfully"}
 
 
 # PickItemEntry Endpoints

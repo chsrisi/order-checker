@@ -35,10 +35,6 @@ services:
         mode: 444
       - source: shopee_url
         mode: 444
-      - source: access_token
-        mode: 444
-      - source: refresh_token
-        mode: 444
 
   db:
     image: postgres:18.4-alpine
@@ -48,7 +44,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
       - POSTGRES_DB=bakingholic
-      - APP_PASSWORD=/run/secrets/app_password
     volumes:
       - db-data:/var/lib/postgresql
       - ./init-scripts:/docker-entrypoint-initdb.d

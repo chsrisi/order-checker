@@ -39,3 +39,4 @@ temp/
 **/logs/
 **/keys/
 *.db
+.secrets/

@@ -2,6 +2,10 @@ import os
 import re
 import logging
 from typing import Optional
+from dotenv import load_dotenv, find_dotenv
+
+# Automatically load environment variables from the nearest .env file
+load_dotenv(find_dotenv())
 
 logger = logging.getLogger("backend.config")
 
