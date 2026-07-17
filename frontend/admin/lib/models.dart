@@ -245,6 +245,93 @@ class Stock {
   }
 }
 
+class BOMHeaderEntry {
+  final int? id;
+  final String? sku;
+  final int? quantityStandard;
+  final double? factorF5;
+  final String? itemName;
+
+  final int? shopeeId;
+  final String? modelName;
+  final String? marketplace;
+
+  bool get isMarketplace => shopeeId != null;
+
+  String get displayName {
+    if (isMarketplace) {
+      String desc = itemName ?? '';
+      if (modelName != null && modelName!.isNotEmpty) {
+        desc += " ($modelName)";
+      }
+      return "[Marketplace] $desc [ID: $shopeeId]";
+    } else {
+      return "[Standard] $sku - ${itemName ?? ''}";
+    }
+  }
+
+  BOMHeaderEntry({
+    this.id,
+    this.sku,
+    this.quantityStandard,
+    this.factorF5,
+    this.itemName,
+    this.shopeeId,
+    this.modelName,
+    this.marketplace,
+  });
+
+  factory BOMHeaderEntry.fromJson(Map<String, dynamic> json) {
+    return BOMHeaderEntry(
+      id: json['id'],
+      sku: json['sku'],
+      quantityStandard: json['quantity_standard'],
+      factorF5: json['factor_f5'] != null ? (json['factor_f5'] as num).toDouble() : null,
+      itemName: json['item_name'],
+      shopeeId: json['shopee_id'],
+      modelName: json['model_name'],
+      marketplace: json['marketplace'],
+    );
+  }
+}
+
+class BOMTreeNode {
+  final String? sku;
+  final String name;
+  final int quantity;
+  final bool isNotPrimaryChild;
+  final String type; // 'standard' or 'marketplace'
+  final int? shopeeId;
+  final String? modelName;
+  final List<BOMTreeNode> children;
+
+  BOMTreeNode({
+    this.sku,
+    required this.name,
+    required this.quantity,
+    required this.isNotPrimaryChild,
+    required this.type,
+    this.shopeeId,
+    this.modelName,
+    required this.children,
+  });
+
+  factory BOMTreeNode.fromJson(Map<String, dynamic> json) {
+    var rawChildren = json['children'] as List? ?? [];
+    List<BOMTreeNode> parsedChildren = rawChildren.map((c) => BOMTreeNode.fromJson(c)).toList();
+    return BOMTreeNode(
+      sku: json['sku'],
+      name: json['name'] ?? '',
+      quantity: json['quantity'] ?? 1,
+      isNotPrimaryChild: json['is_not_primary_child'] ?? false,
+      type: json['type'] ?? 'standard',
+      shopeeId: json['shopee_id'],
+      modelName: json['model_name'],
+      children: parsedChildren,
+    );
+  }
+}
+
 // Widgets ----
 
 // Mimic NavigationRail

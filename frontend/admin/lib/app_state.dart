@@ -20,6 +20,7 @@ enum AdminView {
   orders(true),
   stocks(true),
   config(true),
+  bom(true),
   account(false);
 
   final bool isMainView;
@@ -130,6 +131,9 @@ class AppState extends ChangeNotifier {
   List<ShopeeOrder> _orders = [];
   List<PickItemEntry> _pickItemEntries = [];
   List<Stock> _stocks = [];
+  List<BOMHeaderEntry> _bomHeaders = [];
+  BOMTreeNode? _selectedBomTree;
+  bool _isTreeLoading = false;
   final Map<String, List<WarehouseItem>> _findItemsCache = {};
   final Map<String, DateTime> _findItemsCacheTimes = {};
   static const Duration _cacheTtl = Duration(minutes: 5);
@@ -167,6 +171,9 @@ class AppState extends ChangeNotifier {
   List<ShopeeOrder> get orders => _orders;
   List<PickItemEntry> get pickItemEntries => _pickItemEntries;
   List<Stock> get stocks => _stocks;
+  List<BOMHeaderEntry> get bomHeaders => _bomHeaders;
+  BOMTreeNode? get selectedBomTree => _selectedBomTree;
+  bool get isTreeLoading => _isTreeLoading;
   List<OutboundItem> get historyOutboundItems => _historyOutboundItems;
   List<ShopeeOrder> get historyOrders => _historyOrders;
   int get lastCloseOutbound => _lastCloseOutbound;
@@ -402,6 +409,8 @@ class AppState extends ChangeNotifier {
       fetchStocks();
     } else if (_currentView == AdminView.config) {
       fetchShopeeConfig();
+    } else if (_currentView == AdminView.bom) {
+      fetchBOMHeaders();
     }
   }
 
@@ -910,5 +919,68 @@ class AppState extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> fetchBOMHeaders() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await makeRequest('$_baseUrl/admin/bom/headers');
+      if (response != null && response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> stdList = data['standard'] ?? [];
+        final List<dynamic> mpList = data['marketplace'] ?? [];
+
+        final List<BOMHeaderEntry> tempHeaders = [];
+        for (var item in stdList) {
+          tempHeaders.add(BOMHeaderEntry.fromJson(item));
+        }
+        for (var item in mpList) {
+          tempHeaders.add(BOMHeaderEntry.fromJson(item));
+        }
+        _bomHeaders = tempHeaders;
+      } else {
+        log("Failed to fetch BOM headers: status ${response?.statusCode}");
+      }
+    } catch (e) {
+      log("Error fetching BOM headers: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchBOMTree({String? sku, int? shopeeId}) async {
+    _isTreeLoading = true;
+    _selectedBomTree = null;
+    notifyListeners();
+    try {
+      String url = '$_baseUrl/admin/bom/tree';
+      if (sku != null) {
+        url += '?sku=${Uri.encodeComponent(sku)}';
+      } else if (shopeeId != null) {
+        url += '?shopee_id=$shopeeId';
+      } else {
+        return;
+      }
+
+      final response = await makeRequest(url);
+      if (response != null && response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _selectedBomTree = BOMTreeNode.fromJson(data);
+      } else {
+        log("Failed to fetch BOM tree: status ${response?.statusCode}");
+      }
+    } catch (e) {
+      log("Error fetching BOM tree: $e");
+    } finally {
+      _isTreeLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearSelectedBomTree() {
+    _selectedBomTree = null;
+    notifyListeners();
   }
 }

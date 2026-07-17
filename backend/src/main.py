@@ -1584,6 +1584,157 @@ def export_stocks(
     )
 
 
+# BOM Tree Helper Methods ----
+def get_standard_bom_node(sku: str, qty: int, is_not_primary_child: Optional[bool], db: Session, visited: Optional[set] = None) -> dict:
+    if visited is None:
+        visited = set()
+        
+    item = db.execute(select(WarehouseItem).filter(WarehouseItem.sku == sku)).scalar_one_or_none()
+    name = (item.item_name if item else None) or sku
+    
+    node = {
+        "sku": sku,
+        "name": name,
+        "quantity": qty,
+        "is_not_primary_child": is_not_primary_child or False,
+        "type": "standard",
+        "children": []
+    }
+    
+    if sku in visited:
+        node["name"] = f"{name} (Cycle Detected)"
+        return node
+        
+    new_visited = visited | {sku}
+    
+    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
+    if hdr:
+        details = db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
+        for detail in details:
+            child_node = get_standard_bom_node(
+                detail.component_sku,
+                detail.quantity_standard or 1,
+                detail.is_not_primary_child,
+                db,
+                new_visited
+            )
+            node["children"].append(child_node)
+            
+    return node
+
+
+def get_marketplace_bom_node(shopee_id: int, db: Session) -> Optional[dict]:
+    hdr = db.execute(select(BOMHeaderMarketplace).filter(BOMHeaderMarketplace.shopee_id == shopee_id)).scalar_one_or_none()
+    if not hdr:
+        return None
+        
+    name = f"{hdr.item_name or ''} - {hdr.model_name or ''}".strip()
+    node = {
+        "shopee_id": shopee_id,
+        "name": name,
+        "quantity": hdr.quantity_standard or 1,
+        "type": "marketplace",
+        "children": []
+    }
+    
+    details = db.execute(select(BOMDetailMarketplace).filter(BOMDetailMarketplace.shopee_id == shopee_id)).scalars().all()
+    for detail in details:
+        child_node = get_standard_bom_node(
+            detail.component_sku,
+            detail.quantity_standard or 1,
+            detail.is_not_primary_child,
+            db
+        )
+        node["children"].append(child_node)
+        
+    return node
+
+
+# BOM Endpoints ----
+@app.get("/admin/bom/headers")
+def get_bom_headers(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Standard BOM headers
+    std_stmt = (
+        select(
+            BOMHeader.id,
+            BOMHeader.sku,
+            BOMHeader.quantity_standard,
+            BOMHeader.factor_f5,
+            WarehouseItem.item_name
+        )
+        .outerjoin(WarehouseItem, BOMHeader.sku == WarehouseItem.sku)
+        .order_by(BOMHeader.sku)
+    )
+    std_results = db.execute(std_stmt).all()
+    
+    standard = []
+    for r in std_results:
+        standard.append({
+            "id": r.id,
+            "sku": r.sku,
+            "quantity_standard": r.quantity_standard,
+            "factor_f5": r.factor_f5,
+            "item_name": r.item_name
+        })
+        
+    # Marketplace BOM headers
+    mp_stmt = (
+        select(
+            BOMHeaderMarketplace.shopee_id,
+            BOMHeaderMarketplace.item_name,
+            BOMHeaderMarketplace.model_name,
+            BOMHeaderMarketplace.quantity_standard,
+            BOMHeaderMarketplace.marketplace,
+            BOMHeaderMarketplace.created_date
+        )
+        .order_by(BOMHeaderMarketplace.item_name)
+    )
+    mp_results = db.execute(mp_stmt).all()
+    
+    marketplace = []
+    for r in mp_results:
+        marketplace.append({
+            "shopee_id": r.shopee_id,
+            "item_name": r.item_name,
+            "model_name": r.model_name,
+            "quantity_standard": r.quantity_standard,
+            "marketplace": r.marketplace,
+            "created_date": r.created_date.isoformat() if r.created_date else None
+        })
+        
+    return {
+        "standard": standard,
+        "marketplace": marketplace
+    }
+
+
+@app.get("/admin/bom/tree")
+def get_bom_tree(
+    sku: Optional[str] = None,
+    shopee_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    if sku is not None:
+        sku = sku.strip()
+        return get_standard_bom_node(sku, 1, False, db)
+    elif shopee_id is not None:
+        node = get_marketplace_bom_node(shopee_id, db)
+        if not node:
+            raise HTTPException(status_code=404, detail="Marketplace BOM not found")
+        return node
+    else:
+        raise HTTPException(status_code=400, detail="Must provide either 'sku' or 'shopee_id'")
+
+
 # Outbound Endpoints ----
 @app.post("/outbound", response_model=OutboundResponse)
 async def create_outbound(

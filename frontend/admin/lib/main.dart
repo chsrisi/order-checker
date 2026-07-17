@@ -10,6 +10,7 @@ import 'views/item_finder_view.dart';
 import 'views/stocks_view.dart';
 import 'views/config_view.dart';
 import 'views/account_view.dart';
+import 'views/bom_view.dart';
 
 Future<void> main() async {
   await dotenv.load(fileName: ".env");
@@ -88,6 +89,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
       case AdminView.config:
         body = const ConfigView();
         title = "Shopee Configuration";
+        break;
+      case AdminView.bom:
+        body = const BomView();
+        title = "BOM Tree Viewer";
         break;
       case AdminView.account:
         body = const AccountView();
@@ -221,6 +226,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Config'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.account_tree_outlined),
+                selectedIcon: Icon(Icons.account_tree),
+                label: Text('BOM'),
               ),
             ],
           ),
