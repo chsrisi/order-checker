@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import Optional
 import redis.asyncio as redis
@@ -7,7 +8,7 @@ from .config import get_config_value
 logger = logging.getLogger("backend.redis")
 
 # Initialize the async Redis client
-REDIS_URL = get_config_value("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = get_config_value("REDIS_URL", os.getenv("REDIS_URL"))
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 
