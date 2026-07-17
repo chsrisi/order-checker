@@ -8,6 +8,7 @@ import 'views/users_view.dart';
 import 'views/orders_view.dart';
 import 'views/item_finder_view.dart';
 import 'views/stocks_view.dart';
+import 'views/config_view.dart';
 import 'views/account_view.dart';
 
 Future<void> main() async {
@@ -83,6 +84,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
       case AdminView.stocks:
         body = const StocksView();
         title = "Inventory Stocks";
+        break;
+      case AdminView.config:
+        body = const ConfigView();
+        title = "Shopee Configuration";
         break;
       case AdminView.account:
         body = const AccountView();
@@ -211,6 +216,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                 icon: Icon(Icons.inventory_2_outlined),
                 selectedIcon: Icon(Icons.inventory_2),
                 label: Text('Stocks'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text('Config'),
               ),
             ],
           ),

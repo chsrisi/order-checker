@@ -19,6 +19,7 @@ enum AdminView {
   finder(true),
   orders(true),
   stocks(true),
+  config(true),
   account(false);
 
   final bool isMainView;
@@ -399,10 +400,15 @@ class AppState extends ChangeNotifier {
       fetchHistory();
     } else if (_currentView == AdminView.stocks) {
       fetchStocks();
+    } else if (_currentView == AdminView.config) {
+      fetchShopeeConfig();
     }
   }
 
   void setView(AdminView view) {
+    if (_currentView == AdminView.config && view != AdminView.config) {
+      lockShopeeConfig();
+    }
     _currentView = view;
     loadCurrentViewData();
     notifyListeners();
@@ -781,6 +787,124 @@ class AppState extends ChangeNotifier {
       return false;
     } catch (e) {
       log("Export Stocks Error: $e");
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Shopee configuration secure lock, unlock, fetch, and save actions
+  bool _isConfigUnlocked = false;
+  String? _shopeeConfigToken;
+  String _shopeeCurrentIp = "unknown";
+  String _shopeeAccessToken = "";
+  String _shopeeRefreshToken = "";
+
+  bool get isConfigUnlocked => _isConfigUnlocked;
+  String? get shopeeConfigToken => _shopeeConfigToken;
+  String get shopeeCurrentIp => _shopeeCurrentIp;
+  String get shopeeAccessToken => _shopeeAccessToken;
+  String get shopeeRefreshToken => _shopeeRefreshToken;
+
+  Future<bool> unlockShopeeConfig(String password) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/admin/shopee-config/unlock',
+        method: 'POST',
+        body: {'password': password},
+      );
+      if (response?.statusCode == 200) {
+        final data = jsonDecode(response!.body);
+        _shopeeConfigToken = data['token'];
+        _isConfigUnlocked = true;
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      log("Unlock Shopee Config Error: $e");
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> lockShopeeConfig() async {
+    if (_shopeeConfigToken == null) return;
+    final token = _shopeeConfigToken!;
+    _shopeeConfigToken = null;
+    _isConfigUnlocked = false;
+    _shopeeCurrentIp = "unknown";
+    _shopeeAccessToken = "";
+    _shopeeRefreshToken = "";
+    notifyListeners();
+    try {
+      await makeRequest(
+        '$_baseUrl/admin/shopee-config/lock?token=$token',
+        method: 'POST',
+      );
+    } catch (e) {
+      log("Lock Shopee Config Error: $e");
+    }
+  }
+
+  Future<void> fetchShopeeConfig() async {
+    if (!_isConfigUnlocked || _shopeeConfigToken == null) return;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/admin/shopee-config?token=$_shopeeConfigToken',
+      );
+      if (response?.statusCode == 200) {
+        final data = jsonDecode(response!.body);
+        _shopeeCurrentIp = data['current_ip'] ?? "unknown";
+        _shopeeAccessToken = data['access_token'] ?? "";
+        _shopeeRefreshToken = data['refresh_token'] ?? "";
+      } else if (response?.statusCode == 401) {
+        // Secure session expired
+        _isConfigUnlocked = false;
+        _shopeeConfigToken = null;
+      }
+    } catch (e) {
+      log("Fetch Shopee Config Error: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> saveShopeeConfig(String accessToken, String refreshToken) async {
+    if (!_isConfigUnlocked || _shopeeConfigToken == null) return false;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await makeRequest(
+        '$_baseUrl/admin/shopee-config?token=$_shopeeConfigToken',
+        method: 'POST',
+        body: {
+          'access_token': accessToken,
+          'refresh_token': refreshToken,
+        },
+      );
+      if (response?.statusCode == 200) {
+        _shopeeAccessToken = accessToken;
+        _shopeeRefreshToken = refreshToken;
+        notifyListeners();
+        return true;
+      } else if (response?.statusCode == 401) {
+        // Secure session expired
+        _isConfigUnlocked = false;
+        _shopeeConfigToken = null;
+        notifyListeners();
+      }
+      return false;
+    } catch (e) {
+      log("Save Shopee Config Error: $e");
       return false;
     } finally {
       _isLoading = false;
