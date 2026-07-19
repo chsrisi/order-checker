@@ -294,7 +294,7 @@ class WarehouseItem(Base):
     lid_type: Mapped[Optional[str]] = mapped_column(String)
     category: Mapped[Optional[str]] = mapped_column(String)
     desc_label: Mapped[Optional[str]] = mapped_column(String)
-    barcode_supplier: Mapped[Optional[str]] = mapped_column(String)
+    supplier_barcode: Mapped[Optional[str]] = mapped_column(String)
     item_value_intv: Mapped[Optional[float]] = mapped_column(Float)
     item_value_target: Mapped[Optional[float]] = mapped_column(Float)
     photo: Mapped[Optional[str]] = mapped_column(String)
@@ -356,7 +356,7 @@ class BOMDetail(Base):
     component_sku: Mapped[str] = mapped_column(
         String, ForeignKey("warehouse.items.sku")
     )
-    quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
+    quantity_standard: Mapped[int] = mapped_column(Integer)
     is_not_primary_child: Mapped[Optional[bool]] = mapped_column(Boolean)
 
 
@@ -551,6 +551,13 @@ class PickItemEntryResponse(BaseModel):
     timestamp: datetime
     owner_user: str
     item_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PickItemEntryAssign(BaseModel):
+    order_sn: str
+    qty: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

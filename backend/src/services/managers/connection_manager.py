@@ -1,42 +1,14 @@
 import asyncio
 import logging
-import secrets
 from typing import Any, Dict, List, Optional
+
 from fastapi import WebSocket
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.orm import Session
 
-from . import queries
-from .redis_service import redis_mgr, RedisManager
-from .bom_service import build_shopee_order_response
-from ..config import get_config_value
-from ..models import WSMessageType, OutboundResponse, StockResponse
+from .. import queries
+from ...models import WSMessageType, OutboundResponse, StockResponse, PickItemEntryResponse
 
-logger = logging.getLogger("backend.services.manager")
-
-
-class TicketManager:
-    async def generate_ticket(self, username: str, ttl_seconds: int = 30) -> str:
-        ticket = secrets.token_urlsafe(32)
-        key = f"ws_token:{ticket}"
-        try:
-            await redis_mgr.set(key, username, ex=ttl_seconds)
-            logger.debug(f"Generated WS ticket in Redis for user {username}: {ticket}")
-        except Exception as e:
-            logger.error(f"Failed to save WS ticket in Redis: {e}")
-        return ticket
-
-    async def consume_ticket(self, ticket: str) -> Optional[str]:
-        key = f"ws_token:{ticket}"
-        try:
-            username = await redis_mgr.get(key)
-            if username:
-                await redis_mgr.delete(key)
-                return username
-        except Exception as e:
-            logger.error(f"Failed to consume WS ticket from Redis: {e}")
-        return None
-
+logger = logging.getLogger("backend.services.managers.connection_manager")
 
 class ConnectionManager:
     def __init__(self):
@@ -69,9 +41,9 @@ class ConnectionManager:
         else:
             logger.debug(f"User {username} has no sessions remaining")
 
-    def _get_data(self, message_type: WSMessageType, db: Session, username: str):
+    def _get_data(self, message_type: WSMessageType, username: str):
         is_admin = False
-        user = queries.get_user_data(db, username)
+        user = queries.get_user_data(username)
         if user:
             is_admin = user.scope == "admin"
         else:
@@ -80,29 +52,41 @@ class ConnectionManager:
         data = None
 
         if message_type == WSMessageType.USERS:
-            data = queries.get_all_user_data(db)
+            data = queries.get_all_user_data()
         elif message_type == WSMessageType.OUTBOUNDS:
             outbounds = (
-                queries.get_all_outbound_data(db)
+                queries.get_all_outbound_data()
                 if is_admin
-                else queries.get_outbounds_data(db, username)
+                else queries.get_outbounds_data(username)
             )
             data = [OutboundResponse.model_validate(o) for o in outbounds]
         elif message_type == WSMessageType.SHOPEE_ORDERS:
+            from ..shopee_service import build_shopee_order_response
             orders = (
-                queries.get_all_shopee_order_data(db)
+                queries.get_all_shopee_order_data()
                 if is_admin
-                else queries.get_shopee_order_data(db, username)
+                else queries.get_shopee_order_data(username)
             )
-            data = [build_shopee_order_response(o, db) for o in orders]
+            data = [build_shopee_order_response(o) for o in orders]
         elif message_type == WSMessageType.PICK_ITEM_ENTRIES:
-            data = (
-                queries.get_all_pie_data(db)
-                if is_admin
-                else queries.get_pie_data(db, username)
-            )
+            entries = queries.get_pie_data(username=None if is_admin else username)
+            data = []
+            for entry in entries:
+                item = queries.resolve_barcode_to_item(entry.sku or "")
+                item_name = item.item_name if item else None
+                data.append(
+                    PickItemEntryResponse(
+                        id=entry.id,
+                        sku=entry.sku or "",
+                        qty=entry.qty or 0,
+                        order_sn=entry.order_sn,
+                        timestamp=entry.timestamp,
+                        owner_user=entry.owner_user,
+                        item_name=item_name,
+                    )
+                )
         elif message_type == WSMessageType.STOCKS:
-            stocks = queries.get_all_stocks_data(db, join_warehouse=True)
+            stocks = queries.get_all_stocks_data(join_warehouse=True)
             data = [StockResponse.model_validate(dict(s._mapping)) for s in stocks]
 
         if data is not None:
@@ -126,21 +110,18 @@ class ConnectionManager:
     async def send_to_session(
         self,
         message_type: WSMessageType,
-        db: Session,
         websocket: WebSocket,
         username: str,
         data: Any = None,
     ):
         if data is None:
-            data = self._get_data(message_type, db, username)
+            data = self._get_data(message_type, username)
         logger.debug(f"Sending {message_type.value} to {username} session")
         await self._send_raw(message_type, data, websocket, username)
 
-    async def send_to_user(
-        self, message_type: WSMessageType, db: Session, username: str
-    ):
+    async def send_to_user(self, message_type: WSMessageType, username: str):
         if username in self.active_connections:
-            data = self._get_data(message_type, db, username)
+            data = self._get_data(message_type, username)
             connections = list(self.active_connections[username])
             logger.debug(
                 f"Sending {message_type.value} to {username} ({len(connections)} sessions)"
@@ -150,9 +131,7 @@ class ConnectionManager:
             ]
             await asyncio.gather(*tasks)
 
-    async def broadcast(
-        self, message_type: WSMessageType, db: Session, scope: Optional[str] = None
-    ):
+    async def broadcast(self, message_type: WSMessageType, scope: Optional[str] = None):
         admin_data = None
         client_data_cache: dict[str, list[Any] | None] = {}
 
@@ -163,12 +142,12 @@ class ConnectionManager:
                 if scope is None or user_scope == scope:
                     if user_scope == "admin":
                         if admin_data is None:
-                            admin_data = self._get_data(message_type, db, username)
+                            admin_data = self._get_data(message_type, username)
                         data = admin_data
                     else:
                         if username not in client_data_cache:
                             client_data_cache[username] = self._get_data(
-                                message_type, db, username
+                                message_type, username
                             )
                         data = client_data_cache[username]
 
@@ -179,35 +158,3 @@ class ConnectionManager:
         )
         if tasks:
             await asyncio.gather(*tasks)
-
-
-class ShopeeTokenManager:
-    def __init__(self, redis_manager: RedisManager):
-        self.redis = redis_manager
-
-    async def get_token(self, key: str) -> Optional[str]:
-        redis_key = f"shopee:{key.lower()}"
-        val = await self.redis.get(redis_key)
-        if val:
-            logger.debug(f"Retrieved {redis_key} from Redis")
-            return val
-
-        # Fallback to loading the initial/configured value (env or secret)
-        fallback = get_config_value(key.upper())
-        if fallback:
-            logger.info(
-                f"Seeding {redis_key} to Redis from initial configuration fallback"
-            )
-            await self.set_token(key, fallback)
-            return fallback
-
-        return None
-
-    async def set_token(self, key: str, value: str):
-        redis_key = f"shopee:{key.lower()}"
-        await self.redis.set(redis_key, value)
-
-
-ticket_mgr = TicketManager()
-conn_mgr = ConnectionManager()
-token_mgr = ShopeeTokenManager(redis_mgr)

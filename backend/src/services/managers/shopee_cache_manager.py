@@ -1,13 +1,9 @@
 import asyncio
-import logging
 import time
-
-logger = logging.getLogger("backend.cache")
 
 SHOPEE_CACHE_TTL_SECONDS = 120
 
-
-class ShopeeOrderCache:
+class ShopeeOrderCacheManager:
     def __init__(self, cache_ttl: int = SHOPEE_CACHE_TTL_SECONDS):
         self._cache_ttl = cache_ttl
         self._last_sync = 0.0
@@ -37,6 +33,3 @@ class ShopeeOrderCache:
     @property
     def lock(self) -> asyncio.Lock:
         return self._lock
-
-
-shopee_cache = ShopeeOrderCache()

@@ -7,10 +7,12 @@ import time
 from typing import Any, Optional, cast
 import aiohttp
 from fastapi import HTTPException
+from sqlalchemy import select
+
+from ..exceptions import DomainException
 
 from .redis_service import redis_mgr
-from .manager import token_mgr
-from ..cache import shopee_cache
+from .managers import token_mgr, cache_mgr, conn_mgr
 from ..config import get_config_value
 from ..models import (
     ShopeeResponse,
@@ -19,7 +21,15 @@ from ..models import (
     OrderListT,
     ShpMassTrackingNumber,
     ShpOrderDetails,
+    ShopeeOrder,
+    ShopeeOrderResponse,
+    ShopeeOrderItemBOMResponse,
+    WSMessageType,
+    WarehouseItem,
+    ShopeeOrderRecipientResponse,
+    ShopeeOrderInfoResponse,
 )
+from . import queries
 
 logger = logging.getLogger("backend.services.shopee")
 
@@ -32,10 +42,7 @@ class ShopeeClientSession:
 
 shopee_client_session = ShopeeClientSession()
 
-# Global lock to prevent concurrent workers from refreshing the token at the same time
 TOKEN_REFRESH_LOCK = asyncio.Lock()
-
-# Limit concurrent Shopee requests to respect rate limits (e.g., max 5 at once)
 SHOPEE_SEMAPHORE = asyncio.Semaphore(5)
 
 
@@ -112,7 +119,7 @@ async def shopee_request(
 ) -> Optional[ShopeeResponse]:
 
     # 1. Top-Level Circuit Breaker Check
-    if shopee_cache.is_token_fatal():
+    if cache_mgr.is_token_fatal():
         logger.critical(
             f"[CIRCUIT BREAKER] Aborting request to {path}. Token infrastructure is flagged as completely dead."
         )
@@ -253,7 +260,7 @@ async def shopee_request(
 
                         async with TOKEN_REFRESH_LOCK:
                             # Worker check 1: Did a previous worker fail catastrophically while we were waiting?
-                            if shopee_cache.is_token_fatal():
+                            if cache_mgr.is_token_fatal():
                                 logger.critical(
                                     f"[FAIL FAST] Worker on {path} woke up and detected fatal token state. Aborting."
                                 )
@@ -274,7 +281,7 @@ async def shopee_request(
                                     logger.critical(
                                         "[FATAL AUTH FAILURE] Refresh token is invalid/expired! Tripping circuit breaker."
                                     )
-                                    shopee_cache.set_token_fatal()
+                                    cache_mgr.set_token_fatal()
                                     raise HTTPException(
                                         status_code=500,
                                         detail="Shopee Refresh Token has expired or is invalid. Manual merchant re-auth required.",
@@ -405,3 +412,156 @@ async def fetch_chunk_details(
                     fail_pkgs.add(fail_item.package_number)
 
     return order_details_list, tracking_map, fail_pkgs
+
+
+def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
+    info = order.info
+    recipient = None
+    item_list = []
+
+    with queries.get_db() as db:
+        if order.recipient_address:
+            recipient = ShopeeOrderRecipientResponse.model_validate(
+                order.recipient_address
+            )
+
+        def get_item_info(sku: str) -> tuple[Optional[str], Optional[str]]:
+            item = db.execute(
+                select(WarehouseItem).filter(WarehouseItem.sku == sku)
+            ).scalar_one_or_none()
+            if item:
+                return item.item_name, item.location
+            return None, None
+
+        def flatten_bom_tree(node: dict) -> list[dict]:
+            children = node.get("children")
+            if children:
+                flat = []
+                for child in children:
+                    flat.extend(flatten_bom_tree(child))
+                return flat
+            else:
+                sku = node.get("sku", "")
+                name = node.get("name", "")
+                qty = node.get("quantity", 1)
+                _, loc = get_item_info(sku)
+                return [{
+                    "component_sku": sku,
+                    "component_name": name,
+                    "quantity": qty,
+                    "location": loc
+                }]
+
+        components_map = {}
+
+        raw_item_list = order.item_list or []
+        for raw_item in raw_item_list:
+            sku = raw_item.model_sku or raw_item.item_sku or ""
+            shopee_id = raw_item.item_id
+            qty = raw_item.model_quantity_purchased or 1
+
+            bom_tree = queries.resolve_shopee_order_bom_tree(shopee_id, sku, qty)
+
+            if bom_tree:
+                flat_components = flatten_bom_tree(bom_tree)
+                for comp in flat_components:
+                    comp_sku = comp["component_sku"]
+                    comp_name = comp["component_name"]
+                    comp_qty = comp["quantity"]
+                    comp_loc = comp["location"]
+                    key = (comp_sku, comp_name, comp_loc)
+                    components_map[key] = components_map.get(key, 0) + comp_qty
+            else:
+                name, loc = get_item_info(sku)
+                if not name:
+                    name = raw_item.item_name or sku
+                key = (sku, name, loc)
+                components_map[key] = components_map.get(key, 0) + qty
+
+        item_list = [
+            ShopeeOrderItemBOMResponse(
+                component_sku=sku,
+                component_name=name,
+                quantity=qty,
+                location=loc
+            )
+            for (sku, name, loc), qty in components_map.items()
+        ]
+
+    info_response = [ShopeeOrderInfoResponse.model_validate(info)] if info else []
+
+    return ShopeeOrderResponse(
+        order_sn=order.order_sn,
+        owner_user=order.owner_user,
+        done=order.done,
+        status=order.status,
+        ship_by=order.ship_by,
+        info=info_response,
+        recipient_address=recipient,
+        item_list=item_list,
+    )
+
+async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderResponse]:
+    start_time = time.perf_counter()
+
+    if refresh:
+        cache_mgr.invalidate()
+
+    if cache_mgr.is_valid():
+        orders = queries.get_all_shopee_order_data()
+        return [build_shopee_order_response(o) for o in orders]
+
+    async with cache_mgr.lock:
+        if cache_mgr.is_valid():
+            orders = queries.get_all_shopee_order_data()
+            return [build_shopee_order_response(o) for o in orders]
+
+        now = int(time.time())
+        time_from = now - (2 * 24 * 60 * 60)  # 2 days
+        STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED", "COMPLETED", "CANCELLED"]
+
+        tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]
+        results = await asyncio.gather(*tasks)
+
+        all_order_sns = []
+        for status, res_list in zip(STATUSES, results):
+            all_order_sns.extend(res_list)
+
+        order_sns = list(dict.fromkeys(all_order_sns))
+
+        if order_sns:
+            chunk_size = 50
+            chunks = [
+                order_sns[i : i + chunk_size]
+                for i in range(0, len(order_sns), chunk_size)
+            ]
+
+            chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
+            chunk_results = await asyncio.gather(*chunk_tasks)
+
+            queries.sync_shopee_orders_to_db(chunk_results)
+
+        # Messaging systems
+        await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
+        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
+
+        cache_mgr.mark_synced()
+
+        orders = queries.get_all_shopee_order_data()
+        final_orders = [build_shopee_order_response(o) for o in orders]
+        return final_orders
+
+async def acquire_order(order_sn: str, username: str) -> None:
+    success = queries.acquire_order(order_sn, username)
+    if not success:
+        raise DomainException(
+            status_code=404,
+            detail="Order not found in database. Please fetch orders first.",
+        )
+
+    cache_mgr.invalidate()
+
+    await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
+    await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
+
+

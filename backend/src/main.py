@@ -10,18 +10,16 @@ import aiohttp
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+
+from .exceptions import DomainException, domain_exception_handler
 
 from .config import get_config_value
-from .models import User
-from .dependencies import key_manager, ctx_get_db
 from .services.redis_service import redis_mgr
-from .services import auth_service
+from .services import auth_service, managers, queries
 from .services.shopee_service import shopee_client_session
 from .routers import (
     auth,
     admin,
-    bom,
     outbound,
     items,
     stocks,
@@ -57,8 +55,8 @@ async def lifespan(_app: FastAPI):
 
     # Start background rotation and token cleanup tasks
     bg_tasks: list[asyncio.Task[Any]] = []
-    bg_tasks.append(asyncio.create_task(key_manager.rotate_keys_task()))
-    bg_tasks.append(asyncio.create_task(auth_service.remove_outdated_refresh()))
+    bg_tasks.append(asyncio.create_task(managers.key_mgr.rotate_keys_task()))
+    bg_tasks.append(asyncio.create_task(auth_service.remove_outdated_refresh_task()))
 
     # Initialize Persistent aiohttp Session
     session = aiohttp.ClientSession()
@@ -68,24 +66,10 @@ async def lifespan(_app: FastAPI):
         "Persistent aiohttp session initialized in app.state and shopee_service"
     )
 
-    # Seed admin user
-    with ctx_get_db() as db:
-        admin_user = get_config_value("ADMIN_USERNAME")
-        admin_pass = get_config_value("ADMIN_PASSWORD")
-
-        admin = (
-            db.execute(select(User).filter(User.username == admin_user))
-            .scalars()
-            .first()
-        )
-        if not admin:
-            logger.info(f"Seeding admin user: {admin_user}")
-            hashed_pw = auth_service.get_password_hash(str(admin_pass))
-            db_admin = User(username=admin_user, password_hash=hashed_pw, scope="admin")
-            db.add(db_admin)
-            db.commit()
-        else:
-            logger.debug("Admin user already exists")
+    # Seed admin user via queries service
+    admin_pass = get_config_value("ADMIN_PASSWORD")
+    hashed_pw = auth_service.get_password_hash(str(admin_pass or "admin"))
+    queries.seed_admin_user(hashed_pw)
 
     yield
 
@@ -137,10 +121,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_exception_handler(DomainException, domain_exception_handler)
+
 # Include separated sub-routers
 app.include_router(auth.router)
 app.include_router(admin.router)
-app.include_router(bom.router)
 app.include_router(outbound.router)
 app.include_router(items.router)
 app.include_router(stocks.router)

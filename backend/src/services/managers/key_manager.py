@@ -2,17 +2,16 @@ import asyncio
 import base64
 import logging
 import os
-import time
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from Crypto.PublicKey import RSA
+from dataclasses import dataclass
 
-logger = logging.getLogger("backend.keys")
+logger = logging.getLogger("backend.services.managers.key_manager")
 
 KEYS_DIR = "data/keys"
-CACHE_TTL_SECONDS = 300  # 5 minutes
+KEY_CACHE_TTL_SECONDS = 300
 ACCESS_TTL_SECONDS = 900
 
 
@@ -46,7 +45,7 @@ class KeyManager:
     def __init__(
         self,
         keys_dir: str = KEYS_DIR,
-        cache_ttl: int = CACHE_TTL_SECONDS,
+        cache_ttl: int = KEY_CACHE_TTL_SECONDS,
         access_ttl: int = ACCESS_TTL_SECONDS,
     ):
         self.keys_dir = keys_dir
@@ -68,6 +67,7 @@ class KeyManager:
         self._refresh_keys_from_disk(force=True)
 
     def _refresh_keys_from_disk(self, force: bool = False):
+        import time
         """Scans the directory, builds the JWKS, and identifies the newest key pair."""
         now = time.time()
         if not force and now - self._last_refresh < self.cache_ttl and self._jwks_cache:

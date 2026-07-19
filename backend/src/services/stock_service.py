@@ -1,47 +1,50 @@
 import logging
 from typing import Optional
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from ..models import Stock
+from .managers import conn_mgr
+from . import queries
+from ..models import Stock, WSMessageType
+from ..exceptions import DomainException
 
 logger = logging.getLogger("backend.services.stock")
 
 
-def get_or_merge_stock(
-    db: Session, sku: str, location: Optional[str]
-) -> Optional[Stock]:
-    # Query all records matching sku and location
-    if location:
-        records = (
-            db.execute(
-                select(Stock).filter(Stock.sku == sku, Stock.location == location)
-            )
-            .scalars()
-            .all()
+async def update_or_move_stock(
+    sku_in: str,
+    stock_qty: int,
+    username: str,
+    mode: str = "set",
+    location: Optional[str] = None,
+    move_to: Optional[str] = None,
+    is_location_set: bool = True,
+) -> tuple[Stock, Optional[str]]:
+    try:
+        res, item_name = queries.update_or_move_stock(
+            sku_in=sku_in,
+            stock_qty=stock_qty,
+            username=username,
+            mode=mode,
+            location=location,
+            move_to=move_to,
+            is_location_set=is_location_set,
         )
-    else:
-        records = (
-            db.execute(
-                select(Stock).filter(
-                    Stock.sku == sku,
-                    (Stock.location == None) | (Stock.location == ""),  # noqa: E711
-                )
-            )
-            .scalars()
-            .all()
+    except LookupError as e:
+        raise DomainException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise DomainException(status_code=400, detail=str(e))
+
+    await conn_mgr.broadcast(WSMessageType.STOCKS)
+    return res, item_name
+
+async def get_or_merge_stock(
+    sku: str, location: Optional[str], qty: int, username: str
+) -> Stock:
+    try:
+        res = queries.get_or_merge_stock(
+            sku=sku, location=location, qty=qty, username=username
         )
+    except ValueError as e:
+        raise DomainException(status_code=400, detail=str(e))
 
-    if not records:
-        return None
-
-    primary = records[0]
-    if len(records) > 1:
-        total_stock = sum(r.stock for r in records)
-        primary.stock = total_stock
-        for r in records[1:]:
-            db.delete(r)
-        db.flush()
-        db.refresh(primary)
-
-    return primary
+    await conn_mgr.broadcast(WSMessageType.STOCKS)
+    return res
