@@ -21,6 +21,7 @@ class Base(DeclarativeBase):
     pass
 
 
+# Enums ----
 class WSMessageType(str, PyEnum):
     OUTBOUNDS = "outbound_update"
     USERS = "users_update"
@@ -310,8 +311,8 @@ class WarehouseItem(Base):
         return None
 
 
-# one (WarehouseItem) to many (Stock)
 class Stock(Base):
+    # one (WarehouseItem) to many (Stock)
     __tablename__ = "stocks"
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -525,6 +526,15 @@ class ShopeeOrderResponse(BaseModel):
         if not isinstance(v, list):
             return [v]
         return v
+
+
+class ShopeeConfigUnlockRequest(BaseModel):
+    password: str
+
+
+class ShopeeConfigUpdateRequest(BaseModel):
+    access_token: str
+    refresh_token: str
 
 
 class PickItemEntryCreate(BaseModel):

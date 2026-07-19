@@ -37,3 +37,6 @@ class ShopeeOrderCache:
     @property
     def lock(self) -> asyncio.Lock:
         return self._lock
+
+
+shopee_cache = ShopeeOrderCache()

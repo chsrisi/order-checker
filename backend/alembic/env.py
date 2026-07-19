@@ -64,6 +64,8 @@ def run_migrations_online() -> None:
     global config
     conf = config.get_section(config.config_ini_section, {})
     url = get_config_value("DATABASE_URL")
+    if url is None:
+        raise ValueError("DATABASE_URL is not initialized.")
     conf["sqlalchemy.url"] = url
     connectable = engine_from_config(
         conf,

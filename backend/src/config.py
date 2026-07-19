@@ -1,7 +1,7 @@
 import os
 import re
 import logging
-from typing import Optional
+from typing import overload
 from dotenv import load_dotenv, find_dotenv
 
 # Automatically load environment variables from the nearest .env file
@@ -9,7 +9,14 @@ load_dotenv(find_dotenv())
 
 logger = logging.getLogger("backend.config")
 
-def get_config_value(key: str, default: Optional[str] = None) -> Optional[str]:
+
+@overload
+def get_config_value(key: str) -> str | None: ...
+@overload
+def get_config_value(key: str, default: str) -> str: ...
+
+
+def get_config_value(key: str, default: str | None = None) -> str | None:
     """
     Retrieves a configuration value.
     First checks for a Docker Secret at /run/secrets/<key_lowercase>.
@@ -40,10 +47,12 @@ def get_config_value(key: str, default: Optional[str] = None) -> Optional[str]:
     if val and key.upper() == "DATABASE_URL":
         if os.path.exists("/.dockerenv") or os.path.exists("/run/secrets"):
             original = val
-            val = re.sub(r'@(localhost|127\.0\.0\.1)(:\d+)?', r'@db\2', val)
+            val = re.sub(r"@(localhost|127\.0\.0\.1)(:\d+)?", r"@db\2", val)
             if val != original:
                 # Censor password in logs
-                censored = re.sub(r':([^:@]+)@', r':****@', val)
-                logger.info(f"Resolved database URL host from localhost/127.0.0.1 to 'db' for Docker: {censored}")
+                censored = re.sub(r":([^:@]+)@", r":****@", val)
+                logger.info(
+                    f"Resolved database URL host from localhost/127.0.0.1 to 'db' for Docker: {censored}"
+                )
 
     return val
