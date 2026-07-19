@@ -27,13 +27,13 @@ class _LoginScreenState extends State<LoginScreen> {
     if (username.isEmpty || password.isEmpty) return;
 
     final appState = Provider.of<AppState>(context, listen: false);
-    final success = await appState.login(username, password);
+    final error = await appState.login(username, password);
 
     if (!mounted) return;
-    if (!success) {
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login failed. Please check your credentials.'),
+        SnackBar(
+          content: Text(error),
           backgroundColor: Colors.redAccent,
         ),
       );

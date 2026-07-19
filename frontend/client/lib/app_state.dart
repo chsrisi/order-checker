@@ -267,6 +267,8 @@ class AppState extends ChangeNotifier {
           _reconnectWebSocket();
         },
       );
+
+      loadCurrentViewData();
     } catch (e) {
       log("WebSocket Init Error: $e");
       _reconnectWebSocket(error: e);
@@ -524,8 +526,16 @@ class AppState extends ChangeNotifier {
         requiresAuth: false,
       );
 
-      if (response?.statusCode == 200) {
-        final data = jsonDecode(response!.body);
+      if (response == null) {
+        onShowMessage?.call(
+          "Cannot connect to server. Please check your network connection.",
+          isError: true,
+        );
+        return false;
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         await _storage.write(key: 'access_token', value: data['access_token']);
         await _storage.write(
           key: 'refresh_token',
@@ -535,10 +545,31 @@ class AppState extends ChangeNotifier {
 
         _isLoggedIn = true;
         _username = username;
+        initWebSocket();
         loadCurrentViewData();
         notifyListeners();
         return true;
+      } else if (response.statusCode == 401 || response.statusCode == 400) {
+        String msg = "Login failed. Please check your credentials.";
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map && data['detail'] != null) {
+            msg = data['detail'].toString();
+          }
+        } catch (_) {}
+        onShowMessage?.call(msg, isError: true);
+        return false;
+      } else if (response.statusCode >= 500) {
+        onShowMessage?.call(
+          "Server error occurred. Please try again later.",
+          isError: true,
+        );
+        return false;
       } else {
+        onShowMessage?.call(
+          "Login failed (Status ${response.statusCode}).",
+          isError: true,
+        );
         return false;
       }
     } catch (e) {
@@ -564,8 +595,16 @@ class AppState extends ChangeNotifier {
         requiresAuth: false,
       );
 
-      if (response?.statusCode == 200) {
-        final data = jsonDecode(response!.body);
+      if (response == null) {
+        onShowMessage?.call(
+          "Cannot connect to server. Please check your network connection.",
+          isError: true,
+        );
+        return false;
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         await _storage.write(key: 'access_token', value: data['access_token']);
         await _storage.write(
           key: 'refresh_token',
@@ -575,10 +614,31 @@ class AppState extends ChangeNotifier {
 
         _isLoggedIn = true;
         _username = username;
+        initWebSocket();
         loadCurrentViewData();
         notifyListeners();
         return true;
+      } else if (response.statusCode == 400 || response.statusCode == 409) {
+        String msg = "Registration failed.";
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map && data['detail'] != null) {
+            msg = data['detail'].toString();
+          }
+        } catch (_) {}
+        onShowMessage?.call(msg, isError: true);
+        return false;
+      } else if (response.statusCode >= 500) {
+        onShowMessage?.call(
+          "Server error occurred. Please try again later.",
+          isError: true,
+        );
+        return false;
       } else {
+        onShowMessage?.call(
+          "Registration failed (Status ${response.statusCode}).",
+          isError: true,
+        );
         return false;
       }
     } catch (e) {

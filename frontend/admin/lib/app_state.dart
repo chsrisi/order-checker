@@ -275,6 +275,8 @@ class AppState extends ChangeNotifier {
           _reconnectWebSocket();
         },
       );
+
+      loadCurrentViewData();
     } catch (e) {
       log("WebSocket Init Error: $e");
       _reconnectWebSocket(error: e);
@@ -507,8 +509,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String username, String password) async {
-    if (username.isEmpty || password.isEmpty) return false;
+  Future<String?> login(String username, String password) async {
+    if (username.isEmpty || password.isEmpty) {
+      return "Username and password cannot be empty.";
+    }
 
     _isLoading = true;
     notifyListeners();
@@ -521,8 +525,12 @@ class AppState extends ChangeNotifier {
         requiresAuth: false,
       );
 
-      if (response?.statusCode == 200) {
-        final data = jsonDecode(response!.body);
+      if (response == null) {
+        return "Cannot connect to server. Please check your network connection.";
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         await _storage.write(key: 'access_token', value: data['access_token']);
         await _storage.write(
           key: 'refresh_token',
@@ -535,12 +543,23 @@ class AppState extends ChangeNotifier {
         initWebSocket();
         loadCurrentViewData();
         notifyListeners();
-        return true;
+        return null;
+      } else if (response.statusCode == 401 || response.statusCode == 400) {
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map && data['detail'] != null) {
+            return data['detail'].toString();
+          }
+        } catch (_) {}
+        return "Login failed. Invalid username or password.";
+      } else if (response.statusCode >= 500) {
+        return "Server error occurred. Please try again later.";
+      } else {
+        return "Login failed (Status ${response.statusCode}).";
       }
-      return false;
     } catch (e) {
       log("Login Error: $e");
-      return false;
+      return "An unexpected error occurred during login.";
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -688,6 +707,7 @@ class AppState extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      // TODO: refactor
       final response = await makeRequest(
         '$_baseUrl/admin/clear/outbound_items',
         method: 'DELETE',
@@ -710,6 +730,7 @@ class AppState extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      // TODO: refactor
       final response = await makeRequest('$_baseUrl/admin/export/outbound');
       if (response?.statusCode == 200) {
         final bytes = response!.bodyBytes;

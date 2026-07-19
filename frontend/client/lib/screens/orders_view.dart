@@ -5,7 +5,8 @@ import '../models.dart';
 
 class OrdersInputScreen extends StatefulWidget {
   final String? selectedOrder;
-  const OrdersInputScreen({super.key, this.selectedOrder});
+  final Function(String?)? onSelectOrder;
+  const OrdersInputScreen({super.key, this.selectedOrder, this.onSelectOrder});
 
   @override
   State<OrdersInputScreen> createState() => _OrdersInputScreenState();
@@ -23,6 +24,14 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
   @override
   void initState() {
     super.initState();
+    _qtyFocusNode.addListener(() {
+      if (_qtyFocusNode.hasFocus) {
+        _orderQtyController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _orderQtyController.text.length,
+        );
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = Provider.of<AppState>(context, listen: false);
       appState.onShowMessage = (message, {isError = false, isAlert = false}) {
@@ -72,6 +81,10 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
     final barcode = _scanController.text.trim();
     if (barcode.isEmpty) return;
     _qtyFocusNode.requestFocus();
+    _orderQtyController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _orderQtyController.text.length,
+    );
   }
 
   Future<void> _handleSubmit(AppState appState) async {
@@ -119,6 +132,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
         }
 
         if (retryCode == 200) {
+          widget.onSelectOrder?.call(orderSn);
           _scanController.clear();
           _orderQtyController.text = "1";
           _scanFocusNode.requestFocus();
@@ -142,6 +156,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
           }
         }
       } else if (statusCode == 200) {
+        widget.onSelectOrder?.call(orderSn);
         _scanController.clear();
         _orderQtyController.text = "1";
         _scanFocusNode.requestFocus();
@@ -161,7 +176,11 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
             .where((o) => o.orderSn == widget.selectedOrder)
             .firstOrNull;
         if (activeOrder != null) {
-          final hasSku = activeOrder.itemList.any((e) => (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') == sku);
+          final hasSku = activeOrder.itemList.any(
+            (e) =>
+                (e.componentSku.isNotEmpty ? e.componentSku : 'unknown') ==
+                sku,
+          );
           if (hasSku) {
             final reqQty =
                 activeOrder.itemList
@@ -201,22 +220,9 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
     return Padding(
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(16.0),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.shopping_basket, size: 40, color: Colors.orange),
-              const SizedBox(width: 16),
-              const Text(
-                "Orders Input",
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           ToggleButtons(
             isSelected: [_selectedMode == 'order', _selectedMode == 'item'],
             onPressed: (index) =>
@@ -233,7 +239,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           if (_selectedMode == 'order')
             TextField(
               controller: _scanController,
@@ -274,7 +280,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
                 ),
               ],
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -295,39 +301,275 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          if (widget.selectedOrder != null)
-            Builder(
+          const SizedBox(height: 16),
+          Expanded(
+            child: Builder(
               builder: (context) {
+                if (widget.selectedOrder == null) {
+                  return const Center(
+                    child: Text(
+                      "No order selected",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                }
+
                 final activeOrder = appState.orders
                     .where((o) => o.orderSn == widget.selectedOrder)
                     .firstOrNull;
+
                 if (activeOrder == null) {
-                  return const SizedBox.shrink();
+                  return const Center(
+                    child: Text(
+                      "No order selected",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
                 }
-                final activePickup = activeOrder.info
+
+                final requirements = activeOrder.itemList;
+                final scanned = appState.pickItemEntries.where(
+                  (e) => e.orderSn == activeOrder.orderSn,
+                );
+                final skuMap = Map.fromEntries(
+                  {
+                    ...requirements.map(
+                      (e) => e.componentSku.isNotEmpty
+                          ? e.componentSku
+                          : 'unknown',
+                    ),
+                    ...scanned.map((e) => e.sku),
+                  }.map((sku) {
+                    final reqQty = requirements
+                        .where(
+                          (e) =>
+                              (e.componentSku.isNotEmpty
+                                  ? e.componentSku
+                                  : 'unknown') ==
+                              sku,
+                        )
+                        .map((e) => e.quantity)
+                        .firstOrNull ??
+                        0;
+                    final scanQty = scanned
+                        .where((e) => e.sku == sku)
+                        .fold(0, (sum, e) => sum + e.qty);
+                    return MapEntry(sku, (reqQty, scanQty));
+                  }),
+                );
+                final progress = skuMap.values.fold(0, (sum, e) {
+                  var (req, scan) = e;
+                  if (req == scan) return sum + 1;
+                  return sum;
+                });
+                Color? textColor;
+                if (skuMap.values.any((pair) {
+                  var (req, scan) = pair;
+                  return req == 0;
+                })) {
+                  textColor = Colors.red;
+                } else if (progress == 0) {
+                  textColor = Colors.grey;
+                } else if (progress < requirements.length) {
+                  textColor = Colors.orange;
+                } else {
+                  textColor = Colors.green;
+                }
+
+                final pickupCode = activeOrder.info
                     .firstWhere(
                       (i) => i.pickupCode != null && i.pickupCode!.isNotEmpty,
                       orElse: () => ShopeeOrderInfo(id: 0),
                     )
                     .pickupCode;
-                final displayText =
-                    (activePickup != null && activePickup.isNotEmpty)
-                    ? activePickup
-                    : activeOrder.orderSn;
-                return Text(
-                  "Active Order: $displayText",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
+                final displaySn =
+                    (pickupCode != null && pickupCode.isNotEmpty)
+                        ? pickupCode
+                        : activeOrder.orderSn;
+
+                return Card(
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displaySn,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Text("Progress: "),
+                                Text(
+                                  "$progress/${requirements.length} SKUs",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (activeOrder.recipientAddress != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                "Recipient: ${activeOrder.recipientAddress!.name ?? 'N/A'} (${activeOrder.recipientAddress!.city ?? 'N/A'})",
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: ListView(
+                          children: skuMap.entries.map((entry) {
+                            final sku = entry.key;
+                            final (reqQty, scanQty) = entry.value;
+
+                            Color? itemStatusColor;
+                            if (scanQty == 0) {
+                              itemStatusColor = Colors.grey;
+                            } else if (scanQty < reqQty) {
+                              itemStatusColor = Colors.orange;
+                            } else if (scanQty == reqQty) {
+                              itemStatusColor = Colors.green;
+                            } else {
+                              itemStatusColor = Colors.red;
+                            }
+
+                            final isSkuEmpty =
+                                sku.trim().isEmpty || sku == 'unknown';
+                            final matchingItem = requirements.firstWhere(
+                              (item) => (isSkuEmpty
+                                  ? (item.componentSku == 'unknown' ||
+                                      item.componentSku.isEmpty)
+                                  : (item.componentSku == sku)),
+                              orElse: () => ShopeeOrderItemBOM(
+                                componentSku: '',
+                                componentName: '',
+                                quantity: 0,
+                              ),
+                            );
+
+                            final scanMatch = scanned
+                                .where(
+                                  (e) =>
+                                      e.sku == sku &&
+                                      e.itemName != null &&
+                                      e.itemName!.isNotEmpty,
+                                )
+                                .firstOrNull;
+
+                            String displayName =
+                                matchingItem.componentName.isNotEmpty
+                                    ? matchingItem.componentName
+                                    : (scanMatch?.itemName ?? 'Unknown Item');
+
+                            final skuPart = isSkuEmpty ? "No SKU" : sku;
+                            final loc = matchingItem.location;
+                            final displaySubtext = (loc != null &&
+                                    loc.isNotEmpty)
+                                ? "$skuPart ($loc)"
+                                : skuPart;
+
+                            return ListTile(
+                              title: Text(displayName),
+                              subtitle: Text(displaySubtext),
+                              trailing: Text(
+                                "$scanQty / $reqQty",
+                                style: TextStyle(
+                                  color: itemStatusColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onLongPress: () => showUnassignDialog(
+                                context,
+                                appState,
+                                activeOrder.orderSn,
+                                sku,
+                                scanQty,
+                                reqQty,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
+          ),
         ],
       ),
     );
   }
+}
+
+void showUnassignDialog(
+  BuildContext context,
+  AppState appState,
+  String orderSn,
+  String sku,
+  int currentQty,
+  int requiredQty,
+) {
+  int defaultQty = currentQty > requiredQty
+      ? currentQty - requiredQty
+      : currentQty;
+  final qtyController = TextEditingController(text: defaultQty.toString());
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text("Unassign SKU: $sku"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text("Move to Unknown? (Max: $currentQty)"),
+          TextField(
+            controller: qtyController,
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final qty = int.tryParse(qtyController.text) ?? 0;
+            if (qty > 0 && qty <= currentQty) {
+              appState.unassignSku(orderSn, sku, qty);
+              Navigator.pop(context);
+            }
+          },
+          child: const Text("Move"),
+        ),
+      ],
+    ),
+  );
 }
 
 class OrdersHistoryScreen extends StatefulWidget {
@@ -389,53 +631,6 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
       }
     });
     super.dispose();
-  }
-
-  void _showUnassignDialog(
-    BuildContext context,
-    AppState appState,
-    String orderSn,
-    String sku,
-    int currentQty,
-    int requiredQty,
-  ) {
-    int defaultQty = currentQty > requiredQty
-        ? currentQty - requiredQty
-        : currentQty;
-    final qtyController = TextEditingController(text: defaultQty.toString());
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Unassign SKU: $sku"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Move to Unknown? (Max: $currentQty)"),
-            TextField(
-              controller: qtyController,
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final qty = int.tryParse(qtyController.text) ?? 0;
-              if (qty > 0 && qty <= currentQty) {
-                appState.unassignSku(orderSn, sku, qty);
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("Move"),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showAssignDialog(
@@ -793,7 +988,7 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
-                                      onLongPress: () => _showUnassignDialog(
+                                      onLongPress: () => showUnassignDialog(
                                         context,
                                         appState,
                                         order.orderSn,
@@ -889,7 +1084,10 @@ class _OrdersViewState extends State<OrdersView> {
   Widget build(BuildContext context) {
     switch (widget.subIndex) {
       case 0:
-        return OrdersInputScreen(selectedOrder: _activeOrder);
+        return OrdersInputScreen(
+          selectedOrder: _activeOrder,
+          onSelectOrder: setActiveOrder,
+        );
       case 1:
         return OrdersHistoryScreen(
           activeOrder: _activeOrder,
