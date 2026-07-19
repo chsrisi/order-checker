@@ -10,6 +10,7 @@ from ...models import WSMessageType, OutboundResponse, StockResponse, PickItemEn
 
 logger = logging.getLogger("backend.services.managers.connection_manager")
 
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
@@ -62,6 +63,7 @@ class ConnectionManager:
             data = [OutboundResponse.model_validate(o) for o in outbounds]
         elif message_type == WSMessageType.SHOPEE_ORDERS:
             from ..shopee_service import build_shopee_order_response
+
             orders = (
                 queries.get_all_shopee_order_data()
                 if is_admin
@@ -126,9 +128,7 @@ class ConnectionManager:
             logger.debug(
                 f"Sending {message_type.value} to {username} ({len(connections)} sessions)"
             )
-            tasks = [
-                self._send_raw(message_type, data, ws, username) for ws in connections
-            ]
+            tasks = [self._send_raw(message_type, data, ws, username) for ws in connections]
             await asyncio.gather(*tasks)
 
     async def broadcast(self, message_type: WSMessageType, scope: Optional[str] = None):
@@ -146,15 +146,11 @@ class ConnectionManager:
                         data = admin_data
                     else:
                         if username not in client_data_cache:
-                            client_data_cache[username] = self._get_data(
-                                message_type, username
-                            )
+                            client_data_cache[username] = self._get_data(message_type, username)
                         data = client_data_cache[username]
 
                     tasks.append(self._send_raw(message_type, data, ws, username))
 
-        logger.debug(
-            f"Broadcasting {message_type.value} to {len(tasks)} sessions (scope: {scope})"
-        )
+        logger.debug(f"Broadcasting {message_type.value} to {len(tasks)} sessions (scope: {scope})")
         if tasks:
             await asyncio.gather(*tasks)

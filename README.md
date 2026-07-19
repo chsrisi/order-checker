@@ -18,7 +18,7 @@ administrators.
 backend/          FastAPI API, SQLAlchemy models, Alembic migrations, Docker stack
 frontend/client/  Flutter operator app (web, Android, Windows)
 frontend/admin/   Flutter administration app (web, Windows)
-docs/PROJECT.md   Architecture, API map, workflows, and operational notes
+docs/             Architecture, API, operations, testing, and review guides
 ```
 
 ## Quick start
@@ -37,6 +37,7 @@ Requirements: Docker with Compose, Flutter 3.x/Dart 3.9+ for the UIs.
    export PARTNER_KEY='your-shopee-partner-key'
    export SHOP_ID='your-shopee-shop-id'
    export SHOPEE_URL='https://partner.shopeemobile.com'
+   export CORS_ORIGINS='http://localhost:3000'
    ```
 
 3. Start the stack:
@@ -72,9 +73,12 @@ ignored by Git; keep `backend/.secrets/` private as well.
 
 ```bash
 docker compose -f backend/compose.yaml config --quiet
+cd backend && docker compose -f compose.yaml -f compose.test.yaml run --build --rm tests
 cd frontend/client && flutter analyze && flutter test
 cd frontend/admin && flutter analyze && flutter test
 ```
 
-See [docs/PROJECT.md](docs/PROJECT.md) for the API, data flow, configuration,
-and current limitations.
+Start with the [documentation index](docs/PROJECT.md), or jump to the
+[architecture](docs/ARCHITECTURE.md), [API](docs/API.md),
+[operations](docs/OPERATIONS.md), [testing](docs/TESTING.md), and
+[code-review report](docs/CODE_REVIEW.md).

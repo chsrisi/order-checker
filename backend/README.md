@@ -18,14 +18,15 @@ Interactive API documentation is available at `/docs` and `/redoc`.
 ## Layout
 
 ```text
-src/main.py       API, auth, sync, and WebSocket flows
+src/main.py       Application lifecycle, middleware, and router assembly
 src/models.py     SQLAlchemy entities and Pydantic schemas
-src/keys.py       RS256 signing-key lifecycle and JWKS
-src/cache.py      Shopee sync cache/lock state
-src/redis_client.py  Shopee token persistence
+src/routers/      HTTP and WebSocket transport
+src/services/     Business workflows and external integration
+src/services/queries/  PostgreSQL persistence functions
+src/services/managers/ Process-level keys, cache, tickets, and sockets
 alembic/          PostgreSQL migrations
 compose.yaml      API, PostgreSQL, and Redis services
 ```
 
-Architecture, route groups, configuration, and known gaps are documented in
+Architecture, routes, operations, testing, and review findings are indexed in
 [docs/PROJECT.md](../docs/PROJECT.md).

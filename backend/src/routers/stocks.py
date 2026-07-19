@@ -1,7 +1,7 @@
 import logging
 from typing import List
 from fastapi import APIRouter, Depends
-from ..models import User, StockCreate, StockResponse
+from ..models import StockCreate, StockResponse, StockUpdateResponse, User
 from ..dependencies import get_current_user
 from ..services import stock_service, queries
 
@@ -10,7 +10,13 @@ logger = logging.getLogger("backend.routers.stocks")
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
-@router.get("", response_model=List[StockResponse])
+@router.get(
+    "",
+    response_model=List[StockResponse],
+    summary="List inventory",
+    description="Returns stock by SKU and location; optionally includes the warehouse item name.",
+    responses={401: {"description": "Invalid bearer token"}},
+)
 def get_stocks(
     join_warehouse: bool = False,
     current_user: User = Depends(get_current_user),
@@ -19,7 +25,16 @@ def get_stocks(
     return [StockResponse.model_validate(dict(i._mapping)) for i in items]
 
 
-@router.post("/update")
+@router.post(
+    "/update",
+    response_model=StockUpdateResponse,
+    summary="Adjust or transfer inventory",
+    description="Sets/adds inventory at a location, or transfers a positive quantity to `move_to` without allowing negative source stock.",
+    responses={
+        400: {"description": "Invalid mode, quantity, or transfer"},
+        404: {"description": "SKU/barcode not found"},
+    },
+)
 async def update_stock(
     payload: StockCreate,
     current_user: User = Depends(get_current_user),

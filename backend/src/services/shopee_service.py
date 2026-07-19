@@ -81,9 +81,7 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
     try:
         if shopee_client_session.session is None:
             raise RuntimeError("Shopee aiohttp session not initialized")
-        async with shopee_client_session.session.post(
-            url, json=body, headers=headers
-        ) as resp:
+        async with shopee_client_session.session.post(url, json=body, headers=headers) as resp:
             ret = ShopeeTokenResponse.model_validate(await resp.json())
 
             if ret.error:
@@ -172,7 +170,8 @@ async def shopee_request(
         headers = {"Content-Type": "application/json"}
 
         logger.debug(
-            f"[REQ ENQUEUE] {method} {path} | Token snippet: ...{access_token[-6:] if access_token else 'None'}"
+            "shopee_request_enqueued",
+            extra={"event": "shopee.request.enqueued", "method": method, "path": path},
         )
 
         try:
@@ -213,12 +212,8 @@ async def shopee_request(
 
                     if ret.error == "source_ip_undeclared":
                         if ret.message is None:
-                            raise RuntimeError(
-                                "Shopee API returned an error with no message."
-                            )
-                        ip_match = re.search(
-                            r"\b(?:\d{1,3}\.){3}\d{1,3}\b", ret.message
-                        )
+                            raise RuntimeError("Shopee API returned an error with no message.")
+                        ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", ret.message)
                         if ip_match:
                             current_ip = ip_match.group(0)
                         else:
@@ -226,14 +221,10 @@ async def shopee_request(
                                 r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b",
                                 ret.message,
                             )
-                            current_ip = (
-                                ipv6_match.group(0) if ipv6_match else "unknown"
-                            )
+                            current_ip = ipv6_match.group(0) if ipv6_match else "unknown"
                         try:
                             await redis_mgr.set("shopee:current_ip", current_ip)
-                            logger.info(
-                                f"Updated Shopee current IP in Redis: {current_ip}"
-                            )
+                            logger.info(f"Updated Shopee current IP in Redis: {current_ip}")
                         except Exception as e:
                             logger.error(f"Failed to set current IP in Redis: {e}")
 
@@ -370,12 +361,11 @@ async def fetch_chunk_details(
             },
         )
 
-    if (
-        not detail_resp
-        or detail_resp.error
-        or not isinstance(detail_resp.response, OrderListT)
-    ):
-        logger.error(f"Failed to fetch Shopee details for chunk: {sn_str}")
+    if not detail_resp or detail_resp.error or not isinstance(detail_resp.response, OrderListT):
+        logger.error(
+            "shopee_order_chunk_failed",
+            extra={"event": "shopee.order_chunk.failed", "order_count": len(chunk)},
+        )
         return [], {}, set()
 
     order_details_list = detail_resp.response.order_list
@@ -421,9 +411,7 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
 
     with queries.get_db() as db:
         if order.recipient_address:
-            recipient = ShopeeOrderRecipientResponse.model_validate(
-                order.recipient_address
-            )
+            recipient = ShopeeOrderRecipientResponse.model_validate(order.recipient_address)
 
         def get_item_info(sku: str) -> tuple[Optional[str], Optional[str]]:
             item = db.execute(
@@ -445,12 +433,9 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
                 name = node.get("name", "")
                 qty = node.get("quantity", 1)
                 _, loc = get_item_info(sku)
-                return [{
-                    "component_sku": sku,
-                    "component_name": name,
-                    "quantity": qty,
-                    "location": loc
-                }]
+                return [
+                    {"component_sku": sku, "component_name": name, "quantity": qty, "location": loc}
+                ]
 
         components_map = {}
 
@@ -480,10 +465,7 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
 
         item_list = [
             ShopeeOrderItemBOMResponse(
-                component_sku=sku,
-                component_name=name,
-                quantity=qty,
-                location=loc
+                component_sku=sku, component_name=name, quantity=qty, location=loc
             )
             for (sku, name, loc), qty in components_map.items()
         ]
@@ -500,6 +482,7 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
         recipient_address=recipient,
         item_list=item_list,
     )
+
 
 async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderResponse]:
     start_time = time.perf_counter()
@@ -531,10 +514,7 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
 
         if order_sns:
             chunk_size = 50
-            chunks = [
-                order_sns[i : i + chunk_size]
-                for i in range(0, len(order_sns), chunk_size)
-            ]
+            chunks = [order_sns[i : i + chunk_size] for i in range(0, len(order_sns), chunk_size)]
 
             chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
             chunk_results = await asyncio.gather(*chunk_tasks)
@@ -551,8 +531,12 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
         final_orders = [build_shopee_order_response(o) for o in orders]
         return final_orders
 
+
 async def acquire_order(order_sn: str, username: str) -> None:
-    success = queries.acquire_order(order_sn, username)
+    try:
+        success = queries.acquire_order(order_sn, username)
+    except ValueError as exc:
+        raise DomainException(status_code=409, detail=str(exc)) from exc
     if not success:
         raise DomainException(
             status_code=404,
@@ -563,5 +547,3 @@ async def acquire_order(order_sn: str, username: str) -> None:
 
     await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
     await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
-
-

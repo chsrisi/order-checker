@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 from enum import Enum as PyEnum
 from datetime import datetime, UTC
-from typing import List, Optional, Union, Annotated, Any
+from typing import List, Optional, Union, Annotated, Any, Literal
 
 from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
@@ -13,6 +13,7 @@ from pydantic import (
     Discriminator,
     Tag,
     field_validator,
+    model_validator,
     Field,
 )
 
@@ -65,19 +66,11 @@ class User(Base):
     __table_args__ = {"schema": "auth"}
     username: Mapped[str] = mapped_column(String, primary_key=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
-    scope: Mapped[str] = mapped_column(
-        String
-    )  # TODO: refactor to use scope based permissions
+    scope: Mapped[str] = mapped_column(String)  # TODO: refactor to use scope based permissions
 
-    orders: Mapped[List["ShopeeOrder"]] = relationship(
-        "ShopeeOrder", back_populates="owner"
-    )
-    pies: Mapped[List["PickItemEntry"]] = relationship(
-        "PickItemEntry", back_populates="owner"
-    )
-    outbounds: Mapped[List["OutboundItem"]] = relationship(
-        "OutboundItem", back_populates="owner"
-    )
+    orders: Mapped[List["ShopeeOrder"]] = relationship("ShopeeOrder", back_populates="owner")
+    pies: Mapped[List["PickItemEntry"]] = relationship("PickItemEntry", back_populates="owner")
+    outbounds: Mapped[List["OutboundItem"]] = relationship("OutboundItem", back_populates="owner")
 
 
 class RefreshToken(Base):
@@ -85,9 +78,7 @@ class RefreshToken(Base):
     __table_args__ = {"schema": "auth"}
     jti: Mapped[str] = mapped_column(String, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     ip_address: Mapped[Optional[str]] = mapped_column(String)
@@ -114,12 +105,8 @@ class ShopeeOrder(Base):
     recipient_address: Mapped["ShopeeOrderRecipientAddress"] = relationship(
         "ShopeeOrderRecipientAddress", back_populates="order"
     )
-    info: Mapped["ShopeeOrderInfo"] = relationship(
-        "ShopeeOrderInfo", back_populates="order"
-    )
-    pies: Mapped[List["PickItemEntry"]] = relationship(
-        "PickItemEntry", back_populates="order"
-    )
+    info: Mapped["ShopeeOrderInfo"] = relationship("ShopeeOrderInfo", back_populates="order")
+    pies: Mapped[List["PickItemEntry"]] = relationship("PickItemEntry", back_populates="order")
 
 
 class ShopeeOrderInfo(Base):
@@ -144,9 +131,7 @@ class ShopeeOrderRecipientAddress(Base):
     name: Mapped[Optional[str]] = mapped_column(String)
     city: Mapped[Optional[str]] = mapped_column(String)
 
-    order: Mapped["ShopeeOrder"] = relationship(
-        "ShopeeOrder", back_populates="recipient_address"
-    )
+    order: Mapped["ShopeeOrder"] = relationship("ShopeeOrder", back_populates="recipient_address")
 
 
 class ShopeeOrderItemList(Base):
@@ -163,9 +148,7 @@ class ShopeeOrderItemList(Base):
     model_quantity_purchased: Mapped[Optional[int]] = mapped_column(Integer)
     image_url: Mapped[Optional[str]] = mapped_column(String)
 
-    order: Mapped["ShopeeOrder"] = relationship(
-        "ShopeeOrder", back_populates="item_list"
-    )
+    order: Mapped["ShopeeOrder"] = relationship("ShopeeOrder", back_populates="item_list")
 
 
 # orders
@@ -174,9 +157,7 @@ class OutboundItem(Base):
     __table_args__ = {"schema": "orders"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     content: Mapped[str] = mapped_column(String, index=True)  # The scanned text
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -202,9 +183,7 @@ class OutboundTag(Base):
     )
     content: Mapped[str] = mapped_column(String, index=True)
 
-    outbound: Mapped["OutboundItem"] = relationship(
-        "OutboundItem", back_populates="tags_rel"
-    )
+    outbound: Mapped["OutboundItem"] = relationship("OutboundItem", back_populates="tags_rel")
 
 
 class PickItemEntry(Base):
@@ -216,15 +195,11 @@ class PickItemEntry(Base):
     order_sn: Mapped[Optional[str]] = mapped_column(
         ForeignKey("shopee.orders.order_sn"), nullable=True
     )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
 
     owner: Mapped["User"] = relationship("User", back_populates="pies")
-    order: Mapped[Optional["ShopeeOrder"]] = relationship(
-        "ShopeeOrder", back_populates="pies"
-    )
+    order: Mapped[Optional["ShopeeOrder"]] = relationship("ShopeeOrder", back_populates="pies")
 
 
 class PickItemEntryLog(Base):
@@ -232,9 +207,7 @@ class PickItemEntryLog(Base):
     __table_args__ = {"schema": "orders"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     message: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # warehouse
@@ -320,9 +293,7 @@ class Stock(Base):
     stock: Mapped[int] = mapped_column(Integer)
     location: Mapped[Optional[str]] = mapped_column(String)
 
-    item: Mapped["WarehouseItem"] = relationship(
-        "WarehouseItem", back_populates="stocks"
-    )
+    item: Mapped["WarehouseItem"] = relationship("WarehouseItem", back_populates="stocks")
 
 
 class StocksLog(Base):
@@ -330,18 +301,14 @@ class StocksLog(Base):
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     message: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class BOMHeader(Base):
     __tablename__ = "bom_headers"
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    sku: Mapped[str] = mapped_column(
-        String, ForeignKey("warehouse.items.sku"), unique=True
-    )
+    sku: Mapped[str] = mapped_column(String, ForeignKey("warehouse.items.sku"), unique=True)
     quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
     factor_f5: Mapped[Optional[float]] = mapped_column(Float)
 
@@ -350,12 +317,8 @@ class BOMDetail(Base):
     __tablename__ = "bom_details"
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    bom_header_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("warehouse.bom_headers.id")
-    )
-    component_sku: Mapped[str] = mapped_column(
-        String, ForeignKey("warehouse.items.sku")
-    )
+    bom_header_id: Mapped[int] = mapped_column(Integer, ForeignKey("warehouse.bom_headers.id"))
+    component_sku: Mapped[str] = mapped_column(String, ForeignKey("warehouse.items.sku"))
     quantity_standard: Mapped[int] = mapped_column(Integer)
     is_not_primary_child: Mapped[Optional[bool]] = mapped_column(Boolean)
 
@@ -379,9 +342,7 @@ class BOMDetailMarketplace(Base):
         BigInteger,
         ForeignKey("warehouse.bom_headers_marketplace.shopee_id"),
     )
-    component_sku: Mapped[str] = mapped_column(
-        String, ForeignKey("warehouse.items.sku")
-    )
+    component_sku: Mapped[str] = mapped_column(String, ForeignKey("warehouse.items.sku"))
     quantity_standard: Mapped[Optional[int]] = mapped_column(Integer)
     is_not_primary_child: Mapped[Optional[bool]] = mapped_column(Boolean)
     created_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
@@ -396,9 +357,7 @@ class ShopeeItem(Base):
     model_id: Mapped[Optional[str]] = mapped_column(String)
     model_name: Mapped[Optional[str]] = mapped_column(String)
     has_variant: Mapped[Optional[bool]] = mapped_column(Boolean)
-    sku: Mapped[Optional[str]] = mapped_column(
-        String, ForeignKey("warehouse.items.sku")
-    )
+    sku: Mapped[Optional[str]] = mapped_column(String, ForeignKey("warehouse.items.sku"))
     sell_price_factor: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     factor_x: Mapped[Optional[float]] = mapped_column(Float)
@@ -407,8 +366,12 @@ class ShopeeItem(Base):
 
 # Pydantic Models ----
 class OutboundCreate(BaseModel):
-    content: str
-    tags: Optional[List[str]] = None
+    content: str = Field(
+        min_length=1, description="Order number or shipping label value.", examples=["240719ABC123"]
+    )
+    tags: Optional[List[str]] = Field(
+        default=None, description="Optional scanner-supplied classification tags."
+    )
 
 
 class OutboundResponse(BaseModel):
@@ -432,28 +395,34 @@ class WarehouseItemResponse(BaseModel):
 
 
 class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
+    access_token: str = Field(description="Short-lived RS256 bearer token.")
+    refresh_token: str = Field(description="Single-use-on-refresh token valid for 24 hours.")
+    token_type: Literal["bearer"] = "bearer"
 
 
 class UserAuth(BaseModel):
-    username: str = Field(...)
-    password: str = Field(...)
+    username: str = Field(min_length=1, max_length=64, examples=["operator_1"])
+    password: str = Field(min_length=1, max_length=256, examples=["correct-horse-battery-staple"])
 
     @field_validator("username")
     @classmethod
     def validate_username(cls, v: str) -> str:
         if not re.match(r"^[a-zA-Z0-9_]+$", v):
-            raise ValueError(
-                "Username can only contain alphanumeric characters, "
-                "underscores, and hyphens."
-            )
+            raise ValueError("Username can only contain alphanumeric characters, and underscores.")
         return v
 
 
+class UserResponse(BaseModel):
+    username: str
+    scope: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(
+        min_length=1, description="Refresh token returned by login or registration."
+    )
 
 
 class ShopeeOrderCreate(BaseModel):
@@ -511,9 +480,9 @@ class ShopeeOrderResponse(BaseModel):
     shipping_carrier: Optional[str] = None
     done: bool = False
     done_at: Optional[datetime] = None
-    item_list: List[ShopeeOrderItemBOMResponse] = []
+    item_list: List[ShopeeOrderItemBOMResponse] = Field(default_factory=list)
     recipient_address: Optional[ShopeeOrderRecipientResponse] = None
-    info: List[ShopeeOrderInfoResponse] = []
+    info: List[ShopeeOrderInfoResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -529,17 +498,23 @@ class ShopeeOrderResponse(BaseModel):
 
 
 class ShopeeConfigUnlockRequest(BaseModel):
-    password: str
+    password: str = Field(
+        min_length=1, max_length=256, description="Current administrator password."
+    )
 
 
 class ShopeeConfigUpdateRequest(BaseModel):
-    access_token: str
-    refresh_token: str
+    access_token: str = Field(
+        min_length=1, description="Shopee access token; never returned in logs."
+    )
+    refresh_token: str = Field(
+        min_length=1, description="Shopee refresh token; never returned in logs."
+    )
 
 
 class PickItemEntryCreate(BaseModel):
-    sku: str
-    qty: int
+    sku: str = Field(min_length=1, description="Warehouse SKU or recognized barcode.")
+    qty: int = Field(gt=0, description="Quantity to add to the pick list.")
     order_sn: Optional[str] = None
 
 
@@ -556,18 +531,31 @@ class PickItemEntryResponse(BaseModel):
 
 
 class PickItemEntryAssign(BaseModel):
-    order_sn: str
-    qty: Optional[int] = None
+    order_sn: str = Field(min_length=1, description="Claimed Shopee order number.")
+    qty: Optional[int] = Field(
+        default=None, gt=0, description="Quantity to assign; defaults to the full entry."
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class StockCreate(BaseModel):
-    sku: str
-    stock: int
-    mode: str = "set"  # "add" or "set"
+    sku: str = Field(min_length=1, description="Warehouse SKU or recognized barcode.")
+    stock: int = Field(ge=0, description="Quantity to set/add, or transfer amount.")
+    mode: Literal["add", "set"] = Field(
+        default="set", description="Adjustment behavior when not transferring."
+    )
     location: Optional[str] = None
     move_to: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_transfer(self):
+        if self.move_to is not None:
+            if self.stock <= 0:
+                raise ValueError("Transfer quantity must be positive")
+            if self.location == self.move_to:
+                raise ValueError("Source and destination locations must differ")
+        return self
 
 
 class StockResponse(BaseModel):
@@ -578,6 +566,54 @@ class StockResponse(BaseModel):
     item_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PickItemEntryUnassign(BaseModel):
+    order_sn: str = Field(min_length=1)
+    sku: str = Field(min_length=1)
+    qty: int = Field(gt=0)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class DeleteCountResponse(MessageResponse):
+    deleted: int = Field(ge=0)
+
+
+class WebSocketTicketResponse(BaseModel):
+    token: str = Field(description="One-use WebSocket ticket.")
+    expires_in: int = Field(description="Ticket lifetime in seconds.", examples=[30])
+
+
+class TemporaryTokenResponse(BaseModel):
+    token: str = Field(description="Short-lived token for a protected follow-up operation.")
+    expires_in: int = Field(description="Token lifetime in seconds.", examples=[120])
+
+
+class ShopeeConfigResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    current_ip: str
+
+
+class OutboundCloseResponse(BaseModel):
+    outbound: int = Field(ge=0, description="Scans closed.")
+    unknown: int = Field(ge=0, description="Submitted values without an open scan.")
+    orders_done: int = Field(ge=0, description="Orders marked complete.")
+
+
+class StockUpdateResponse(BaseModel):
+    success: bool
+    sku: str
+    stock: int
+    item_name: Optional[str] = None
+    location: Optional[str] = None
+
+
+class ShopeeAcquireResponse(MessageResponse):
+    order_sn: str
 
 
 # Shopee Response Models ----

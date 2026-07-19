@@ -1,0 +1,13 @@
+services:
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      DATABASE_URL: "sqlite:///:memory:"
+      REDIS_URL: "redis://redis:6379/15"
+      LOG_TO_FILE: "false"
+      LOG_FORMAT: text
+    depends_on:
+      redis:
+        condition: service_started

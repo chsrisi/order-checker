@@ -686,7 +686,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final response = await makeRequest(
-        '$_baseUrl/pick-item',
+        '$_baseUrl/pick-items',
         method: 'POST',
         body: {'sku': sku, 'qty': qty, 'order_sn': ?orderSn},
       );
@@ -814,7 +814,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteScanEntry(int id) async {
     try {
-      String url = '$_baseUrl/pick-item?entry_id=$id';
+      String url = '$_baseUrl/pick-items/$id';
 
       final response = await makeRequest(url, method: 'DELETE');
       if (response?.statusCode == 200) {
@@ -835,12 +835,11 @@ class AppState extends ChangeNotifier {
     int? orderItemQty,
   }) async {
     try {
-      String url =
-          '$_baseUrl/pick-item/assign?entry_id=$entryId&order_sn=$orderSn';
-      if (qty != null) {
-        url += '&qty=$qty';
-      }
-      final response = await makeRequest(url, method: 'POST');
+      final response = await makeRequest(
+        '$_baseUrl/pick-items/$entryId/assign',
+        method: 'POST',
+        body: {'order_sn': orderSn, 'qty': ?qty},
+      );
       if (response?.statusCode == 200) {
         if (qty != null && orderItemQty != null && qty > orderItemQty) {
           onShowMessage?.call(
@@ -864,8 +863,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final response = await makeRequest(
-        '$_baseUrl/pick-item/unassign?order_sn=$orderSn&sku=$sku&qty=$qty',
+        '$_baseUrl/pick-items/unassign',
         method: 'POST',
+        body: {'order_sn': orderSn, 'sku': sku, 'qty': qty},
       );
       if (response?.statusCode == 200) {
         onShowMessage?.call("SKU unassigned successfully.");
@@ -906,7 +906,7 @@ class AppState extends ChangeNotifier {
         'move_to': ?moveTo,
       };
       final response = await makeRequest(
-        '$_baseUrl/stocks',
+        '$_baseUrl/stocks/update',
         method: 'POST',
         body: body,
       );

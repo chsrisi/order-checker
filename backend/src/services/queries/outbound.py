@@ -8,6 +8,7 @@ from .engine import get_db
 
 logger = logging.getLogger("backend.services.queries.outbound")
 
+
 def get_outbounds_data(username: str) -> List[OutboundItem]:
     with get_db() as db:
         query = (
@@ -30,13 +31,15 @@ def get_all_outbound_data() -> List[OutboundItem]:
 
 def get_outbound_history() -> List[OutboundItem]:
     with get_db() as db:
-        query = select(OutboundItem).order_by(OutboundItem.created_at.desc())
-        return list(db.execute(query).scalars().all())
+        query = (
+            select(OutboundItem)
+            .filter(OutboundItem.closed == True)  # noqa: E712
+            .order_by(OutboundItem.created_at.desc())
+        )
+        return list(db.execute(query).scalars().unique().all())
 
 
-def create_outbound_item(
-    content: str, owner_username: str, tags_in: List[str]
-) -> OutboundItem:
+def create_outbound_item(content: str, owner_username: str, tags_in: List[str]) -> OutboundItem:
     content_clean = content.strip()
     with get_db() as db:
         existing = (
@@ -54,18 +57,15 @@ def create_outbound_item(
 
         if existing:
             logger.warning(
-                "Duplicate scan detected for user %s: %s",
-                owner_username,
-                content_clean,
+                "duplicate_outbound_scan",
+                extra={"event": "outbound.scan.duplicate", "username": owner_username},
             )
             raise ValueError("Duplicate scan detected")
 
         matched_order = (
             db.execute(
                 select(ShopeeOrder)
-                .outerjoin(
-                    ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn
-                )
+                .outerjoin(ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
                 .filter(
                     or_(
                         ShopeeOrder.order_sn == content_clean,
@@ -96,7 +96,7 @@ def create_outbound_item(
 def close_outbound_items(contents: List[str], admin_username: str) -> dict:
     logger.info(f"Admin {admin_username} closing period for {len(contents)} items")
     now = datetime.now(UTC)
-    clean_contents = [c.strip() for c in contents if c and c.strip()]
+    clean_contents = list(dict.fromkeys(c.strip() for c in contents if c and c.strip()))
     if not clean_contents:
         return {"outbound": 0, "unknown": 0, "orders_done": 0}
 
@@ -115,9 +115,7 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
 
         matched_order_sns: set[str] = set(
             db.execute(
-                select(ShopeeOrder.order_sn).filter(
-                    ShopeeOrder.order_sn.in_(clean_contents)
-                )
+                select(ShopeeOrder.order_sn).filter(ShopeeOrder.order_sn.in_(clean_contents))
             )
             .scalars()
             .all()
@@ -160,6 +158,7 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
             "unknown": unknown_count,
             "orders_done": orders_done_count,
         }
+
 
 def clear_all_outbound_items() -> int:
     with get_db() as db:

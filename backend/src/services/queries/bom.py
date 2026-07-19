@@ -2,7 +2,13 @@ import logging
 from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ...models import BOMHeader, BOMDetail, BOMHeaderMarketplace, BOMDetailMarketplace, WarehouseItem
+from ...models import (
+    BOMHeader,
+    BOMDetail,
+    BOMHeaderMarketplace,
+    BOMDetailMarketplace,
+    WarehouseItem,
+)
 from .engine import get_db
 
 logger = logging.getLogger("backend.services.queries.bom")
@@ -18,9 +24,7 @@ def get_standard_bom_node_internal(
     if visited is None:
         visited = set()
 
-    item = db.execute(
-        select(WarehouseItem).filter(WarehouseItem.sku == sku)
-    ).scalar_one_or_none()
+    item = db.execute(select(WarehouseItem).filter(WarehouseItem.sku == sku)).scalar_one_or_none()
     name = (item.item_name if item else None) or sku
 
     node = {
@@ -37,14 +41,10 @@ def get_standard_bom_node_internal(
 
     new_visited = visited | {sku}
 
-    hdr = db.execute(
-        select(BOMHeader).filter(BOMHeader.sku == sku)
-    ).scalar_one_or_none()
+    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
     if hdr:
         details = (
-            db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id))
-            .scalars()
-            .all()
+            db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
         )
         for detail in details:
             child_node = get_standard_bom_node_internal(
@@ -88,16 +88,12 @@ def get_marketplace_bom_headers() -> List[dict]:
 
 def resolve_standard_bom(sku: str, qty: int) -> List[tuple[str, int]]:
     with get_db() as db:
-        hdr = db.execute(
-            select(BOMHeader).filter(BOMHeader.sku == sku)
-        ).scalar_one_or_none()
+        hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
         if not hdr:
             return [(sku, qty)]
 
         details = (
-            db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id))
-            .scalars()
-            .all()
+            db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
         )
         result: List[tuple[str, int]] = []
         for detail in details:
@@ -108,19 +104,13 @@ def resolve_standard_bom(sku: str, qty: int) -> List[tuple[str, int]]:
         return result
 
 
-def resolve_standard_bom_internal(
-    sku: str, qty: int, db: Session
-) -> List[tuple[str, int]]:
-    hdr = db.execute(
-        select(BOMHeader).filter(BOMHeader.sku == sku)
-    ).scalar_one_or_none()
+def resolve_standard_bom_internal(sku: str, qty: int, db: Session) -> List[tuple[str, int]]:
+    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
     if not hdr:
         return [(sku, qty)]
 
     details = (
-        db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id))
-        .scalars()
-        .all()
+        db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
     )
     result: List[tuple[str, int]] = []
     for detail in details:
@@ -131,9 +121,7 @@ def resolve_standard_bom_internal(
     return result
 
 
-def get_standard_bom_node(
-    sku: str, qty: int, is_not_primary_child: Optional[bool] = None
-) -> dict:
+def get_standard_bom_node(sku: str, qty: int, is_not_primary_child: Optional[bool] = None) -> dict:
     with get_db() as db:
         return get_standard_bom_node_internal(sku, qty, is_not_primary_child, db)
 
@@ -141,9 +129,7 @@ def get_standard_bom_node(
 def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
     with get_db() as db:
         hdr = db.execute(
-            select(BOMHeaderMarketplace).filter(
-                BOMHeaderMarketplace.shopee_id == shopee_id
-            )
+            select(BOMHeaderMarketplace).filter(BOMHeaderMarketplace.shopee_id == shopee_id)
         ).scalar_one_or_none()
         if not hdr:
             return None
@@ -159,9 +145,7 @@ def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
 
         details = (
             db.execute(
-                select(BOMDetailMarketplace).filter(
-                    BOMDetailMarketplace.shopee_id == shopee_id
-                )
+                select(BOMDetailMarketplace).filter(BOMDetailMarketplace.shopee_id == shopee_id)
             )
             .scalars()
             .all()

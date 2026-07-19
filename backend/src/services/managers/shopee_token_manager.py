@@ -6,6 +6,7 @@ from ...config import get_config_value
 
 logger = logging.getLogger("backend.services.managers.shopee_token_manager")
 
+
 class ShopeeTokenManager:
     def __init__(self, redis_manager: RedisManager):
         self.redis = redis_manager
@@ -20,9 +21,7 @@ class ShopeeTokenManager:
         # Fallback to loading the initial/configured value (env or secret)
         fallback = get_config_value(key.upper())
         if fallback:
-            logger.info(
-                f"Seeding {redis_key} to Redis from initial configuration fallback"
-            )
+            logger.info(f"Seeding {redis_key} to Redis from initial configuration fallback")
             await self.set_token(key, fallback)
             return fallback
 

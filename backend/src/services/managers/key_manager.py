@@ -68,6 +68,7 @@ class KeyManager:
 
     def _refresh_keys_from_disk(self, force: bool = False):
         import time
+
         """Scans the directory, builds the JWKS, and identifies the newest key pair."""
         now = time.time()
         if not force and now - self._last_refresh < self.cache_ttl and self._jwks_cache:
@@ -86,9 +87,7 @@ class KeyManager:
         valid_pairs = sorted(list(pub_kids.intersection(priv_kids)), reverse=True)
 
         if not valid_pairs:
-            raise RuntimeError(
-                f"No valid key pairs found in directory: {self.keys_dir}"
-            )
+            raise RuntimeError(f"No valid key pairs found in directory: {self.keys_dir}")
 
         public_keys: list[dict[str, Any]] = []
         # Display all available public keys to the JWKS endpoint

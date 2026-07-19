@@ -42,7 +42,14 @@ async def websocket_endpoint(
         while True:
             data = await websocket.receive_json()
             command = data.get("command")
-            logger.debug(f"WS Command received from {user.username}: {command}")
+            logger.debug(
+                "websocket_command_received",
+                extra={
+                    "event": "websocket.command.received",
+                    "username": user.username,
+                    "command": command,
+                },
+            )
 
             if command == "get_users":
                 if user.scope != "admin":
@@ -96,6 +103,9 @@ async def websocket_endpoint(
 
     except WebSocketDisconnect:
         conn_mgr.disconnect(websocket, user.username or "")
-    except Exception as e:
-        logger.error(f"WebSocket error for {user.username}: {str(e)}")
+    except Exception:
+        logger.exception(
+            "websocket_session_failed",
+            extra={"event": "websocket.session.failed", "username": user.username},
+        )
         conn_mgr.disconnect(websocket, user.username or "")

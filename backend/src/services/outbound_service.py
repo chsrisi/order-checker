@@ -21,18 +21,32 @@ async def create_outbound_item(
 
     # Broadcast updates
     await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
-    await conn_mgr.send_to_user(
-        WSMessageType.OUTBOUNDS, username=owner_username
-    )
+    await conn_mgr.send_to_user(WSMessageType.OUTBOUNDS, username=owner_username)
     return db_item
 
 
 async def close_outbound_items(contents: List[str], admin_username: str) -> dict:
     result = queries.close_outbound_items(contents=contents, admin_username=admin_username)
     cache_mgr.invalidate()
-    
+
     # Broadcast updates
     await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
     await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
-    
+
     return result
+
+
+async def clear_outbound_items(admin_username: str) -> int:
+    """Delete all scan records and notify connected administrators."""
+
+    count = queries.clear_all_outbound_items()
+    logger.warning(
+        "outbound_scans_cleared",
+        extra={
+            "event": "outbound.scans.cleared",
+            "admin_username": admin_username,
+            "deleted_count": count,
+        },
+    )
+    await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+    return count

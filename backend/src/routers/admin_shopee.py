@@ -2,17 +2,33 @@ import logging
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..models import User, ShopeeConfigUnlockRequest, ShopeeConfigUpdateRequest
+from ..models import (
+    MessageResponse,
+    ShopeeConfigResponse,
+    ShopeeConfigUnlockRequest,
+    ShopeeConfigUpdateRequest,
+    TemporaryTokenResponse,
+    User,
+)
 from ..dependencies import require_admin
 from ..services.managers import redis_mgr, token_mgr, cache_mgr
 from ..services.auth_service import verify_password
 
 logger = logging.getLogger("backend.routers.admin_shopee")
 
-shopee_config_router = APIRouter(prefix="/shopee-config", tags=["admin_shopee_config"])
+shopee_config_router = APIRouter(prefix="/shopee-config", tags=["shopee configuration"])
 
 
-@shopee_config_router.post("/unlock")
+@shopee_config_router.post(
+    "/unlock",
+    response_model=TemporaryTokenResponse,
+    summary="Unlock Shopee credentials",
+    description="Re-authenticates the administrator and returns a separate two-minute configuration token.",
+    responses={
+        401: {"description": "Incorrect admin password"},
+        503: {"description": "Redis unavailable"},
+    },
+)
 async def unlock_shopee_config(
     body: ShopeeConfigUnlockRequest,
     current_user: User = Depends(require_admin),
@@ -30,14 +46,19 @@ async def unlock_shopee_config(
         logger.info(
             f"Admin {current_user.username} unlocked Shopee config view. Temporary token generated."
         )
-    except Exception as e:
-        logger.error(f"Failed to save shopee config temporary token in Redis: {e}")
-        raise HTTPException(status_code=500, detail="Redis connection failed")
+    except Exception as exc:
+        logger.exception("shopee_config_unlock_store_failed")
+        raise HTTPException(status_code=503, detail="Redis connection failed") from exc
 
     return {"token": config_token, "expires_in": 120}
 
 
-@shopee_config_router.post("/lock")
+@shopee_config_router.post(
+    "/lock",
+    response_model=MessageResponse,
+    summary="Lock Shopee credentials",
+    description="Immediately invalidates a temporary configuration session.",
+)
 async def lock_shopee_config(
     token: str = Query(...),
     current_user: User = Depends(require_admin),
@@ -45,23 +66,27 @@ async def lock_shopee_config(
     redis_key = f"cfg_token:{token}"
     try:
         await redis_mgr.delete(redis_key)
-        logger.info(
-            f"Admin {current_user.username} manually locked Shopee config session."
-        )
-    except Exception as e:
-        logger.error(f"Failed to delete shopee config token from Redis: {e}")
+        logger.info(f"Admin {current_user.username} manually locked Shopee config session.")
+    except Exception:
+        logger.exception("shopee_config_lock_delete_failed")
 
     return {"message": "Config locked successfully"}
 
 
-@shopee_config_router.get("")
+@shopee_config_router.get(
+    "",
+    response_model=ShopeeConfigResponse,
+    summary="Read Shopee credentials",
+    description="Returns credentials only when the temporary configuration token belongs to the current administrator.",
+    responses={401: {"description": "Configuration session invalid or expired"}},
+)
 async def get_shopee_config(
     token: str = Query(...),
     current_user: User = Depends(require_admin),
 ):
     redis_key = f"cfg_token:{token}"
     token_user = await redis_mgr.get(redis_key)
-    if not token_user:
+    if token_user != current_user.username:
         raise HTTPException(status_code=401, detail="Secure session expired or invalid")
 
     access_token = await token_mgr.get_token("ACCESS_TOKEN")
@@ -75,7 +100,13 @@ async def get_shopee_config(
     }
 
 
-@shopee_config_router.post("")
+@shopee_config_router.post(
+    "",
+    response_model=MessageResponse,
+    summary="Update Shopee credentials",
+    description="Stores new tokens in Redis and resets synchronization circuit/cache state.",
+    responses={401: {"description": "Configuration session invalid or expired"}},
+)
 async def save_shopee_config(
     body: ShopeeConfigUpdateRequest,
     token: str = Query(...),
@@ -83,7 +114,7 @@ async def save_shopee_config(
 ):
     redis_key = f"cfg_token:{token}"
     token_user = await redis_mgr.get(redis_key)
-    if not token_user:
+    if token_user != current_user.username:
         raise HTTPException(status_code=401, detail="Secure session expired or invalid")
 
     await token_mgr.set_token("ACCESS_TOKEN", body.access_token)

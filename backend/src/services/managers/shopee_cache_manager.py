@@ -3,6 +3,7 @@ import time
 
 SHOPEE_CACHE_TTL_SECONDS = 120
 
+
 class ShopeeOrderCacheManager:
     def __init__(self, cache_ttl: int = SHOPEE_CACHE_TTL_SECONDS):
         self._cache_ttl = cache_ttl

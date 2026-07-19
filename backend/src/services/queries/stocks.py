@@ -7,6 +7,7 @@ from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.stocks")
 
+
 def update_or_move_stock(
     sku_in: str,
     stock_qty: int,
@@ -23,55 +24,42 @@ def update_or_move_stock(
     loc_clean = location if location != "" and location is not None else None
     move_to_clean = move_to if move_to != "" and move_to is not None else None
 
+    if stock_qty < 0:
+        raise ValueError("Stock quantity cannot be negative")
+
     with get_db() as db:
         if move_to_clean is not None:
             if loc_clean == move_to_clean:
                 stock_rec = (
-                    db.execute(
-                        select(Stock).filter(
-                            Stock.sku == sku, Stock.location == loc_clean
-                        )
-                    )
+                    db.execute(select(Stock).filter(Stock.sku == sku, Stock.location == loc_clean))
                     .scalars()
                     .first()
                 )
                 if not stock_rec:
-                    stock_rec = Stock(
-                        sku=sku, stock=0, location=loc_clean
-                    )
+                    stock_rec = Stock(sku=sku, stock=0, location=loc_clean)
                     db.add(stock_rec)
                     db.flush()
                 res = stock_rec
             else:
                 source = (
-                    db.execute(
-                        select(Stock).filter(
-                            Stock.sku == sku, Stock.location == loc_clean
-                        )
-                    )
+                    db.execute(select(Stock).filter(Stock.sku == sku, Stock.location == loc_clean))
                     .scalars()
                     .first()
                 )
                 if not source:
-                    source = Stock(
-                        sku=sku, stock=0, location=loc_clean
-                    )
-                    db.add(source)
-                    db.flush()
+                    raise ValueError("Source location has no stock")
+                if source.stock < stock_qty:
+                    raise ValueError("Insufficient stock at source location")
 
                 dest = (
                     db.execute(
-                        select(Stock).filter(
-                            Stock.sku == sku, Stock.location == move_to_clean
-                        )
+                        select(Stock).filter(Stock.sku == sku, Stock.location == move_to_clean)
                     )
                     .scalars()
                     .first()
                 )
                 if not dest:
-                    dest = Stock(
-                        sku=sku, stock=0, location=move_to_clean
-                    )
+                    dest = Stock(sku=sku, stock=0, location=move_to_clean)
                     db.add(dest)
                     db.flush()
 
@@ -102,9 +90,7 @@ def update_or_move_stock(
                 else:
                     stock_rec.stock = stock_qty
             else:
-                location_val = (
-                    loc_clean if is_location_set else item.location
-                )
+                location_val = loc_clean if is_location_set else item.location
                 stock_rec = Stock(
                     sku=sku,
                     stock=stock_qty,
@@ -146,9 +132,7 @@ def get_all_stocks_data(join_warehouse: bool = False):
     return get_stocks_data(join_warehouse=join_warehouse)
 
 
-def get_or_merge_stock(
-    sku: str, location: Optional[str], qty: int, username: str
-) -> Stock:
+def get_or_merge_stock(sku: str, location: Optional[str], qty: int, username: str) -> Stock:
     loc_clean = location.strip() if location and location.strip() else None
     with get_db() as db:
         existing = (
@@ -164,12 +148,12 @@ def get_or_merge_stock(
 
         if existing:
             existing.stock = qty
-            
+
             log_entry = StocksLog(
                 message=f"stock update/merge: sku={sku}, qty={qty}, user={username}"
             )
             db.add(log_entry)
-            
+
             db.commit()
             db.refresh(existing)
             return existing
@@ -180,12 +164,10 @@ def get_or_merge_stock(
             stock=qty,
         )
         db.add(db_stock)
-        
-        log_entry = StocksLog(
-            message=f"stock update/merge: sku={sku}, qty={qty}, user={username}"
-        )
+
+        log_entry = StocksLog(message=f"stock update/merge: sku={sku}, qty={qty}, user={username}")
         db.add(log_entry)
-        
+
         db.commit()
         db.refresh(db_stock)
         return db_stock

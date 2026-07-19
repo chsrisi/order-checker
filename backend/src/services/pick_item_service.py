@@ -13,15 +13,11 @@ async def create_pick_item_entry(
     sku: str, qty: int, username: str, order_sn: Optional[str] = None
 ) -> PickItemEntry:
     try:
-        pie = queries.create_pick_item_entry(
-            sku=sku, qty=qty, username=username, order_sn=order_sn
-        )
+        pie = queries.create_pick_item_entry(sku=sku, qty=qty, username=username, order_sn=order_sn)
     except LookupError as e:
         raise DomainException(status_code=404, detail=str(e))
 
-    await conn_mgr.send_to_user(
-        WSMessageType.PICK_ITEM_ENTRIES, username=username
-    )
+    await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
     return pie
 
@@ -38,16 +34,12 @@ async def assign_pick_item_entry(
     except ValueError as e:
         raise DomainException(status_code=400, detail=str(e))
 
-    await conn_mgr.send_to_user(
-        WSMessageType.PICK_ITEM_ENTRIES, username=username
-    )
+    await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
     return pie
 
 
-async def unassign_pick_item_entry(
-    order_sn: str, sku: str, qty: int, username: str
-) -> bool:
+async def unassign_pick_item_entry(order_sn: str, sku: str, qty: int, username: str) -> bool:
     try:
         res = queries.unassign_pick_item_entry(
             order_sn=order_sn, sku=sku, qty=qty, username=username
@@ -55,9 +47,7 @@ async def unassign_pick_item_entry(
     except LookupError as e:
         raise DomainException(status_code=404, detail=str(e))
 
-    await conn_mgr.send_to_user(
-        WSMessageType.PICK_ITEM_ENTRIES, username=username
-    )
+    await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
     return res
 
@@ -67,11 +57,10 @@ async def delete_pie(pie_id: int, username: str, is_admin: bool = False) -> bool
     if not res:
         raise DomainException(status_code=404, detail="Entry not found or unauthorized")
 
-    await conn_mgr.send_to_user(
-        WSMessageType.PICK_ITEM_ENTRIES, username=username
-    )
+    await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
     return res
+
 
 def merge_or_create_pie(
     username: str,

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from ...models import OutboundItem, Stock, WarehouseItem
 from .engine import get_db
 
+
 def get_export_scans_csv() -> str:
     with get_db() as db:
         items = (
@@ -55,9 +56,7 @@ def get_export_stocks_csv() -> str:
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(
-            ["ID", "SKU", "Item Name", "Stock", "Location"]
-        )
+        writer.writerow(["ID", "SKU", "Item Name", "Stock", "Location"])
         for s in stocks:
             writer.writerow(
                 [

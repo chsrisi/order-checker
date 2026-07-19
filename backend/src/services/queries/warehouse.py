@@ -6,6 +6,7 @@ from .engine import get_db
 
 logger = logging.getLogger("backend.services.queries.warehouse")
 
+
 def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:
     with get_db() as db:
         item = db.execute(
@@ -19,6 +20,7 @@ def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:
         ).scalar_one_or_none()
         return item
 
+
 def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
     resolved = resolve_barcode_to_item(query_str)
     if resolved:
@@ -29,15 +31,13 @@ def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
         return list(
             db.execute(
                 select(WarehouseItem)
-                .filter(
-                    (WarehouseItem.sku.ilike(search))
-                    | (WarehouseItem.item_name.ilike(search))
-                )
+                .filter((WarehouseItem.sku.ilike(search)) | (WarehouseItem.item_name.ilike(search)))
                 .limit(50)
             )
             .scalars()
             .all()
         )
+
 
 def get_all_warehouse_items() -> List[WarehouseItem]:
     with get_db() as db:

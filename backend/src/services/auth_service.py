@@ -147,9 +147,7 @@ def get_tokens(user: User):
     refresh_token, jti, expire = create_refresh_token(user.username)
 
     queries.create_refresh_token(jti=jti, username=user.username, expires_at=expire)
-    logger.debug(
-        f"Refresh token stored in DB for user {user.username}, expires at {expire}"
-    )
+    logger.debug(f"Refresh token stored in DB for user {user.username}, expires at {expire}")
 
     return {
         "access_token": access_token,
@@ -160,13 +158,16 @@ def get_tokens(user: User):
 
 async def delete_user(username: str) -> None:
     from . import queries
+
     success = queries.delete_user_by_username(username)
     if not success:
         from ..exceptions import DomainException
+
         raise DomainException(status_code=404, detail="User not found")
-    
+
     from .managers import conn_mgr
     from ..models import WSMessageType
+
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
 
 
@@ -178,9 +179,7 @@ async def register_client(username: str, password: str) -> dict:
         raise HTTPException(status_code=400, detail="Username already registered")
 
     hashed_password = get_password_hash(password)
-    new_user = queries.create_user(
-        username=username, password_hash=hashed_password, scope="client"
-    )
+    new_user = queries.create_user(username=username, password_hash=hashed_password, scope="client")
     logger.info(f"User {username} successfully registered")
 
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
@@ -192,9 +191,7 @@ def login_user(
     password: str,
     required_scope: str | None = None,
 ) -> dict:
-    logger.info(
-        f"Login attempt for user: {username} (required scope: {required_scope})"
-    )
+    logger.info(f"Login attempt for user: {username} (required scope: {required_scope})")
     user = queries.get_user_data(username)
     if not user:
         logger.warning(f"Login failed: User {username} not found")
@@ -256,9 +253,7 @@ def refresh_tokens(refresh_token: str) -> dict:
         logger.error("Token nonexistent")
         raise credentials_exception
 
-    if db_token.revoked_at and db_token.revoked_at.replace(tzinfo=UTC) < datetime.now(
-        UTC
-    ):
+    if db_token.revoked_at is not None:
         logger.error("Token revoked")
         queries.delete_refresh_token(jti)
         raise credentials_exception

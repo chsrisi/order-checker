@@ -9,6 +9,7 @@ from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.pick_items")
 
+
 def merge_or_create_pie(
     sku: str, qty: int, order_sn: Optional[str], username: str
 ) -> PickItemEntry:
@@ -44,6 +45,7 @@ def merge_or_create_pie(
         db.refresh(db_pie)
         return db_pie
 
+
 def get_pie_data(
     username: Optional[str] = None,
     sku: Optional[str] = None,
@@ -67,6 +69,7 @@ def get_pie_data(
     with get_db() as db_session:
         return list(db_session.execute(query).scalars().all())
 
+
 def create_pick_item_entry(
     sku: str,
     qty: int,
@@ -78,9 +81,8 @@ def create_pick_item_entry(
         raise LookupError(f"Item with SKU or barcode '{sku}' not found")
     resolved_sku = item.sku
 
-    return merge_or_create_pie(
-        sku=resolved_sku, qty=qty, order_sn=order_sn, username=username
-    )
+    return merge_or_create_pie(sku=resolved_sku, qty=qty, order_sn=order_sn, username=username)
+
 
 def assign_pick_item_entry(
     entry_id: int, order_sn: str, qty: Optional[int], username: str
@@ -119,9 +121,8 @@ def assign_pick_item_entry(
 
         db.commit()
 
-    return merge_or_create_pie(
-        sku=sku, qty=assign_qty, order_sn=order_sn, username=username
-    )
+    return merge_or_create_pie(sku=sku, qty=assign_qty, order_sn=order_sn, username=username)
+
 
 def unassign_pick_item_entry(order_sn: str, sku: str, qty: int, username: str) -> bool:
     with get_db() as db:
@@ -140,6 +141,7 @@ def unassign_pick_item_entry(order_sn: str, sku: str, qty: int, username: str) -
 
     merge_or_create_pie(sku=sku, qty=take_qty, order_sn=None, username=username)
     return True
+
 
 def delete_pie(pie_id: int, username: str, is_admin: bool = False) -> bool:
     with get_db() as db:

@@ -20,6 +20,11 @@ services:
         condition: service_started
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_TO_FILE=${LOG_TO_FILE:-true}
+      - LOG_DIR=${LOG_DIR:-logs}
     secrets:
       - source: database_url
         mode: 444

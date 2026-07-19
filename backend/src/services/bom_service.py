@@ -10,7 +10,6 @@ def resolve_standard_bom(sku: str, qty: int) -> List[tuple[str, int]]:
     return queries.resolve_standard_bom(sku, qty)
 
 
-
 def get_standard_bom_node(
     sku: str,
     qty: int,

@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.14.4
+FROM python:${PYTHON_VERSION}-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    DATABASE_URL=sqlite:///:memory: \
+    REDIS_URL=redis://redis:6379/15 \
+    LOG_TO_FILE=false \
+    LOG_FORMAT=text
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install -r requirements-dev.txt
+
+COPY src ./src
+COPY alembic ./alembic
+COPY tests ./tests
+COPY pyproject.toml ./
+
+CMD ["pytest"]

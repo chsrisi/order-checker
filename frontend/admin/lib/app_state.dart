@@ -707,9 +707,8 @@ class AppState extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      // TODO: refactor
       final response = await makeRequest(
-        '$_baseUrl/admin/clear/outbound_items',
+        '$_baseUrl/admin/clear/outbound-items',
         method: 'DELETE',
       );
       if (response?.statusCode == 200) {
@@ -730,8 +729,7 @@ class AppState extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      // TODO: refactor
-      final response = await makeRequest('$_baseUrl/admin/export/outbound');
+      final response = await makeRequest('$_baseUrl/admin/export/scans');
       if (response?.statusCode == 200) {
         final bytes = response!.bodyBytes;
         final fileName =
