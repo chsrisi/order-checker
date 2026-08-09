@@ -442,7 +442,7 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
         raw_item_list = order.item_list or []
         for raw_item in raw_item_list:
             sku = raw_item.model_sku or raw_item.item_sku or ""
-            shopee_id = raw_item.item_id
+            shopee_id = raw_item.model_id or raw_item.item_id
             qty = raw_item.model_quantity_purchased or 1
 
             bom_tree = queries.resolve_shopee_order_bom_tree(shopee_id, sku, qty)
@@ -503,29 +503,54 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
         time_from = now - (2 * 24 * 60 * 60)  # 2 days
         STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED", "COMPLETED", "CANCELLED"]
 
-        tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]
-        results = await asyncio.gather(*tasks)
+        # MOCK-DATA BYPASS: the Shopee fetch is wrapped so an offline/failed API
+        # does not block serving orders from the database. This keeps the mock
+        # order (seeded directly into shopee.orders via temp/seed_mock_order.py)
+        # visible on both the client (WebSocket) and admin (HTTP) paths even
+        # when the Shopee API is unreachable. sync_shopee_orders_to_db only ever
+        # inserts/updates API orders and never deletes, so the unique mock
+        # order_sn survives subsequent syncs.
+        try:
+            tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]
+            results = await asyncio.gather(*tasks)
 
-        all_order_sns = []
-        for status, res_list in zip(STATUSES, results):
-            all_order_sns.extend(res_list)
+            all_order_sns = []
+            for status, res_list in zip(STATUSES, results):
+                all_order_sns.extend(res_list)
 
-        order_sns = list(dict.fromkeys(all_order_sns))
+            order_sns = list(dict.fromkeys(all_order_sns))
 
-        if order_sns:
-            chunk_size = 50
-            chunks = [order_sns[i : i + chunk_size] for i in range(0, len(order_sns), chunk_size)]
+            if order_sns:
+                chunk_size = 50
+                chunks = [
+                    order_sns[i : i + chunk_size] for i in range(0, len(order_sns), chunk_size)
+                ]
 
-            chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
-            chunk_results = await asyncio.gather(*chunk_tasks)
+                chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
+                chunk_results = await asyncio.gather(*chunk_tasks)
 
-            queries.sync_shopee_orders_to_db(chunk_results)
+                queries.sync_shopee_orders_to_db(chunk_results)
+
+            cache_mgr.mark_synced()
+        except Exception:
+            # The bypass lives here: swallow the API failure, skip mark_synced()
+            # (so the next request retries the API), and fall through to serve
+            # database orders. NOTE: this also swallows the token-fatal
+            # circuit-breaker HTTPException(500); that is intentional for the
+            # demo, but if production needs the "re-authorization required"
+            # error back, scope this to HTTPException with 4xx/502 or specific
+            # network errors instead of bare Exception.
+            logger.warning(
+                "shopee_sync_fallback",
+                extra={
+                    "event": "shopee.sync.fallback",
+                    "reason": "Shopee API unreachable; serving database orders",
+                },
+            )
 
         # Messaging systems
         await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
         await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
-
-        cache_mgr.mark_synced()
 
         orders = queries.get_all_shopee_order_data()
         final_orders = [build_shopee_order_response(o) for o in orders]

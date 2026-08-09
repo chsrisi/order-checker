@@ -86,6 +86,12 @@ async def get_current_user(
         raise credentials_exception from exc
 
 
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.scope != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return current_user
+
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
