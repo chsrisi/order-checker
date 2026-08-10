@@ -697,6 +697,13 @@ class ShopeeTokenResponse(BaseModel):
 
 
 def get_payload(v: Any) -> str:
+    if isinstance(v, ShpOrderList):
+        return "ol"
+    if isinstance(v, ShpMassTrackingNumber):
+        return "mtn"
+    if isinstance(v, OrderListT):
+        return "olT"
+
     if isinstance(v, BaseModel):
         return v.__class__.__name__
 

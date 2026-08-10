@@ -384,22 +384,25 @@ async def fetch_chunk_details(
     fail_pkgs = set()
 
     if processed_packages:
-        async with SHOPEE_SEMAPHORE:
-            tracking_resp = await shopee_request(
-                path="/api/v2/logistics/get_mass_tracking_number",
-                method="POST",
-                body={"package_list": processed_packages},
-            )
+        max_packages_per_req = 50
+        for i in range(0, len(processed_packages), max_packages_per_req):
+            package_chunk = processed_packages[i : i + max_packages_per_req]
+            async with SHOPEE_SEMAPHORE:
+                tracking_resp = await shopee_request(
+                    path="/api/v2/logistics/get_mass_tracking_number",
+                    method="POST",
+                    body={"package_list": package_chunk},
+                )
 
-        if tracking_resp and not tracking_resp.error and tracking_resp.response:
-            if isinstance(tracking_resp.response, ShpMassTrackingNumber):
-                for success_item in tracking_resp.response.success_list:
-                    tracking_map[success_item.package_number] = (
-                        success_item.tracking_number,
-                        success_item.pickup_code,
-                    )
-                for fail_item in tracking_resp.response.fail_list:
-                    fail_pkgs.add(fail_item.package_number)
+            if tracking_resp and not tracking_resp.error and tracking_resp.response:
+                if isinstance(tracking_resp.response, ShpMassTrackingNumber):
+                    for success_item in tracking_resp.response.success_list:
+                        tracking_map[success_item.package_number] = (
+                            success_item.tracking_number,
+                            success_item.pickup_code,
+                        )
+                    for fail_item in tracking_resp.response.fail_list:
+                        fail_pkgs.add(fail_item.package_number)
 
     return order_details_list, tracking_map, fail_pkgs
 
