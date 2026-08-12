@@ -32,9 +32,8 @@ def resolve_shopee_order_bom_tree(
     shopee_id: Optional[int], sku: Optional[str], qty: int
 ) -> Optional[dict]:
     if shopee_id:
-        node = get_marketplace_bom_node(shopee_id)
+        node = get_marketplace_bom_node(shopee_id, qty)
         if node:
-            node["quantity"] = qty
             return node
     if sku:
         with get_db() as db:

@@ -18,5 +18,5 @@ def get_standard_bom_node(
     return queries.get_standard_bom_node(sku, qty, is_not_primary_child)
 
 
-def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
-    return queries.get_marketplace_bom_node(shopee_id)
+def get_marketplace_bom_node(shopee_id: int, qty: int = 1) -> Optional[dict]:
+    return queries.get_marketplace_bom_node(shopee_id, qty)

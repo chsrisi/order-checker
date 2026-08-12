@@ -21,3 +21,50 @@ def test_supplier_barcode():
     assert _supplier_barcode("BATCH-TYPE-001") == "TYPE-001"
     assert _supplier_barcode("00123") == "00123"
     assert _supplier_barcode("AB-12-CD-34") == "AB-12-CD-34"
+
+
+def test_resolve_barcode_to_item_scenarios():
+    from src.services.queries.warehouse import resolve_barcode_to_item, find_warehouse_items
+    from src.models import WarehouseItem
+    from unittest.mock import MagicMock, patch
+
+    mock_item_sku = WarehouseItem(sku="A01_001", item_name="Item SKU Candidate", supplier_barcode="SUPP-999")
+    mock_item_supp = WarehouseItem(sku="B02_002", item_name="Item Supp Barcode", supplier_barcode="00123")
+
+    # Empty barcode returns None immediately
+    assert resolve_barcode_to_item("") is None
+
+    mock_db = MagicMock()
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+        # Compile statement to check bound parameter values if available
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        if "a01_001" in compiled:
+            mock_result.scalars.return_value.first.return_value = mock_item_sku
+        elif "00123" in compiled:
+            mock_result.scalars.return_value.first.return_value = mock_item_supp
+        else:
+            mock_result.scalars.return_value.first.return_value = None
+            mock_result.scalars.return_value.all.return_value = [mock_item_sku]
+        return mock_result
+
+    mock_db.execute.side_effect = mock_execute
+
+    with patch("src.services.queries.warehouse.get_db") as mock_get_db:
+        mock_get_db.return_value.__enter__.return_value = mock_db
+        
+        # Test SKU candidate resolution
+        res1 = resolve_barcode_to_item("A01_001**EXTRA_TEXT")
+        assert res1 == mock_item_sku
+
+        # Test supplier barcode resolution
+        res2 = resolve_barcode_to_item("BATCH-00123")
+        assert res2 == mock_item_supp
+
+        # Test find_warehouse_items returns resolved barcode item
+        items = find_warehouse_items("A01_001**EXTRA_TEXT")
+        assert items == [mock_item_sku]
+
+

@@ -220,10 +220,10 @@ def test_bom_router_selectors(monkeypatch):
     monkeypatch.setattr(bom.queries, "get_bom_headers", lambda: ["standard"])
     monkeypatch.setattr(bom.queries, "get_marketplace_bom_headers", lambda: ["market"])
     monkeypatch.setattr(bom, "get_standard_bom_node", lambda *args: {"sku": args[0]})
-    monkeypatch.setattr(bom, "get_marketplace_bom_node", lambda value: {"id": value})
+    monkeypatch.setattr(bom, "get_marketplace_bom_node", lambda value, *args: {"id": value})
     assert bom.get_bom_headers(actor("admin", "admin"))["standard"] == ["standard"]
-    assert bom.get_bom_tree(" SKU ", None, actor("admin", "admin")) == {"sku": "SKU"}
-    assert bom.get_bom_tree(None, 7, actor("admin", "admin")) == {"id": 7}
+    assert bom.get_bom_tree(" SKU ", None, 1, actor("admin", "admin")) == {"sku": "SKU"}
+    assert bom.get_bom_tree(None, 7, 1, actor("admin", "admin")) == {"id": 7}
     with pytest.raises(HTTPException) as exc:
         bom.get_bom_tree(None, None, actor("admin", "admin"))
     assert exc.value.status_code == 400

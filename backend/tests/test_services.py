@@ -172,3 +172,43 @@ async def test_fetch_chunk_details_chunks_packages(monkeypatch):
     assert len(mass_tracking_calls[1]["package_list"]) == 10
 
 
+def test_marketplace_bom_quantity_multiplication():
+    from src.services.queries.bom import get_marketplace_bom_node
+    from src.models import BOMHeaderMarketplace, BOMDetailMarketplace, WarehouseItem
+    from unittest.mock import MagicMock
+
+    mock_hdr = BOMHeaderMarketplace(shopee_id=123, item_name="Test Bundle", quantity_standard=1)
+    mock_dtl = BOMDetailMarketplace(shopee_id=123, component_sku="SKU-A", quantity_standard=2, is_not_primary_child=False)
+    mock_item = WarehouseItem(sku="SKU-A", item_name="Item A")
+
+    mock_db = MagicMock()
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        mock_result = MagicMock()
+        if "bom_headers_marketplace" in stmt_str:
+            mock_result.scalar_one_or_none.return_value = mock_hdr
+        elif "bom_details_marketplace" in stmt_str:
+            mock_result.scalars.return_value.all.return_value = [mock_dtl]
+        elif "warehouse.items" in stmt_str or "warehouse_items" in stmt_str:
+            mock_result.scalar_one_or_none.return_value = mock_item
+        elif "bom_headers" in stmt_str:
+            mock_result.scalar_one_or_none.return_value = None
+        return mock_result
+
+    mock_db.execute.side_effect = mock_execute
+
+    from unittest.mock import patch
+    with patch("src.services.queries.bom.get_db") as mock_get_db:
+        mock_get_db.return_value.__enter__.return_value = mock_db
+        
+        # Test with order quantity 10
+        node = get_marketplace_bom_node(123, qty=10)
+        assert node is not None
+        assert node["quantity"] == 10
+        assert len(node["children"]) == 1
+        assert node["children"][0]["sku"] == "SKU-A"
+        assert node["children"][0]["quantity"] == 20  # 10 * 2
+
+
+

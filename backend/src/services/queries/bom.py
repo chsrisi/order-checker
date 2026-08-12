@@ -126,7 +126,7 @@ def get_standard_bom_node(sku: str, qty: int, is_not_primary_child: Optional[boo
         return get_standard_bom_node_internal(sku, qty, is_not_primary_child, db)
 
 
-def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
+def get_marketplace_bom_node(shopee_id: int, qty: int = 1) -> Optional[dict]:
     with get_db() as db:
         hdr = db.execute(
             select(BOMHeaderMarketplace).filter(BOMHeaderMarketplace.shopee_id == shopee_id)
@@ -134,11 +134,12 @@ def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
         if not hdr:
             return None
 
+        mult_qty = qty * (hdr.quantity_standard or 1)
         name = hdr.item_name or f"Marketplace Item {shopee_id}"
         node = {
             "sku": f"MP:{shopee_id}",
             "name": name,
-            "quantity": hdr.quantity_standard or 1,
+            "quantity": mult_qty,
             "type": "marketplace",
             "children": [],
         }
@@ -153,7 +154,7 @@ def get_marketplace_bom_node(shopee_id: int) -> Optional[dict]:
         for detail in details:
             child_node = get_standard_bom_node_internal(
                 detail.component_sku,
-                detail.quantity_standard or 1,
+                (detail.quantity_standard or 1) * mult_qty,
                 detail.is_not_primary_child,
                 db,
             )

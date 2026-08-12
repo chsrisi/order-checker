@@ -39,15 +39,16 @@ def get_bom_headers(current_user: User = Depends(require_admin)):
 def get_bom_tree(
     sku: Optional[str] = None,
     shopee_id: Optional[int] = None,
+    qty: int = 1,
     current_user: User = Depends(require_admin),
 ):
     if (sku is None) == (shopee_id is None):
         raise HTTPException(status_code=400, detail="Provide exactly one of 'sku' or 'shopee_id'")
     if sku is not None:
         sku = sku.strip()
-        return get_standard_bom_node(sku, 1, False)
+        return get_standard_bom_node(sku, qty, False)
     if shopee_id is not None:
-        node = get_marketplace_bom_node(shopee_id)
+        node = get_marketplace_bom_node(shopee_id, qty)
         if not node:
             raise HTTPException(status_code=404, detail="Marketplace BOM not found")
         return node

@@ -140,3 +140,19 @@ def test_logout_deletes_refresh_record(monkeypatch):
     monkeypatch.setattr(auth_service.queries, "delete_refresh_token", deleted.append)
     assert auth_service.logout_user("refresh")["message"] == "Logged out successfully"
     assert deleted == ["jti"]
+
+
+@pytest.mark.asyncio
+async def test_require_admin_success():
+    admin_user = user("admin_user", scope="admin")
+    res = await auth_service.require_admin(admin_user)
+    assert res == admin_user
+
+
+@pytest.mark.asyncio
+async def test_require_admin_forbidden():
+    client_user = user("client_user", scope="client")
+    with pytest.raises(HTTPException) as exc:
+        await auth_service.require_admin(client_user)
+    assert exc.value.status_code == 403
+
