@@ -35,13 +35,13 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |
 | GET | `/admin/bom/headers` | Admin | Standard and marketplace BOM roots |
-| GET | `/admin/bom/tree` | Admin | BOM tree by `sku` or `shopee_id` |
+| GET | `/admin/bom/tree` | Admin | BOM tree by `sku` or `shopee_id` (supports optional `qty` multiplier, default 1) |
 | POST | `/admin/shopee-config/unlock` | Admin | Create 2-minute config session |
 | GET/POST | `/admin/shopee-config` | Admin + config token | Read/update Shopee tokens |
 | POST | `/admin/shopee-config/lock` | Admin | End config session |
 | GET/POST | `/outbound` | User | List/create open scans |
 | POST | `/outbound/close` | Admin | Close scans and complete orders |
-| GET | `/items/find` | User | Search SKU, name, or barcode |
+| GET | `/items/find` | User | Search SKU, name, or barcode (uses barcode resolution pipeline) |
 | GET | `/stocks` | User | List inventory |
 | POST | `/stocks/update` | User | Set/add/transfer inventory |
 | GET | `/shopee/orders` | User | Synchronize active orders |

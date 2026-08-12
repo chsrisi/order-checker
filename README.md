@@ -74,6 +74,7 @@ ignored by Git; keep `backend/.secrets/` private as well.
 ```bash
 docker compose -f backend/compose.yaml config --quiet
 cd backend && docker compose -f compose.yaml -f compose.test.yaml run --build --rm tests
+cd backend && uv run python -m pytest
 cd frontend/client && flutter analyze && flutter test
 cd frontend/admin && flutter analyze && flutter test
 ```

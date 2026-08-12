@@ -60,16 +60,22 @@ verification to tolerate key rotation.
 
 1. A request checks the two-minute process-local cache and obtains an async lock.
 2. The service requests order numbers per Shopee status with bounded concurrency.
-3. Details and tracking numbers are fetched in chunks of at most 50 orders.
+3. Order details are fetched in chunks of at most 50 orders; package tracking numbers are fetched in package-list chunks of 10.
 4. A transaction inserts/updates orders, packages, addresses, and items.
 5. WebSocket updates are sent to administrators and the requesting operator.
 
 The cache and lock are per API process. Multiple workers can therefore perform
 parallel upstream synchronizations; distributed locking is a future scaling task.
 
-### Fulfillment
+### Fulfillment and item resolution
 
-Marketplace or standard BOM mappings expand sold items into warehouse components.
+Marketplace or standard BOM mappings expand sold items into warehouse components, supporting quantity scaling (`qty`) across root and child nodes.
+Item lookups utilize a barcode resolution pipeline (`resolve_barcode_to_item`):
+1. Extract the first line/token from the scanned barcode string.
+2. Check if the token matches a standard SKU candidate regex pattern (`[a-zA-Z]\d{2}_\d{3}`, e.g., `A01_001`).
+3. Normalize supplier barcodes (stripping prefix patterns like `BATCH-`).
+4. Fall back to exact SKU matching in the warehouse items database.
+
 An operator atomically claims an unassigned order, builds pick entries, assigns
 quantities, and scans the outbound label. Period closure deduplicates submitted
 labels, closes open scans, and marks matching orders complete by order or tracking

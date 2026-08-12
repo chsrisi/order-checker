@@ -21,6 +21,9 @@ refactor present at that revision.
 | Medium | Wildcard credentialed CORS was invalid/unsafe | Credentialed CORS is enabled only for explicit origins |
 | Medium | Request logs lacked correlation IDs, structured fields, and exception timing | Added JSON logging, request IDs, duration/status, safe domain events, and rotation |
 | Low | Mutable list defaults and loose request fields weakened schema correctness | Added factories, constraints, typed modes, examples, and descriptions |
+| High | Shopee package tracking number requests could fail or timeout on large orders | Chunked package list fetching into batches of 10 items |
+| Medium | Item lookup lacked barcode parsing and supplier barcode resolution | Built barcode resolution pipeline (`resolve_barcode_to_item`) matching SKU candidates and supplier barcodes |
+| Medium | BOM tree lookup did not support order quantity scaling | Added `qty` multiplier support to `/admin/bom/tree` and recursive BOM queries |
 
 ## Remaining risks
 

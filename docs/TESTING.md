@@ -28,22 +28,25 @@ cd backend
 docker compose -f compose.yaml -f compose.test.yaml run --build --rm tests
 ```
 
-For a faster host-side loop after installing Python 3.14:
+For a faster host-side loop (using `uv` or Python 3.14):
 
 ```bash
 cd backend
-python -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/ruff check src tests
-.venv/bin/ruff format --check src tests
-.venv/bin/pytest
+uv run python -m pytest
 ```
 
-Coverage is branch-aware and enforces the baseline configured in `pyproject.toml`. Raise it as query-level
-integration coverage grows. To inspect HTML coverage:
+When running `pytest` directly on the host, use `python -m pytest` or `uv run python -m pytest` to ensure `PYTHONPATH` includes `backend` so imports from `src` resolve properly.
+
+Coverage is branch-aware and enforces the baseline configured in `pyproject.toml` (minimum 55%). Key test areas include:
+- Barcode resolution pipeline (`_first_token`, `_sku_candidate`, `_supplier_barcode`, `resolve_barcode_to_item`).
+- Marketplace BOM tree quantity scaling (`qty` parameter).
+- Shopee order detail and package tracking list chunking.
+- Auth JWT rotation, admin requirements, and domain exception handling.
+
+To inspect HTML coverage:
 
 ```bash
-.venv/bin/pytest --cov-report=html
+uv run python -m pytest --cov-report=html
 ```
 
 Flutter checks run separately:
