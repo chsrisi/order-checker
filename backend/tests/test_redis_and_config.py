@@ -87,20 +87,27 @@ def test_config_uses_default(monkeypatch):
     assert config.get_config_value("MISSING_SETTING", "default") == "default"
 
 
-def test_config_database_url_docker_resolves_to_postgres_1(monkeypatch):
+def test_config_database_url_docker_resolves_to_postgres_container(monkeypatch):
     monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/.dockerenv")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/dbname")
     monkeypatch.delenv("DB_HOST", raising=False)
     assert (
         config.get_config_value("DATABASE_URL")
-        == "postgresql+psycopg://user:pass@postgres-1:5432/dbname"
+        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
     )
 
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@db:5432/dbname")
     assert (
         config.get_config_value("DATABASE_URL")
-        == "postgresql+psycopg://user:pass@postgres-1:5432/dbname"
+        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
     )
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@postgres-1:5432/dbname")
+    assert (
+        config.get_config_value("DATABASE_URL")
+        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
+    )
+
 
 
 def test_config_database_url_docker_custom_db_host(monkeypatch):
@@ -111,4 +118,56 @@ def test_config_database_url_docker_custom_db_host(monkeypatch):
         config.get_config_value("DATABASE_URL")
         == "postgresql+psycopg://user:pass@custom-db:5432/dbname"
     )
+
+
+def test_config_int_conversions(monkeypatch):
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    monkeypatch.setenv("VALID_INT", "42")
+    monkeypatch.setenv("INVALID_INT", "not-a-number")
+    monkeypatch.delenv("MISSING_INT", raising=False)
+
+    assert config.get_config_int("VALID_INT", 10) == 42
+    assert config.get_config_int("INVALID_INT", 10) == 10
+    assert config.get_config_int("MISSING_INT", 10) == 10
+
+
+def test_config_float_conversions(monkeypatch):
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    monkeypatch.setenv("VALID_FLOAT", "3.14")
+    monkeypatch.setenv("INVALID_FLOAT", "abc")
+    monkeypatch.delenv("MISSING_FLOAT", raising=False)
+
+    assert config.get_config_float("VALID_FLOAT", 1.5) == 3.14
+    assert config.get_config_float("INVALID_FLOAT", 1.5) == 1.5
+    assert config.get_config_float("MISSING_FLOAT", 1.5) == 1.5
+
+
+def test_config_bool_conversions(monkeypatch):
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    monkeypatch.delenv("MISSING_BOOL", raising=False)
+    assert config.get_config_bool("MISSING_BOOL", True) is True
+    assert config.get_config_bool("MISSING_BOOL", False) is False
+
+    for val in ["1", "true", "True", "TRUE", "yes", "YES", "on"]:
+        monkeypatch.setenv("BOOL_TEST", val)
+        assert config.get_config_bool("BOOL_TEST", False) is True
+
+    for val in ["0", "false", "False", "no", "off", "anything_else"]:
+        monkeypatch.setenv("BOOL_TEST", val)
+        assert config.get_config_bool("BOOL_TEST", True) is False
+
+
+@pytest.mark.asyncio
+async def test_shopee_token_seeds_from_shopee_prefix(monkeypatch):
+    redis = AsyncMock()
+    redis.get.return_value = None
+    monkeypatch.setattr(
+        shopee_token_manager,
+        "get_config_value",
+        lambda key: "seeded_token" if key == "SHOPEE_ACCESS_TOKEN" else None,
+    )
+    manager = ShopeeTokenManager(redis)
+    assert await manager.get_token("ACCESS_TOKEN") == "seeded_token"
+    redis.set.assert_awaited_once_with("shopee:access_token", "seeded_token")
+
 

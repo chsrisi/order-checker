@@ -17,10 +17,19 @@ def test_sku_candidate():
 
 
 def test_supplier_barcode():
+    # Backward compatibility (old formats)
     assert _supplier_barcode("BATCH-00123") == "00123"
     assert _supplier_barcode("BATCH-TYPE-001") == "TYPE-001"
     assert _supplier_barcode("00123") == "00123"
     assert _supplier_barcode("AB-12-CD-34") == "AB-12-CD-34"
+
+    # New format: {alpha:"consumer"}:[original hypen part]:{int:"carton_num"}
+    assert _supplier_barcode("CONSUMER:BATCH-00123:1") == "00123"
+    assert _supplier_barcode("CONSUMER:BATCH-TYPE-001:5") == "TYPE-001"
+    assert _supplier_barcode("Shopee:BATCH-00123:123") == "00123"
+    assert _supplier_barcode("Shopee:BATCH-TYPE-001:42") == "TYPE-001"
+    assert _supplier_barcode("CONSUMER:AB-12-CD-34:2") == "AB-12-CD-34"
+    assert _supplier_barcode("CONSUMER:00123:10") == "00123"
 
 
 def test_resolve_barcode_to_item_scenarios():
@@ -59,9 +68,13 @@ def test_resolve_barcode_to_item_scenarios():
         res1 = resolve_barcode_to_item("A01_001**EXTRA_TEXT")
         assert res1 == mock_item_sku
 
-        # Test supplier barcode resolution
+        # Test supplier barcode resolution (old format)
         res2 = resolve_barcode_to_item("BATCH-00123")
         assert res2 == mock_item_supp
+
+        # Test supplier barcode resolution (new format)
+        res3 = resolve_barcode_to_item("CONSUMER:BATCH-00123:1")
+        assert res3 == mock_item_supp
 
         # Test find_warehouse_items returns resolved barcode item
         items = find_warehouse_items("A01_001**EXTRA_TEXT")

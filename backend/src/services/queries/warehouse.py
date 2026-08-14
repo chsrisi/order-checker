@@ -23,14 +23,18 @@ def _sku_candidate(token: str) -> Optional[str]:
 
 
 def _supplier_barcode(token: str) -> Optional[str]:
-    if re.fullmatch(r"[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+", token):
-        return token
-    parts = token.split("-")
+    # Check for new format: {alpha:"consumer"}:[original hypen part]:{int:"carton_num"}
+    match = re.fullmatch(r"[a-zA-Z]+:(.+):\d+", token)
+    target = match.group(1) if match else token
+
+    if re.fullmatch(r"[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+", target):
+        return target
+    parts = target.split("-")
     if len(parts) == 3:
         return f"{parts[1]}-{parts[2]}"
     if len(parts) == 2:
         return parts[1]
-    return token
+    return target
 
 
 def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:

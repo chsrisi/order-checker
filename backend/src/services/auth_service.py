@@ -12,10 +12,16 @@ from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
 from . import queries
 from ..models import User, WSMessageType
+from ..config import get_config_value, get_config_int, get_config_float
 
 logger = logging.getLogger("backend.services.auth")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-ALGORITHM = "RS256"
+ALGORITHM = get_config_value("JWT_ALGORITHM", "RS256") or "RS256"
+JWT_AUDIENCE = get_config_value("JWT_AUDIENCE", "api.bakingholic:v0.3a") or "api.bakingholic:v0.3a"
+JWT_ISSUER = get_config_value("JWT_ISSUER", "auth.bakingholic:v0.3a") or "auth.bakingholic:v0.3a"
+JWT_LEEWAY_SECONDS = get_config_float("JWT_LEEWAY_SECONDS", 30.0)
+REFRESH_TTL_SECONDS = get_config_int("REFRESH_TTL_SECONDS", 86400)
+REFRESH_CLEANUP_INTERVAL_SECONDS = get_config_int("REFRESH_CLEANUP_INTERVAL_SECONDS", 3600)
 
 
 def verify_access_token(token: str) -> dict:
@@ -28,11 +34,11 @@ def verify_access_token(token: str) -> dict:
     payload = jwt.decode(
         token,
         PyJWK.from_dict(jwk).key,
-        audience="api.bakingholic:v0.3a",
-        issuer="auth.bakingholic:v0.3a",
+        audience=JWT_AUDIENCE,
+        issuer=JWT_ISSUER,
         options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
         algorithms=[ALGORITHM],
-        leeway=30.0,
+        leeway=JWT_LEEWAY_SECONDS,
     )
     if payload.get("type") != "access":
         raise jwt_exc.InvalidTokenError("Invalid token type")
@@ -52,11 +58,11 @@ def verify_refresh_token(token: str) -> dict:
     payload = jwt.decode(
         token,
         PyJWK.from_dict(jwk).key,
-        audience="api.bakingholic:v0.3a",
-        issuer="auth.bakingholic:v0.3a",
+        audience=JWT_AUDIENCE,
+        issuer=JWT_ISSUER,
         options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
         algorithms=[ALGORITHM],
-        leeway=30.0,
+        leeway=JWT_LEEWAY_SECONDS,
     )
     if payload.get("type") != "refresh":
         raise jwt_exc.InvalidTokenError("Invalid token type")
@@ -64,6 +70,7 @@ def verify_refresh_token(token: str) -> dict:
     if not jti:
         raise jwt_exc.InvalidTokenError("Token must include jti")
     return payload
+
 
 
 async def get_current_user(
@@ -109,8 +116,8 @@ def create_access_token(username: str) -> str:
         "jti": secrets.token_hex(16),
         "iat": datetime.now(UTC),
         "nbf": datetime.now(UTC),
-        "aud": "api.bakingholic:v0.3a",
-        "iss": "auth.bakingholic:v0.3a",
+        "aud": JWT_AUDIENCE,
+        "iss": JWT_ISSUER,
     }
 
     sig = key_mgr.get_active_signer()
@@ -123,7 +130,7 @@ def create_access_token(username: str) -> str:
 
 
 def create_refresh_token(username: str):
-    expires_delta = timedelta(hours=24)
+    expires_delta = timedelta(seconds=REFRESH_TTL_SECONDS)
     expire = datetime.now(UTC) + expires_delta
     to_encode = {
         "sub": username,
@@ -132,8 +139,8 @@ def create_refresh_token(username: str):
         "exp": expire,
         "iat": datetime.now(UTC),
         "nbf": datetime.now(UTC),
-        "aud": "api.bakingholic:v0.3a",
-        "iss": "auth.bakingholic:v0.3a",
+        "aud": JWT_AUDIENCE,
+        "iss": JWT_ISSUER,
     }
 
     sig = key_mgr.get_active_signer()
@@ -287,7 +294,7 @@ def _delete_outdated_refresh_tokens() -> int:
 async def remove_outdated_refresh_task():
     try:
         while True:
-            await asyncio.sleep(3600)
+            await asyncio.sleep(REFRESH_CLEANUP_INTERVAL_SECONDS)
             count = await asyncio.to_thread(_delete_outdated_refresh_tokens)
             if count:
                 logger.info(f"Deleted {count} outdated refresh tokens")

@@ -30,8 +30,9 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Ensure appuser owns /app
-RUN chown appuser:appuser /app
+# Ensure appuser owns /app and pre-create storage directories for keys and logs
+RUN mkdir -p /app/data/keys /app/logs /app/temp/logs && chown -R appuser:appuser /app
+
 
 # Download dependencies as a separate step to take advantage of Docker's caching.
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.

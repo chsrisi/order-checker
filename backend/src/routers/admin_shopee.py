@@ -13,8 +13,11 @@ from ..models import (
 from ..dependencies import require_admin
 from ..services.managers import redis_mgr, token_mgr, cache_mgr
 from ..services.auth_service import verify_password
+from ..config import get_config_int
 
 logger = logging.getLogger("backend.routers.admin_shopee")
+
+SHOPEE_CONFIG_UNLOCK_TTL_SECONDS = get_config_int("SHOPEE_CONFIG_UNLOCK_TTL_SECONDS", 120)
 
 shopee_config_router = APIRouter(prefix="/shopee-config", tags=["shopee configuration"])
 
@@ -23,7 +26,7 @@ shopee_config_router = APIRouter(prefix="/shopee-config", tags=["shopee configur
     "/unlock",
     response_model=TemporaryTokenResponse,
     summary="Unlock Shopee credentials",
-    description="Re-authenticates the administrator and returns a separate two-minute configuration token.",
+    description="Re-authenticates the administrator and returns a separate temporary configuration token.",
     responses={
         401: {"description": "Incorrect admin password"},
         503: {"description": "Redis unavailable"},
@@ -42,7 +45,7 @@ async def unlock_shopee_config(
     config_token = secrets.token_hex(32)
     redis_key = f"cfg_token:{config_token}"
     try:
-        await redis_mgr.set(redis_key, current_user.username, ex=120)
+        await redis_mgr.set(redis_key, current_user.username, ex=SHOPEE_CONFIG_UNLOCK_TTL_SECONDS)
         logger.info(
             f"Admin {current_user.username} unlocked Shopee config view. Temporary token generated."
         )
@@ -50,7 +53,8 @@ async def unlock_shopee_config(
         logger.exception("shopee_config_unlock_store_failed")
         raise HTTPException(status_code=503, detail="Redis connection failed") from exc
 
-    return {"token": config_token, "expires_in": 120}
+    return {"token": config_token, "expires_in": SHOPEE_CONFIG_UNLOCK_TTL_SECONDS}
+
 
 
 @shopee_config_router.post(

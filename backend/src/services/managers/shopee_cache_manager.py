@@ -1,7 +1,10 @@
 import asyncio
 import time
 
-SHOPEE_CACHE_TTL_SECONDS = 120
+from ...config import get_config_int
+
+SHOPEE_CACHE_TTL_SECONDS = get_config_int("SHOPEE_CACHE_TTL_SECONDS", 120)
+
 
 
 class ShopeeOrderCacheManager:

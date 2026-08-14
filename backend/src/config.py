@@ -47,13 +47,44 @@ def get_config_value(key: str, default: str | None = None) -> str | None:
     if val and key.upper() == "DATABASE_URL":
         if os.path.exists("/.dockerenv") or os.path.exists("/run/secrets"):
             original = val
-            db_host = os.getenv("DB_HOST", "postgres-1")
-            val = re.sub(r"@(localhost|127\.0\.0\.1|db)(:\d+)?", f"@{db_host}\\2", val)
+            db_host = os.getenv("DB_HOST", "postgres_container")
+            val = re.sub(r"@(localhost|127\.0\.0\.1|db|postgres-1)(:\d+)?", f"@{db_host}\\2", val)
             if val != original:
                 # Censor password in logs
                 censored = re.sub(r":([^:@]+)@", r":****@", val)
                 logger.info(
-                    f"Resolved database URL host from localhost/127.0.0.1/db to '{db_host}' for Docker: {censored}"
+                    f"Resolved database URL host from localhost/127.0.0.1/db/postgres-1 to '{db_host}' for Docker: {censored}"
                 )
 
+
     return val
+
+
+def get_config_int(key: str, default: int) -> int:
+    val = get_config_value(key)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return int(val.strip())
+    except ValueError:
+        logger.warning(f"Invalid integer for config '{key}': '{val}', falling back to default: {default}")
+        return default
+
+
+def get_config_float(key: str, default: float) -> float:
+    val = get_config_value(key)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return float(val.strip())
+    except ValueError:
+        logger.warning(f"Invalid float for config '{key}': '{val}', falling back to default: {default}")
+        return default
+
+
+def get_config_bool(key: str, default: bool) -> bool:
+    val = get_config_value(key)
+    if val is None or val.strip() == "":
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+

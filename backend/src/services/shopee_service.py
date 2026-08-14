@@ -13,7 +13,7 @@ from ..exceptions import DomainException
 
 from .redis_service import redis_mgr
 from .managers import token_mgr, cache_mgr, conn_mgr
-from ..config import get_config_value
+from ..config import get_config_value, get_config_int, get_config_float
 from ..models import (
     ShopeeResponse,
     ShopeeTokenResponse,
@@ -33,6 +33,14 @@ from . import queries
 
 logger = logging.getLogger("backend.services.shopee")
 
+SHOPEE_MAX_CONCURRENCY = get_config_int("SHOPEE_MAX_CONCURRENCY", 5)
+SHOPEE_MAX_RETRIES = get_config_int("SHOPEE_MAX_RETRIES", 3)
+SHOPEE_BACKOFF_DELAY = get_config_float("SHOPEE_BACKOFF_DELAY", 1.5)
+SHOPEE_PAGE_SIZE = get_config_int("SHOPEE_PAGE_SIZE", 100)
+SHOPEE_ORDER_CHUNK_SIZE = get_config_int("SHOPEE_ORDER_CHUNK_SIZE", 50)
+SHOPEE_PACKAGE_CHUNK_SIZE = get_config_int("SHOPEE_PACKAGE_CHUNK_SIZE", 50)
+SHOPEE_SYNC_WINDOW_DAYS = get_config_int("SHOPEE_SYNC_WINDOW_DAYS", 2)
+
 
 # Global session container to avoid circular imports with 'app'
 class ShopeeClientSession:
@@ -43,7 +51,7 @@ class ShopeeClientSession:
 shopee_client_session = ShopeeClientSession()
 
 TOKEN_REFRESH_LOCK = asyncio.Lock()
-SHOPEE_SEMAPHORE = asyncio.Semaphore(5)
+SHOPEE_SEMAPHORE = asyncio.Semaphore(SHOPEE_MAX_CONCURRENCY)
 
 
 async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
@@ -113,7 +121,7 @@ async def shopee_request(
     body: Optional[dict[str, Any]] = None,
     method: str = "GET",
     retry_on_expiry: bool = True,
-    max_429_retries: int = 3,
+    max_429_retries: Optional[int] = None,
 ) -> Optional[ShopeeResponse]:
 
     # 1. Top-Level Circuit Breaker Check
@@ -126,9 +134,10 @@ async def shopee_request(
             detail="Shopee API authentication infrastructure is broken. Re-authorization required.",
         )
 
-    backoff_delay = 1.5  # Starting delay for 429 backoff
+    retries_limit = max_429_retries if max_429_retries is not None else SHOPEE_MAX_RETRIES
+    backoff_delay = SHOPEE_BACKOFF_DELAY  # Starting delay for 429 backoff
 
-    for attempt in range(max_429_retries + 1):
+    for attempt in range(retries_limit + 1):
         host = get_config_value("SHOPEE_URL")
         partner_id = get_config_value("PARTNER_ID")
         partner_key = get_config_value("PARTNER_KEY")
@@ -190,9 +199,9 @@ async def shopee_request(
             async with req_coro as resp:
                 # Handle Gateway 429 errors
                 if resp.status == 429:
-                    if attempt < max_429_retries:
+                    if attempt < retries_limit:
                         logger.warning(
-                            f"[429 TOO MANY REQUESTS] Gateway rate limit hit on {path}. Retrying in {backoff_delay}s... (Attempt {attempt + 1}/{max_429_retries})"
+                            f"[429 TOO MANY REQUESTS] Gateway rate limit hit on {path}. Retrying in {backoff_delay}s... (Attempt {attempt + 1}/{retries_limit})"
                         )
                         await asyncio.sleep(backoff_delay)
                         backoff_delay *= 2
@@ -230,7 +239,7 @@ async def shopee_request(
 
                     # Handle Payload-level Rate Limits
                     if ret.error in ["request_limit_exceeded", "frequency_limited"]:
-                        if attempt < max_429_retries:
+                        if attempt < retries_limit:
                             logger.warning(
                                 f"[429 API LIMIT] Application rate limit '{ret.error}' on {path}. Retrying in {backoff_delay}s..."
                             )
@@ -311,7 +320,7 @@ async def fetch_sns_for_status(status: str, time_from: int, now: int) -> list[st
 
     while True:
         params: dict[str, Any] = {
-            "page_size": 100,
+            "page_size": SHOPEE_PAGE_SIZE,
             "time_range_field": "create_time",
             "time_from": time_from,
             "time_to": now,
@@ -384,7 +393,7 @@ async def fetch_chunk_details(
     fail_pkgs = set()
 
     if processed_packages:
-        max_packages_per_req = 50
+        max_packages_per_req = SHOPEE_PACKAGE_CHUNK_SIZE
         for i in range(0, len(processed_packages), max_packages_per_req):
             package_chunk = processed_packages[i : i + max_packages_per_req]
             async with SHOPEE_SEMAPHORE:
@@ -503,7 +512,7 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
             return [build_shopee_order_response(o) for o in orders]
 
         now = int(time.time())
-        time_from = now - (2 * 24 * 60 * 60)  # 2 days
+        time_from = now - (SHOPEE_SYNC_WINDOW_DAYS * 24 * 60 * 60)
         STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED", "COMPLETED", "CANCELLED"]
 
         # MOCK-DATA BYPASS: the Shopee fetch is wrapped so an offline/failed API
@@ -524,7 +533,7 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
             order_sns = list(dict.fromkeys(all_order_sns))
 
             if order_sns:
-                chunk_size = 50
+                chunk_size = SHOPEE_ORDER_CHUNK_SIZE
                 chunks = [
                     order_sns[i : i + chunk_size] for i in range(0, len(order_sns), chunk_size)
                 ]

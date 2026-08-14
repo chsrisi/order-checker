@@ -19,11 +19,12 @@ class ShopeeTokenManager:
             return val
 
         # Fallback to loading the initial/configured value (env or secret)
-        fallback = get_config_value(key.upper())
+        fallback = get_config_value(f"SHOPEE_{key.upper()}") or get_config_value(key.upper())
         if fallback:
             logger.info(f"Seeding {redis_key} to Redis from initial configuration fallback")
             await self.set_token(key, fallback)
             return fallback
+
 
         return None
 

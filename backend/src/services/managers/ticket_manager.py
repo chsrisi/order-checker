@@ -3,16 +3,24 @@ import secrets
 from typing import Optional
 
 from ..redis_service import redis_mgr
+from ...config import get_config_int
 
 logger = logging.getLogger("backend.services.managers.ticket_manager")
 
+WS_TICKET_TTL_SECONDS = get_config_int("WS_TICKET_TTL_SECONDS", 30)
+
 
 class TicketManager:
-    async def generate_ticket(self, username: str, ttl_seconds: int = 30) -> str:
+    def __init__(self, default_ttl: int = WS_TICKET_TTL_SECONDS):
+        self.default_ttl = default_ttl
+
+    async def generate_ticket(self, username: str, ttl_seconds: Optional[int] = None) -> str:
+        ttl = ttl_seconds if ttl_seconds is not None else self.default_ttl
         ticket = secrets.token_urlsafe(32)
         key = f"ws_token:{ticket}"
         try:
-            await redis_mgr.set(key, username, ex=ttl_seconds)
+            await redis_mgr.set(key, username, ex=ttl)
+
             logger.debug(
                 "websocket_ticket_generated",
                 extra={"event": "websocket.ticket.generated", "username": username},

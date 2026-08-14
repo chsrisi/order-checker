@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .config import get_config_value, get_config_bool, get_config_int
+
 
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
@@ -54,11 +56,19 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging() -> None:
-    """Configure console output and an optional rotating file exactly once."""
+    """Configure console output (default WARNING) and an optional rotating file (default DEBUG)."""
 
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
-    log_format = os.getenv("LOG_FORMAT", "json").lower()
+    console_level_name = (
+        get_config_value("LOG_LEVEL_CONSOLE")
+        or get_config_value("LOG_LEVEL", "WARNING")
+        or "WARNING"
+    ).upper()
+    console_level = getattr(logging, console_level_name, logging.WARNING)
+
+    file_level_name = (get_config_value("LOG_LEVEL_FILE", "DEBUG") or "DEBUG").upper()
+    file_level = getattr(logging, file_level_name, logging.DEBUG)
+
+    log_format = (get_config_value("LOG_FORMAT", "json") or "json").lower()
     formatter: logging.Formatter
     if log_format == "text":
         formatter = logging.Formatter(
@@ -68,24 +78,35 @@ def configure_logging() -> None:
         formatter = JsonFormatter()
 
     context_filter = RequestContextFilter()
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
 
-    log_dir = os.getenv("LOG_DIR", "temp/logs")
-    if os.getenv("LOG_TO_FILE", "true").lower() in {"1", "true", "yes"}:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(formatter)
+    console_handler.addFilter(context_filter)
+    handlers: list[logging.Handler] = [console_handler]
+
+    active_levels = [console_level]
+
+    log_dir = get_config_value("LOG_DIR", "temp/logs") or "temp/logs"
+    if get_config_bool("LOG_TO_FILE", True):
+        max_bytes = get_config_int("LOG_MAX_BYTES", 10 * 1024 * 1024)
+        backup_count = get_config_int("LOG_BACKUP_COUNT", 5)
         Path(log_dir).mkdir(parents=True, exist_ok=True)
-        handlers.append(
-            logging.handlers.RotatingFileHandler(
-                Path(log_dir) / "backend.log",
-                maxBytes=10 * 1024 * 1024,
-                backupCount=5,
-            )
+        file_handler = logging.handlers.RotatingFileHandler(
+            Path(log_dir) / "backend.log",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
         )
+        file_handler.setLevel(file_level)
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(context_filter)
+        handlers.append(file_handler)
+        active_levels.append(file_level)
 
     root = logging.getLogger()
-    root.setLevel(level)
+    root.setLevel(min(active_levels))
     root.handlers.clear()
     for handler in handlers:
-        handler.setLevel(level)
-        handler.setFormatter(formatter)
-        handler.addFilter(context_filter)
         root.addHandler(handler)
+
+

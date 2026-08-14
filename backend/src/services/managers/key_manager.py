@@ -8,11 +8,14 @@ from typing import Any, Optional
 from Crypto.PublicKey import RSA
 from dataclasses import dataclass
 
+from ...config import get_config_value, get_config_int
+
 logger = logging.getLogger("backend.services.managers.key_manager")
 
-KEYS_DIR = "data/keys"
-KEY_CACHE_TTL_SECONDS = 300
-ACCESS_TTL_SECONDS = 900
+KEYS_DIR = get_config_value("KEYS_DIR", "data/keys") or "data/keys"
+KEY_CACHE_TTL_SECONDS = get_config_int("KEY_CACHE_TTL_SECONDS", 300)
+ACCESS_TTL_SECONDS = get_config_int("ACCESS_TTL_SECONDS", 900)
+
 
 
 def ensure_keys_exist(keys_dir: str) -> bool:

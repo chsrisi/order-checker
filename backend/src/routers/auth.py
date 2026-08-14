@@ -68,7 +68,7 @@ def logout(body: RefreshTokenRequest):
     "/ws-token",
     response_model=WebSocketTicketResponse,
     summary="Create a WebSocket ticket",
-    description="Returns a one-use ticket that expires after 30 seconds.",
+    description="Returns a one-use ticket that expires after configured TTL.",
     responses={
         401: {"description": "Invalid bearer token"},
         503: {"description": "Redis unavailable"},
@@ -77,11 +77,13 @@ def logout(body: RefreshTokenRequest):
 async def create_ws_token(
     current_user: User = Depends(get_current_user),
 ):
+    ttl = ticket_mgr.default_ttl
     try:
-        ticket = await ticket_mgr.generate_ticket(current_user.username, ttl_seconds=30)
+        ticket = await ticket_mgr.generate_ticket(current_user.username, ttl_seconds=ttl)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="WebSocket ticket service unavailable") from exc
-    return {"token": ticket, "expires_in": 30}
+    return {"token": ticket, "expires_in": ttl}
+
 
 
 @public_router.get(
