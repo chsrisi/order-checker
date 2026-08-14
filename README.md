@@ -27,25 +27,23 @@ Requirements: Docker with Compose, Flutter 3.x/Dart 3.9+ for the UIs.
 
 1. Create `backend/.secrets/postgres_password` and
    `backend/.secrets/app_password`. Use the app password in `DATABASE_URL`.
-2. Export the backend configuration:
+2. Configure the backend using `.env` (or `--env-file`):
 
    ```bash
-   export DATABASE_URL='postgresql+psycopg://bh_backend:APP_PASSWORD@localhost:5432/bakingholic'
-   export ADMIN_USERNAME='admin'
-   export ADMIN_PASSWORD='change-me'
-   export PARTNER_ID='your-shopee-partner-id'
-   export PARTNER_KEY='your-shopee-partner-key'
-   export SHOP_ID='your-shopee-shop-id'
-   export SHOPEE_URL='https://partner.shopeemobile.com'
-   export CORS_ORIGINS='http://localhost:3000'
+   cd backend
+   cp .env.example .env
+   # Edit .env with your environment settings
    ```
+
+   For sensitive credentials (passwords, keys), Docker Secrets and secret files in `backend/.secrets/` are used.
 
 3. Start the stack:
 
    ```bash
    cd backend
-   docker compose up --build
+   docker compose up --build -d
    ```
+
 
    The API runs at `http://localhost:8000`; interactive OpenAPI docs are at
    `http://localhost:8000/docs`. Alembic migrations run on container startup.
