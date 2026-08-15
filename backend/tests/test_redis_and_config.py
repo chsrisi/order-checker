@@ -87,25 +87,31 @@ def test_config_uses_default(monkeypatch):
     assert config.get_config_value("MISSING_SETTING", "default") == "default"
 
 
-def test_config_database_url_docker_resolves_to_postgres_container(monkeypatch):
+def test_config_database_url_docker_resolves_to_backend_postgres_1(monkeypatch):
     monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/.dockerenv")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/dbname")
     monkeypatch.delenv("DB_HOST", raising=False)
     assert (
         config.get_config_value("DATABASE_URL")
-        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
+        == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
     )
 
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@db:5432/dbname")
     assert (
         config.get_config_value("DATABASE_URL")
-        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
+        == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
     )
 
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@postgres-1:5432/dbname")
     assert (
         config.get_config_value("DATABASE_URL")
-        == "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
+        == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
+    )
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@postgres_container:5432/dbname")
+    assert (
+        config.get_config_value("DATABASE_URL")
+        == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
     )
 
 

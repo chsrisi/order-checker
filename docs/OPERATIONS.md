@@ -60,7 +60,7 @@ To configure file-backed secrets for all super-sensitive credentials:
    ```bash
    echo "super_secret_pg_pass" > backend/.secrets/postgres_password
    echo "super_secret_app_pass" > backend/.secrets/app_password
-   echo "postgresql+psycopg://bh_backend:super_secret_app_pass@postgres_container:5432/bakingholic" > backend/.secrets/database_url
+   echo "postgresql+psycopg://bh_backend:super_secret_app_pass@backend-postgres-1:5432/bakingholic" > backend/.secrets/database_url
    echo "shopee_live_partner_secret_key" > backend/.secrets/partner_key
    echo "strong_initial_admin_password" > backend/.secrets/admin_password
    ```
@@ -90,6 +90,8 @@ To configure file-backed secrets for all super-sensitive credentials:
 | `PORT` | int | `8000` | No | Host port mapped to the FastAPI application (`${PORT:-8000}:8000`). |
 | `DB_PORT` | int | `5432` | No | Host port mapped to the PostgreSQL service (`${DB_PORT:-5432}:5432`). |
 | `REDIS_PORT` | int | `6379` | No | Host port mapped to the Redis service (`${REDIS_PORT:-6379}:6379`). |
+| `DB_CONTAINER_NAME` | string | `backend-postgres-1` | No | Custom container name for the PostgreSQL service (`${DB_CONTAINER_NAME:-backend-postgres-1}`). |
+| `REDIS_CONTAINER_NAME` | string | `backend-redis-1` | No | Custom container name for the Redis service (`${REDIS_CONTAINER_NAME:-backend-redis-1}`). |
 | `KEYS_VOLUME` | string | `./data/keys` | No | Host path mounted to container `/app/data/keys` for persistent JWT key storage. |
 | `LOGS_VOLUME` | string | `./logs` | No | Host path mounted to container `/app/logs` for persistent file logs. |
 | `ENV_FILE` | string | `.env` | No | Environment file path passed to docker compose service definition. |
@@ -101,7 +103,7 @@ To configure file-backed secrets for all super-sensitive credentials:
 | Name | Type | Default | Required | Notes |
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | string | `sqlite:///./local.db` | Production | PostgreSQL connection string (`postgresql+psycopg://user:pass@host:5432/dbname`). In Docker, `localhost`/`127.0.0.1`/`db` hostnames are automatically rewritten to `DB_HOST`. In production, prefer passing via Docker Secret `database_url`. |
-| `DB_HOST` | string | `postgres_container` | No | Docker network hostname for the PostgreSQL service used in database URL host resolution. |
+| `DB_HOST` | string | `backend-postgres-1` | No | Docker network hostname for the PostgreSQL service used in database URL host resolution. |
 | `REDIS_URL` | string | `redis://localhost:6379/0` | Yes | Redis connection URL (`redis://redis:6379/0` in Compose). Used for dynamic token storage, WebSocket tickets, and admin configuration sessions. |
 
 ---

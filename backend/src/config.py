@@ -47,13 +47,13 @@ def get_config_value(key: str, default: str | None = None) -> str | None:
     if val and key.upper() == "DATABASE_URL":
         if os.path.exists("/.dockerenv") or os.path.exists("/run/secrets"):
             original = val
-            db_host = os.getenv("DB_HOST", "postgres_container")
-            val = re.sub(r"@(localhost|127\.0\.0\.1|db|postgres-1)(:\d+)?", f"@{db_host}\\2", val)
+            db_host = os.getenv("DB_HOST", "backend-postgres-1")
+            val = re.sub(r"@(localhost|127\.0\.0\.1|db|postgres-1|postgres_container)(:\d+)?", f"@{db_host}\\2", val)
             if val != original:
                 # Censor password in logs
                 censored = re.sub(r":([^:@]+)@", r":****@", val)
                 logger.info(
-                    f"Resolved database URL host from localhost/127.0.0.1/db/postgres-1 to '{db_host}' for Docker: {censored}"
+                    f"Resolved database URL host from localhost/127.0.0.1/db/postgres-1/postgres_container to '{db_host}' for Docker: {censored}"
                 )
 
 

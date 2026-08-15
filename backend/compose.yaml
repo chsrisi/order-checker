@@ -52,7 +52,7 @@ services:
 
   db:
     image: postgres:18.4-alpine
-    container_name: ${DB_CONTAINER_NAME:-postgres_container}
+    container_name: ${DB_CONTAINER_NAME:-backend-postgres-1}
     restart: always
     user: postgres
     environment:
@@ -75,7 +75,7 @@ services:
 
   redis:
     image: redis:8.8-alpine
-    container_name: ${REDIS_CONTAINER_NAME:-redis_container}
+    container_name: ${REDIS_CONTAINER_NAME:-backend-redis-1}
     restart: always
     ports:
       - "${REDIS_PORT:-6379}:6379"
