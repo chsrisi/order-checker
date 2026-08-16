@@ -23,11 +23,13 @@ def test_supplier_barcode():
     assert _supplier_barcode("00123") == "00123"
     assert _supplier_barcode("AB-12-CD-34") == "AB-12-CD-34"
 
-    # New format: {alpha:"consumer"}:[original hypen part]:{int:"carton_num"}
+    # New format: {alphanum:"prefix"}:[original hypen part]:{alphanum:"suffix"}
     assert _supplier_barcode("CONSUMER:BATCH-00123:1") == "00123"
     assert _supplier_barcode("CONSUMER:BATCH-TYPE-001:5") == "TYPE-001"
     assert _supplier_barcode("Shopee:BATCH-00123:123") == "00123"
     assert _supplier_barcode("Shopee:BATCH-TYPE-001:42") == "TYPE-001"
+    assert _supplier_barcode("C01:BATCH-00123:BOX1") == "00123"
+    assert _supplier_barcode("123:BATCH-TYPE-001:CTN2") == "TYPE-001"
     assert _supplier_barcode("CONSUMER:AB-12-CD-34:2") == "AB-12-CD-34"
     assert _supplier_barcode("CONSUMER:00123:10") == "00123"
 

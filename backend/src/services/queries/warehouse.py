@@ -23,8 +23,8 @@ def _sku_candidate(token: str) -> Optional[str]:
 
 
 def _supplier_barcode(token: str) -> Optional[str]:
-    # Check for new format: {alpha:"consumer"}:[original hypen part]:{int:"carton_num"}
-    match = re.fullmatch(r"[a-zA-Z]+:(.+):\d+", token)
+    # Check for new format: {alphanum:"prefix"}:[original hypen part]:{alphanum:"suffix"}
+    match = re.fullmatch(r"[a-zA-Z0-9]+:(.+):[a-zA-Z0-9]+", token)
     target = match.group(1) if match else token
 
     if re.fullmatch(r"[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+-[a-zA-Z0-9]+", target):

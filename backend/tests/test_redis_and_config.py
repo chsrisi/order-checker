@@ -88,6 +88,7 @@ def test_config_uses_default(monkeypatch):
 
 
 def test_config_database_url_docker_resolves_to_backend_postgres_1(monkeypatch):
+    monkeypatch.setattr(config.os.path, "isfile", lambda _: False)
     monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/.dockerenv")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/dbname")
     monkeypatch.delenv("DB_HOST", raising=False)
@@ -117,6 +118,7 @@ def test_config_database_url_docker_resolves_to_backend_postgres_1(monkeypatch):
 
 
 def test_config_database_url_docker_custom_db_host(monkeypatch):
+    monkeypatch.setattr(config.os.path, "isfile", lambda _: False)
     monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/.dockerenv")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/dbname")
     monkeypatch.setenv("DB_HOST", "custom-db")

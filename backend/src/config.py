@@ -19,22 +19,36 @@ def get_config_value(key: str, default: str) -> str: ...
 def get_config_value(key: str, default: str | None = None) -> str | None:
     """
     Retrieves a configuration value.
-    First checks for a Docker Secret at /run/secrets/<key_lowercase>.
-    If not found, falls back to the environment variable.
+    First checks for secrets:
+      1. Explicit SECRETS_DIR if defined
+      2. Docker Secret at /run/secrets/<key_lowercase>
+      3. Local secrets in backend/.secrets/<key_lowercase> or ./.secrets/<key_lowercase>
+    If not found, falls back to the environment variable or default.
     """
     val = None
 
-    # 1. Try reading from docker secrets first
-    secret_path = f"/run/secrets/{key.lower()}"
-    if os.path.exists(secret_path):
-        try:
-            with open(secret_path, "r") as f:
-                temp_val = f.read().strip()
-                if temp_val:
-                    val = temp_val
-                    logger.debug(f"Loaded config '{key}' from docker secret")
-        except Exception as e:
-            logger.warning(f"Failed to read secret {key} from {secret_path}: {e}")
+    # 1. Try reading from docker secrets or local .secrets files first
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    secret_candidate_paths = [
+        f"/run/secrets/{key.lower()}",
+        os.path.join(backend_dir, ".secrets", key.lower()),
+        os.path.join(os.getcwd(), ".secrets", key.lower()),
+    ]
+    secrets_dir = os.getenv("SECRETS_DIR")
+    if secrets_dir:
+        secret_candidate_paths.insert(0, os.path.join(secrets_dir, key.lower()))
+
+    for secret_path in secret_candidate_paths:
+        if os.path.isfile(secret_path):
+            try:
+                with open(secret_path, "r", encoding="utf-8") as f:
+                    temp_val = f.read().strip()
+                    if temp_val:
+                        val = temp_val
+                        logger.debug(f"Loaded config '{key}' from secret file at {secret_path}")
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to read secret {key} from {secret_path}: {e}")
 
     # 2. Fallback to environment variables or default
     if val is None:
@@ -48,14 +62,17 @@ def get_config_value(key: str, default: str | None = None) -> str | None:
         if os.path.exists("/.dockerenv") or os.path.exists("/run/secrets"):
             original = val
             db_host = os.getenv("DB_HOST", "backend-postgres-1")
-            val = re.sub(r"@(localhost|127\.0\.0\.1|db|postgres-1|postgres_container)(:\d+)?", f"@{db_host}\\2", val)
+            val = re.sub(
+                r"@(localhost|127\.0\.0\.1|db|postgres-1|postgres_container)(:\d+)?",
+                f"@{db_host}\\2",
+                val,
+            )
             if val != original:
                 # Censor password in logs
                 censored = re.sub(r":([^:@]+)@", r":****@", val)
                 logger.info(
                     f"Resolved database URL host from localhost/127.0.0.1/db/postgres-1/postgres_container to '{db_host}' for Docker: {censored}"
                 )
-
 
     return val
 
@@ -67,7 +84,9 @@ def get_config_int(key: str, default: int) -> int:
     try:
         return int(val.strip())
     except ValueError:
-        logger.warning(f"Invalid integer for config '{key}': '{val}', falling back to default: {default}")
+        logger.warning(
+            f"Invalid integer for config '{key}': '{val}', falling back to default: {default}"
+        )
         return default
 
 
@@ -78,7 +97,9 @@ def get_config_float(key: str, default: float) -> float:
     try:
         return float(val.strip())
     except ValueError:
-        logger.warning(f"Invalid float for config '{key}': '{val}', falling back to default: {default}")
+        logger.warning(
+            f"Invalid float for config '{key}': '{val}', falling back to default: {default}"
+        )
         return default
 
 
@@ -87,4 +108,3 @@ def get_config_bool(key: str, default: bool) -> bool:
     if val is None or val.strip() == "":
         return default
     return val.strip().lower() in {"1", "true", "yes", "on"}
-
