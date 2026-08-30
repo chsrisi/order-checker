@@ -108,3 +108,24 @@ def get_config_bool(key: str, default: bool) -> bool:
     if val is None or val.strip() == "":
         return default
     return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# ------------------------------------------------------------------------------
+# Global Application & API Versioning
+# ------------------------------------------------------------------------------
+API_VERSION: str = get_config_value("API_VERSION", "0.3.0-alpha") or "0.3.0-alpha"
+
+# ------------------------------------------------------------------------------
+# Security, JWT & Token Configuration
+# ------------------------------------------------------------------------------
+JWT_VERSION: str = get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
+DEFAULT_JWT_AUDIENCE: str = f"api.bakingholic:{JWT_VERSION}"
+DEFAULT_JWT_ISSUER: str = f"auth.bakingholic:{JWT_VERSION}"
+
+JWT_ALGORITHM: str = get_config_value("JWT_ALGORITHM", "RS256") or "RS256"
+JWT_AUDIENCE: str = get_config_value("JWT_AUDIENCE", DEFAULT_JWT_AUDIENCE) or DEFAULT_JWT_AUDIENCE
+JWT_ISSUER: str = get_config_value("JWT_ISSUER", DEFAULT_JWT_ISSUER) or DEFAULT_JWT_ISSUER
+JWT_LEEWAY_SECONDS: float = get_config_float("JWT_LEEWAY_SECONDS", 30.0)
+REFRESH_TTL_SECONDS: int = get_config_int("REFRESH_TTL_SECONDS", 86400)
+REFRESH_CLEANUP_INTERVAL_SECONDS: int = get_config_int("REFRESH_CLEANUP_INTERVAL_SECONDS", 3600)
+

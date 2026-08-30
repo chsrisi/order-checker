@@ -135,18 +135,20 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 
 ---
 
-### 5. Security, JWT & Key Management
+### 5. Application Versioning, Security & JWT Key Management
 
 | Name | Type | Default | Required | Notes |
 | --- | --- | --- | --- | --- |
+| `API_VERSION` | string | `0.3.0-alpha` | No | Application/API version exposed via FastAPI OpenAPI metadata (`schema["info"]["version"]`). |
+| `JWT_VERSION` | string | `v0.3a` | No | Version tag embedded in default JWT audience and issuer claims (`api.bakingholic:<version>` and `auth.bakingholic:<version>`). |
 | `KEYS_DIR` | string | `data/keys` | No | Directory where RSA key pairs (`.key` and `.pub`) are stored and rotated. Mounted as a persistent host volume in Docker. |
 | `KEY_CACHE_TTL_SECONDS` | int | `300` | No | In-memory cache duration for public JWKS keys before re-scanning disk (default: 5 minutes). |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |
 | `JWT_ALGORITHM` | string | `RS256` | No | Signing algorithm for JWT access and refresh tokens. |
-| `JWT_AUDIENCE` | string | `api.bakingholic:v0.3a` | No | Required JWT `aud` claim during token creation and verification. |
-| `JWT_ISSUER` | string | `auth.bakingholic:v0.3a` | No | Required JWT `iss` claim during token creation and verification. |
+| `JWT_AUDIENCE` | string | `api.bakingholic:<JWT_VERSION>` (`api.bakingholic:v0.3a`) | No | Required JWT `aud` claim during token creation and verification. Defaults to `api.bakingholic:${JWT_VERSION}`. |
+| `JWT_ISSUER` | string | `auth.bakingholic:<JWT_VERSION>` (`auth.bakingholic:v0.3a`) | No | Required JWT `iss` claim during token creation and verification. Defaults to `auth.bakingholic:${JWT_VERSION}`. |
 | `JWT_LEEWAY_SECONDS` | float | `30.0` | No | Clock-skew leeway in seconds for JWT verification (`nbf`/`exp`). |
 | `WS_TICKET_TTL_SECONDS` | int | `30` | No | Validity duration in seconds for one-time WebSocket connection tickets generated via `/auth/ws-token`. |
 | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` | int | `120` | No | Validity duration in seconds for temporary admin configuration unlock tokens (`cfg_token:*`). |
@@ -172,6 +174,78 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 
 ---
 
+### 7. Mock, Bypass & Offline Development Settings
+
+| Name | Type | Default | Required | Notes |
+| --- | --- | --- | --- | --- |
+| `MOCK_ORDER_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to bypass Shopee OpenAPI synchronization failures and serve local/seeded database orders. Default `0` raises exceptions on sync failure. |
+| `SINGLE_LOCATION_STOCK_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to restrict inventory items to a single warehouse location. Default `0` preserves standard multi-location stock. |
+
+---
+
+## Mock Order Bypass & Offline Development
+
+### Purpose & Behavior
+During local development or UI offline testing (e.g. without valid Shopee API partner credentials or sandbox connectivity), fetching live orders from Shopee would fail and return HTTP 500 errors to clients.
+
+The **Mock Order Bypass** allows the server to swallow Shopee API synchronization failures and fall back to serving whatever orders currently exist in the PostgreSQL database (`shopee.orders`), including test orders seeded directly via `temp/seed_mock_order.py`.
+
+- **`MOCK_ORDER_BYPASS=0` (default)**: Strict production behavior. If the Shopee OpenAPI is unreachable or returns an error, the exception is raised immediately to the caller.
+- **`MOCK_ORDER_BYPASS=1` (or `true`)**: Development mode. If the Shopee API call fails, the failure is logged as a warning (`shopee.sync.fallback`), `cache_mgr.mark_synced()` is skipped (allowing subsequent requests to retry), and existing database orders are returned and broadcast to connected WebSocket clients.
+
+### Seeding a Mock Order
+To insert a sample test order (`250801MOCK0001`) with recipient address, items, and logistics tracking:
+```bash
+cd backend
+uv run temp/seed_mock_order.py
+```
+
+### Complete Removal Instructions (Code Cleanup)
+If the project no longer requires the mock order bypass mechanism and you wish to permanently remove it at the codebase level (rather than just setting `MOCK_ORDER_BYPASS=0`):
+
+1. **Modify `backend/src/services/shopee_service.py`**:
+   - In `sync_shopee_orders()`, remove the `try:` / `except Exception:` block wrapper around the Shopee API fetch tasks. Call the API fetch, detail chunk queries, `queries.sync_shopee_orders_to_db(chunk_results)`, and `cache_mgr.mark_synced()` directly at the top level of the lock block.
+   - Remove the `MOCK_ORDER_BYPASS = get_config_bool("MOCK_ORDER_BYPASS", False)` variable and unused `get_config_bool` import if applicable.
+2. **Clean `.env.example` and `.env`**:
+   - Delete the `MOCK_ORDER_BYPASS` configuration variable and its documentation section.
+3. **Purge Seeded Database Mock Orders**:
+   - Run the following SQL statements against PostgreSQL:
+     ```sql
+     DELETE FROM shopee.order_recipient_address WHERE order_sn = '250801MOCK0001';
+     DELETE FROM shopee.order_info               WHERE order_sn = '250801MOCK0001';
+     DELETE FROM shopee.order_item_list          WHERE order_sn = '250801MOCK0001';
+     DELETE FROM shopee.orders                   WHERE order_sn = '250801MOCK0001';
+     ```
+4. **Remove the Mock Seed Script**:
+   - Delete `backend/temp/seed_mock_order.py`.
+
+---
+
+## Single-Location Stock Bypass
+
+### Purpose & Behavior
+The default inventory data model allows a many-to-one relationship between stock records and warehouse items (i.e., an item can be distributed across multiple physical storage bins or shelf locations).
+
+The **Single-Location Stock Bypass** (`SINGLE_LOCATION_STOCK_BYPASS=1`) enforces an operational constraint where an item can only exist in at most **one** warehouse location:
+
+- **`SINGLE_LOCATION_STOCK_BYPASS=0` (default)**: Multi-location stock enabled. Adding or setting stock at location `A` does not affect stock at location `B`.
+- **`SINGLE_LOCATION_STOCK_BYPASS=1` (or `true`)**: Single-location bypass enabled:
+  - **Add or Set without Location (`location=None`)**: Updates or sets the quantity in the item's sole existing location (or default item location if none exists).
+  - **Add or Set with Location (`location="LOC-X"`)**: Automatically transfers all existing stock from other locations to `LOC-X` first (deleting the old location records), and then applies the `add` or `set` operation at `LOC-X`.
+  - **Move / Transfer (`move_to="LOC-Y"`)**: Transfers all stock for that item to `LOC-Y`.
+
+### Complete Removal Instructions (Code Cleanup)
+If the project permanently moves away from single-location bypass support:
+
+1. **Modify `backend/src/services/queries/stocks.py`**:
+   - Remove `_is_single_location_bypass_active()`, `SINGLE_LOCATION_STOCK_BYPASS`, and the `if _is_single_location_bypass_active():` branches in `update_or_move_stock` and `get_or_merge_stock`.
+2. **Clean `.env.example` and `.env`**:
+   - Remove `SINGLE_LOCATION_STOCK_BYPASS`.
+3. **Update Documentation**:
+   - Remove the Single-Location Stock Bypass section from `docs/OPERATIONS.md`.
+
+---
+
 ## Shopee Token Storage & Initial Seeding
 
 Shopee OpenAPI authentication uses dynamic OAuth access and refresh tokens:
@@ -193,6 +267,7 @@ Shopee OpenAPI authentication uses dynamic OAuth access and refresh tokens:
 | --- | --- | --- | --- |
 | `SHOPEE_ACCESS_TOKEN` | `ACCESS_TOKEN` | Redis `shopee:access_token` | Optional initial access token seed value for cold startup |
 | `SHOPEE_REFRESH_TOKEN` | `REFRESH_TOKEN` | Redis `shopee:refresh_token` | Optional initial refresh token seed value for cold startup |
+
 
 ---
 

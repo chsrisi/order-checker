@@ -179,3 +179,45 @@ async def test_shopee_token_seeds_from_shopee_prefix(monkeypatch):
     redis.set.assert_awaited_once_with("shopee:access_token", "seeded_token")
 
 
+def test_versioning_and_jwt_config_defaults():
+    assert config.API_VERSION == "0.3.0-alpha"
+    assert config.JWT_VERSION == "v0.3a"
+    assert config.DEFAULT_JWT_AUDIENCE == f"api.bakingholic:{config.JWT_VERSION}"
+    assert config.DEFAULT_JWT_ISSUER == f"auth.bakingholic:{config.JWT_VERSION}"
+    assert config.JWT_AUDIENCE == "api.bakingholic:v0.3a"
+    assert config.JWT_ISSUER == "auth.bakingholic:v0.3a"
+    assert config.JWT_ALGORITHM == "RS256"
+    assert config.JWT_LEEWAY_SECONDS == 30.0
+    assert config.REFRESH_TTL_SECONDS == 86400
+    assert config.REFRESH_CLEANUP_INTERVAL_SECONDS == 3600
+
+
+def test_jwt_version_dynamic_audience_and_issuer_derivation(monkeypatch):
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    monkeypatch.setenv("JWT_VERSION", "v0.4.0")
+    monkeypatch.delenv("JWT_AUDIENCE", raising=False)
+    monkeypatch.delenv("JWT_ISSUER", raising=False)
+
+    jwt_version = config.get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
+    default_aud = f"api.bakingholic:{jwt_version}"
+    default_iss = f"auth.bakingholic:{jwt_version}"
+
+    assert config.get_config_value("JWT_AUDIENCE", default_aud) == "api.bakingholic:v0.4.0"
+    assert config.get_config_value("JWT_ISSUER", default_iss) == "auth.bakingholic:v0.4.0"
+
+
+def test_explicit_jwt_audience_and_issuer_override(monkeypatch):
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    monkeypatch.setenv("JWT_VERSION", "v0.4.0")
+    monkeypatch.setenv("JWT_AUDIENCE", "custom.aud")
+    monkeypatch.setenv("JWT_ISSUER", "custom.iss")
+
+    jwt_version = config.get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
+    default_aud = f"api.bakingholic:{jwt_version}"
+    default_iss = f"auth.bakingholic:{jwt_version}"
+
+    assert config.get_config_value("JWT_AUDIENCE", default_aud) == "custom.aud"
+    assert config.get_config_value("JWT_ISSUER", default_iss) == "custom.iss"
+
+
+

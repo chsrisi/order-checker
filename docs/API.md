@@ -47,7 +47,7 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET | `/shopee/orders` | User | Synchronize active orders |
 | POST | `/shopee/orders/acquire` | User | Atomically claim an order |
 | POST | `/shopee/reset-cache-state` | Admin | Reset sync circuit/cache |
-| GET/POST | `/pick-items` | User | List/create pick entries |
+| GET/POST | `/pick-items` | User | List/create pick entries (POST deducts from available stock; clamps to 0 on negative) |
 | POST | `/pick-items/{id}/assign` | User | Assign quantity to claimed order |
 | POST | `/pick-items/unassign` | User | Return quantity to general picks |
 | DELETE | `/pick-items/{id}` | User | Delete owned entry; admin may delete any |

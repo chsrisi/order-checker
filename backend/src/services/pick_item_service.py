@@ -19,6 +19,7 @@ async def create_pick_item_entry(
 
     await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.STOCKS)
     return pie
 
 

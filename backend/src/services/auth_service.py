@@ -12,16 +12,19 @@ from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
 from . import queries
 from ..models import User, WSMessageType
-from ..config import get_config_value, get_config_int, get_config_float
+from ..config import (
+    JWT_ALGORITHM,
+    JWT_AUDIENCE,
+    JWT_ISSUER,
+    JWT_LEEWAY_SECONDS,
+    REFRESH_TTL_SECONDS,
+    REFRESH_CLEANUP_INTERVAL_SECONDS,
+)
 
 logger = logging.getLogger("backend.services.auth")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-ALGORITHM = get_config_value("JWT_ALGORITHM", "RS256") or "RS256"
-JWT_AUDIENCE = get_config_value("JWT_AUDIENCE", "api.bakingholic:v0.3a") or "api.bakingholic:v0.3a"
-JWT_ISSUER = get_config_value("JWT_ISSUER", "auth.bakingholic:v0.3a") or "auth.bakingholic:v0.3a"
-JWT_LEEWAY_SECONDS = get_config_float("JWT_LEEWAY_SECONDS", 30.0)
-REFRESH_TTL_SECONDS = get_config_int("REFRESH_TTL_SECONDS", 86400)
-REFRESH_CLEANUP_INTERVAL_SECONDS = get_config_int("REFRESH_CLEANUP_INTERVAL_SECONDS", 3600)
+ALGORITHM = JWT_ALGORITHM
+
 
 
 def verify_access_token(token: str) -> dict:

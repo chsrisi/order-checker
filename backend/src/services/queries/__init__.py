@@ -32,6 +32,7 @@ from .stocks import (
     get_stocks_data,
     get_all_stocks_data,
     get_or_merge_stock,
+    reduce_stock_for_pick,
 )
 from .pick_items import (
     create_pick_item_entry,
@@ -89,6 +90,7 @@ __all__ = [
     "get_stocks_data",
     "get_all_stocks_data",
     "get_or_merge_stock",
+    "reduce_stock_for_pick",
     "create_pick_item_entry",
     "assign_pick_item_entry",
     "unassign_pick_item_entry",

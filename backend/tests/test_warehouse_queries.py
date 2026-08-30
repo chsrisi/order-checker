@@ -83,3 +83,18 @@ def test_resolve_barcode_to_item_scenarios():
         assert items == [mock_item_sku]
 
 
+def test_warehouse_item_with_stocks_serialization():
+    from src.models import WarehouseItem, Stock, WarehouseItemResponse
+
+    item = WarehouseItem(sku="SKU-TEST", item_name="Test Product")
+    stock1 = Stock(sku="SKU-TEST", stock=10, location="A1")
+    stock2 = Stock(sku="SKU-TEST", stock=5, location="B2")
+    item.stocks = [stock1, stock2]
+
+    resp = WarehouseItemResponse.model_validate(item)
+    assert resp.sku == "SKU-TEST"
+    assert resp.item_name == "Test Product"
+    assert resp.location == "A1, B2"
+
+
+

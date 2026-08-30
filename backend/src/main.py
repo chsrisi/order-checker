@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .exceptions import DomainException, domain_exception_handler
 from .logging_config import configure_logging, request_id_context
 
-from .config import get_config_value
+from .config import get_config_value, API_VERSION
 from .services.redis_service import redis_mgr
 from .services import auth_service, managers, queries
 from .services.shopee_service import shopee_client_session
@@ -105,7 +105,7 @@ app = FastAPI(
         "a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is "
         "documented in the project API guide because OpenAPI does not describe it."
     ),
-    version="0.3.0-alpha",
+    version=API_VERSION,
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
     license_info={"name": "Proprietary"},

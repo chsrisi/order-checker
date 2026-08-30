@@ -273,7 +273,7 @@ class WarehouseItem(Base):
     photo: Mapped[Optional[str]] = mapped_column(String)
     weight_kg: Mapped[Optional[float]] = mapped_column(Float)
 
-    stocks: Mapped[List["Stock"]] = relationship("Stock", back_populates="item")
+    stocks: Mapped[List["Stock"]] = relationship("Stock", back_populates="item", lazy="selectin")
 
     @property
     def location(self) -> Optional[str]:

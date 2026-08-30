@@ -211,4 +211,54 @@ def test_marketplace_bom_quantity_multiplication():
         assert node["children"][0]["quantity"] == 20  # 10 * 2
 
 
+@pytest.mark.asyncio
+async def test_sync_shopee_orders_raises_when_bypass_disabled(monkeypatch):
+    monkeypatch.setenv("MOCK_ORDER_BYPASS", "0")
+    monkeypatch.setattr(
+        shopee_service,
+        "fetch_sns_for_status",
+        AsyncMock(side_effect=RuntimeError("Shopee API Unreachable")),
+    )
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_valid", lambda: False)
+
+    with pytest.raises(RuntimeError, match="Shopee API Unreachable"):
+        await shopee_service.sync_shopee_orders(refresh=True, username="test_user")
+
+
+@pytest.mark.asyncio
+async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
+    monkeypatch.setenv("MOCK_ORDER_BYPASS", "1")
+    monkeypatch.setattr(
+        shopee_service,
+        "fetch_sns_for_status",
+        AsyncMock(side_effect=RuntimeError("Shopee API Unreachable")),
+    )
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_valid", lambda: False)
+    monkeypatch.setattr(shopee_service.conn_mgr, "broadcast", AsyncMock())
+    monkeypatch.setattr(shopee_service.conn_mgr, "send_to_user", AsyncMock())
+
+    from datetime import datetime, timezone
+
+    mock_order = SimpleNamespace(
+        order_sn="250801MOCK0001",
+        owner_user=None,
+        shipping_carrier="J&T",
+        done=False,
+        status="READY_TO_SHIP",
+        ship_by=datetime.now(timezone.utc),
+        info=None,
+        recipient_address=None,
+        item_list=[],
+    )
+    monkeypatch.setattr(shopee_service.queries, "get_all_shopee_order_data", lambda: [mock_order])
+
+    results = await shopee_service.sync_shopee_orders(refresh=True, username="test_user")
+    assert len(results) == 1
+    assert results[0].order_sn == "250801MOCK0001"
+    shopee_service.conn_mgr.broadcast.assert_awaited_once()
+    shopee_service.conn_mgr.send_to_user.assert_awaited_once()
+
+
+
+
 

@@ -13,7 +13,7 @@ from ..exceptions import DomainException
 
 from .redis_service import redis_mgr
 from .managers import token_mgr, cache_mgr, conn_mgr
-from ..config import get_config_value, get_config_int, get_config_float
+from ..config import get_config_value, get_config_int, get_config_float, get_config_bool
 from ..models import (
     ShopeeResponse,
     ShopeeTokenResponse,
@@ -40,6 +40,8 @@ SHOPEE_PAGE_SIZE = get_config_int("SHOPEE_PAGE_SIZE", 100)
 SHOPEE_ORDER_CHUNK_SIZE = get_config_int("SHOPEE_ORDER_CHUNK_SIZE", 50)
 SHOPEE_PACKAGE_CHUNK_SIZE = get_config_int("SHOPEE_PACKAGE_CHUNK_SIZE", 50)
 SHOPEE_SYNC_WINDOW_DAYS = get_config_int("SHOPEE_SYNC_WINDOW_DAYS", 2)
+MOCK_ORDER_BYPASS = get_config_bool("MOCK_ORDER_BYPASS", False)
+
 
 
 # Global session container to avoid circular imports with 'app'
@@ -515,13 +517,34 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
         time_from = now - (SHOPEE_SYNC_WINDOW_DAYS * 24 * 60 * 60)
         STATUSES = ["READY_TO_SHIP", "PROCESSED", "SHIPPED", "COMPLETED", "CANCELLED"]
 
-        # MOCK-DATA BYPASS: the Shopee fetch is wrapped so an offline/failed API
-        # does not block serving orders from the database. This keeps the mock
-        # order (seeded directly into shopee.orders via temp/seed_mock_order.py)
-        # visible on both the client (WebSocket) and admin (HTTP) paths even
-        # when the Shopee API is unreachable. sync_shopee_orders_to_db only ever
-        # inserts/updates API orders and never deletes, so the unique mock
-        # order_sn survives subsequent syncs.
+        # ==============================================================================
+        # MOCK-DATA BYPASS
+        # ==============================================================================
+        # The Shopee fetch is wrapped in a try/except block. When MOCK_ORDER_BYPASS is
+        # enabled (MOCK_ORDER_BYPASS=1/true), an offline or failed Shopee API does not
+        # raise an exception or block serving orders from the database. This keeps the
+        # mock order (seeded directly into shopee.orders via temp/seed_mock_order.py)
+        # visible on both the client (WebSocket) and admin (HTTP) paths even when the
+        # Shopee API is unreachable. sync_shopee_orders_to_db only ever inserts/updates
+        # API orders and never deletes, so the unique mock order_sn survives syncs.
+        #
+        # When MOCK_ORDER_BYPASS is disabled (MOCK_ORDER_BYPASS=0, default), any exception
+        # during the Shopee API sync is re-raised so upstream callers receive the error.
+        #
+        # HOW TO REMOVE THIS BYPASS COMPLETELY (Code Cleanup):
+        # To remove this bypass mechanism entirely without relying on environment variables:
+        # 1. In this function (`sync_shopee_orders`), remove the `try:` and `except Exception:`
+        #    block wrapper, executing the fetch, chunk queries, `queries.sync_shopee_orders_to_db`,
+        #    and `cache_mgr.mark_synced()` directly at the outer function scope.
+        # 2. Remove `MOCK_ORDER_BYPASS = get_config_bool("MOCK_ORDER_BYPASS", False)` and its
+        #    import if no longer used.
+        # 3. Remove `MOCK_ORDER_BYPASS` from `.env` and `.env.example`.
+        # 4. (Optional) Delete `backend/temp/seed_mock_order.py` and purge any seeded mock rows:
+        #      DELETE FROM shopee.order_recipient_address WHERE order_sn = '250801MOCK0001';
+        #      DELETE FROM shopee.order_info               WHERE order_sn = '250801MOCK0001';
+        #      DELETE FROM shopee.order_item_list          WHERE order_sn = '250801MOCK0001';
+        #      DELETE FROM shopee.orders                   WHERE order_sn = '250801MOCK0001';
+        # ==============================================================================
         try:
             tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]
             results = await asyncio.gather(*tasks)
@@ -544,19 +567,20 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
                 queries.sync_shopee_orders_to_db(chunk_results)
 
             cache_mgr.mark_synced()
-        except Exception:
+        except Exception as exc:
+            # If bypass is disabled (default), re-raise the exception
+            if not get_config_bool("MOCK_ORDER_BYPASS", MOCK_ORDER_BYPASS):
+                raise
+
             # The bypass lives here: swallow the API failure, skip mark_synced()
             # (so the next request retries the API), and fall through to serve
-            # database orders. NOTE: this also swallows the token-fatal
-            # circuit-breaker HTTPException(500); that is intentional for the
-            # demo, but if production needs the "re-authorization required"
-            # error back, scope this to HTTPException with 4xx/502 or specific
-            # network errors instead of bare Exception.
+            # database orders.
             logger.warning(
                 "shopee_sync_fallback",
                 extra={
                     "event": "shopee.sync.fallback",
-                    "reason": "Shopee API unreachable; serving database orders",
+                    "reason": "Shopee API unreachable; serving database orders (mock order bypass enabled)",
+                    "error": str(exc),
                 },
             )
 

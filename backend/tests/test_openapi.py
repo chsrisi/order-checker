@@ -1,10 +1,11 @@
+from src.config import API_VERSION
 from src.main import app
 
 
 def test_openapi_has_product_metadata():
     schema = app.openapi()
     assert schema["info"]["title"] == "Bakingholic Order Checker API"
-    assert schema["info"]["version"] == "0.3.0-alpha"
+    assert schema["info"]["version"] == API_VERSION
     assert len(schema["tags"]) >= 8
 
 

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...models import PickItemEntry, ShopeeOrder
 from .engine import get_db
+from .stocks import reduce_stock_for_pick
 from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.pick_items")
@@ -81,7 +82,39 @@ def create_pick_item_entry(
         raise LookupError(f"Item with SKU or barcode '{sku}' not found")
     resolved_sku = item.sku
 
-    return merge_or_create_pie(sku=resolved_sku, qty=qty, order_sn=order_sn, username=username)
+    with get_db() as db:
+        reduce_stock_for_pick(sku=resolved_sku, qty=qty, username=username, db=db)
+
+        existing = (
+            db.execute(
+                select(PickItemEntry).filter(
+                    PickItemEntry.sku == resolved_sku,
+                    PickItemEntry.order_sn == order_sn,
+                    PickItemEntry.owner_user == username,
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+        if existing:
+            existing.qty += qty
+            existing.timestamp = datetime.now(UTC)
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        db_pie = PickItemEntry(
+            sku=resolved_sku,
+            qty=qty,
+            order_sn=order_sn,
+            owner_user=username,
+            timestamp=datetime.now(UTC),
+        )
+        db.add(db_pie)
+        db.commit()
+        db.refresh(db_pie)
+        return db_pie
 
 
 def assign_pick_item_entry(

@@ -397,8 +397,7 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
 
                 return Card(
                   margin: EdgeInsets.zero,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ListView(
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(16.0),
@@ -439,80 +438,76 @@ class _OrdersInputScreenState extends State<OrdersInputScreen> {
                         ),
                       ),
                       const Divider(height: 1),
-                      Expanded(
-                        child: ListView(
-                          children: skuMap.entries.map((entry) {
-                            final sku = entry.key;
-                            final (reqQty, scanQty) = entry.value;
+                      ...skuMap.entries.map((entry) {
+                        final sku = entry.key;
+                        final (reqQty, scanQty) = entry.value;
 
-                            Color? itemStatusColor;
-                            if (scanQty == 0) {
-                              itemStatusColor = Colors.grey;
-                            } else if (scanQty < reqQty) {
-                              itemStatusColor = Colors.orange;
-                            } else if (scanQty == reqQty) {
-                              itemStatusColor = Colors.green;
-                            } else {
-                              itemStatusColor = Colors.red;
-                            }
+                        Color? itemStatusColor;
+                        if (scanQty == 0) {
+                          itemStatusColor = Colors.grey;
+                        } else if (scanQty < reqQty) {
+                          itemStatusColor = Colors.orange;
+                        } else if (scanQty == reqQty) {
+                          itemStatusColor = Colors.green;
+                        } else {
+                          itemStatusColor = Colors.red;
+                        }
 
-                            final isSkuEmpty =
-                                sku.trim().isEmpty || sku == 'unknown';
-                            final matchingItem = requirements.firstWhere(
-                              (item) => (isSkuEmpty
-                                  ? (item.componentSku == 'unknown' ||
-                                      item.componentSku.isEmpty)
-                                  : (item.componentSku == sku)),
-                              orElse: () => ShopeeOrderItemBOM(
-                                componentSku: '',
-                                componentName: '',
-                                quantity: 0,
-                              ),
-                            );
+                        final isSkuEmpty =
+                            sku.trim().isEmpty || sku == 'unknown';
+                        final matchingItem = requirements.firstWhere(
+                          (item) => (isSkuEmpty
+                              ? (item.componentSku == 'unknown' ||
+                                  item.componentSku.isEmpty)
+                              : (item.componentSku == sku)),
+                          orElse: () => ShopeeOrderItemBOM(
+                            componentSku: '',
+                            componentName: '',
+                            quantity: 0,
+                          ),
+                        );
 
-                            final scanMatch = scanned
-                                .where(
-                                  (e) =>
-                                      e.sku == sku &&
-                                      e.itemName != null &&
-                                      e.itemName!.isNotEmpty,
-                                )
-                                .firstOrNull;
+                        final scanMatch = scanned
+                            .where(
+                              (e) =>
+                                  e.sku == sku &&
+                                  e.itemName != null &&
+                                  e.itemName!.isNotEmpty,
+                            )
+                            .firstOrNull;
 
-                            String displayName =
-                                matchingItem.componentName.isNotEmpty
-                                    ? matchingItem.componentName
-                                    : (scanMatch?.itemName ?? 'Unknown Item');
+                        String displayName =
+                            matchingItem.componentName.isNotEmpty
+                                ? matchingItem.componentName
+                                : (scanMatch?.itemName ?? 'Unknown Item');
 
-                            final skuPart = isSkuEmpty ? "No SKU" : sku;
-                            final loc = matchingItem.location;
-                            final displaySubtext = (loc != null &&
-                                    loc.isNotEmpty)
-                                ? "$skuPart ($loc)"
-                                : skuPart;
+                        final skuPart = isSkuEmpty ? "No SKU" : sku;
+                        final loc = matchingItem.location;
+                        final displaySubtext = (loc != null &&
+                                loc.isNotEmpty)
+                            ? "$skuPart ($loc)"
+                            : skuPart;
 
-                            return ListTile(
-                              title: Text(displayName),
-                              subtitle: Text(displaySubtext),
-                              trailing: Text(
-                                "$scanQty / $reqQty",
-                                style: TextStyle(
-                                  color: itemStatusColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              onLongPress: () => showUnassignDialog(
-                                context,
-                                appState,
-                                activeOrder.orderSn,
-                                sku,
-                                scanQty,
-                                reqQty,
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
+                        return ListTile(
+                          title: Text(displayName),
+                          subtitle: Text(displaySubtext),
+                          trailing: Text(
+                            "$scanQty / $reqQty",
+                            style: TextStyle(
+                              color: itemStatusColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onLongPress: () => showUnassignDialog(
+                            context,
+                            appState,
+                            activeOrder.orderSn,
+                            sku,
+                            scanQty,
+                            reqQty,
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 );

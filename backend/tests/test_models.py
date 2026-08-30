@@ -10,6 +10,9 @@ from src.models import (
     ShopeeOrderResponse,
     StockCreate,
     UserAuth,
+    WarehouseItem,
+    WarehouseItemResponse,
+    Stock,
 )
 
 
@@ -62,3 +65,28 @@ def test_shopee_response_lists_are_not_shared():
     second = ShopeeOrderResponse(order_sn="2", status="READY_TO_SHIP", ship_by=datetime.now(UTC))
     first.item_list.append(object())  # type: ignore[arg-type]
     assert second.item_list == []
+
+
+def test_warehouse_item_location_property():
+    item_without_stocks = WarehouseItem(sku="SKU-1", item_name="Item 1")
+    item_without_stocks.stocks = []
+    assert item_without_stocks.location is None
+
+    stock1 = Stock(sku="SKU-1", stock=5, location="Rack-B")
+    stock2 = Stock(sku="SKU-1", stock=2, location="Rack-A")
+    stock3 = Stock(sku="SKU-1", stock=0, location=None)
+    item_with_stocks = WarehouseItem(sku="SKU-1", item_name="Item 1")
+    item_with_stocks.stocks = [stock1, stock2, stock3]
+    assert item_with_stocks.location == "Rack-A, Rack-B"
+
+
+def test_warehouse_item_response_from_attributes():
+    stock = Stock(sku="SKU-100", stock=10, location="A-01")
+    item = WarehouseItem(sku="SKU-100", item_name="Test Product")
+    item.stocks = [stock]
+
+    resp = WarehouseItemResponse.model_validate(item)
+    assert resp.sku == "SKU-100"
+    assert resp.item_name == "Test Product"
+    assert resp.location == "A-01"
+
