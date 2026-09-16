@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dart_tool/
+build/
+windows/
+linux/
+macos/
+android/
+ios/
+.idea/
+*.iml
+.vscode/
+temp/
+logs/
+*.log
+Dockerfile*
+README.md

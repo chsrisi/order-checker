@@ -81,4 +81,25 @@ This document tracks known architectural, library, and system limitations within
   - Pick item service: `backend/src/services/pick_item_service.py` (`create_pick_item_entry`)
   - Pick items router: `backend/src/routers/pick_items.py` (`create_pie`)
 
+---
 
+### 6. Environment File Inspection & Secret Isolation
+- **Issue**: Active `.env` files in `backend/` and `frontend/admin/` contain live runtime secrets, database passwords, API signing keys, and production endpoints. Inspecting, grepping, or listing `.env` files via automated tools can trigger permission denial errors or risk leaking sensitive credentials into chat transcripts and logs.
+- **Countermeasure**:
+  - Automated agents, subagents, and tools **must never inspect, read, grep, or print active `.env` files**.
+  - All automated agents must exclusively inspect `.env.example` templates (`backend/.env.example` and `frontend/admin/.env.example`) to discover available configuration keys, format specifications, and defaults.
+  - Active `.env` files are strictly reserved for production use and manual local deployment.
+- **Code References**:
+  - Backend configuration template: `backend/.env.example`
+  - Frontend admin configuration template: `frontend/admin/.env.example`
+  - Agent instructions: `AGENTS.md`, `GEMINI.md`
+
+---
+
+### 7. Flutter Web Cross-Platform WebSocket Channel
+- **Issue**: Using `IOWebSocketChannel.connect` (from `package:web_socket_channel/io.dart`) directly in Flutter client/admin apps crashes with an `UnsupportedError` when running in a web browser, because `dart:io` WebSocket connections are not supported in browser runtimes.
+- **Countermeasure**:
+  - Always use `WebSocketChannel.connect(uri)` from `package:web_socket_channel/web_socket_channel.dart`.
+  - The top-level `WebSocketChannel.connect` factory conditionally delegates to `HtmlWebSocketChannel` on web and `IOWebSocketChannel` on desktop and mobile.
+- **Code References**:
+  - Admin app state: `frontend/admin/lib/app_state.dart`

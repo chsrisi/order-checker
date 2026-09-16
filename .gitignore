@@ -2,6 +2,11 @@
 **/__pycache__/
 **/*.pyc
 **/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/*~
+**/*.un~
 **/.secrets/
 **/*.db
 backend/venv/
@@ -33,3 +38,5 @@ Thumbs.db
 
 # Temporary files
 **/temp/
+# Added by code-review-graph
+.code-review-graph/

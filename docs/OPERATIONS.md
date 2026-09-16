@@ -90,8 +90,10 @@ To configure file-backed secrets for all super-sensitive credentials:
 | `PORT` | int | `8000` | No | Host port mapped to the FastAPI application (`${PORT:-8000}:8000`). |
 | `DB_PORT` | int | `5432` | No | Host port mapped to the PostgreSQL service (`${DB_PORT:-5432}:5432`). |
 | `REDIS_PORT` | int | `6379` | No | Host port mapped to the Redis service (`${REDIS_PORT:-6379}:6379`). |
+| `WEB_PORT` | int | `3000` | No | Host port mapped to the Frontend Admin web service (`${WEB_PORT:-3000}:80`). |
 | `DB_CONTAINER_NAME` | string | `backend-postgres-1` | No | Custom container name for the PostgreSQL service (`${DB_CONTAINER_NAME:-backend-postgres-1}`). |
 | `REDIS_CONTAINER_NAME` | string | `backend-redis-1` | No | Custom container name for the Redis service (`${REDIS_CONTAINER_NAME:-backend-redis-1}`). |
+| `ADMIN_WEB_CONTAINER_NAME` | string | `admin-web-1` | No | Custom container name for the Frontend Admin web service (`${ADMIN_WEB_CONTAINER_NAME:-admin-web-1}`). |
 | `KEYS_VOLUME` | string | `./data/keys` | No | Host path mounted to container `/app/data/keys` for persistent JWT key storage. |
 | `LOGS_VOLUME` | string | `./logs` | No | Host path mounted to container `/app/logs` for persistent file logs. |
 | `ENV_FILE` | string | `.env` | No | Environment file path passed to docker compose service definition. |
@@ -305,6 +307,64 @@ docker run -d \
   -v $(pwd)/.secrets/app_password:/run/secrets/app_password:ro \
   -v $(pwd)/.secrets/partner_key:/run/secrets/partner_key:ro \
   order-checker-backend:latest
+```
+
+---
+
+## Frontend Admin Web Hosting & Deployment
+
+The Frontend Admin application (`frontend/admin`) can be hosted as a containerized web application using Nginx on Alpine Linux.
+
+### Configuration & Security Policy
+
+Configuration is managed via `.env` in `frontend/admin/.env`, modeled after `frontend/admin/.env.example`.
+
+> [!CAUTION]
+> **Active `.env` Inspection & Secret Isolation**:
+> Active `.env` files in `backend/` and `frontend/admin/` contain live secrets, sensitive hosts, and production configurations.
+> Automated agents, scripts, and code analysis tools **must only inspect `.env.example`** templates. Never commit active `.env` files.
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `BASE` | `localhost` | Hostname or IP of the backend server. |
+| `BASE_URL` | `http://${BASE}:8000` | Full HTTP/HTTPS base URL for backend REST API calls. |
+| `WS_URL` | `ws://${BASE}:8000` | Full WS/WSS base URL for backend WebSocket real-time updates. |
+| `WEB_PORT` | `80` (container) / `3000` (host) | Nginx listening port. |
+| `WEB_HOST` | `0.0.0.0` | Interface binding address for the web server. |
+| `WEB_BASE_HREF` | `/` | Base href prefix if hosted behind a reverse proxy subpath. |
+
+### Dynamic Runtime Environment Injection
+
+Flutter Web loads environment variables via an HTTP request to `/assets/.env`. When the Docker container starts, an entrypoint script (`/docker-entrypoint.d/40-generate-env.sh`) generates or synchronizes `/usr/share/nginx/html/assets/.env` using the runtime environment variables passed to the container (`BASE_URL`, `WS_URL`, etc.). This enables deploying the same Docker image across development, staging, and production without rebuilding.
+
+### Deploying Frontend Admin with Docker Compose
+
+To run the admin web portal alongside the backend API, database, and Redis:
+```bash
+cd backend
+docker compose --env-file .env up -d admin-web
+```
+By default, the web interface is exposed on `http://localhost:${WEB_PORT:-3000}`.
+
+Ensure `CORS_ORIGINS` in `backend/.env` allows the web origin:
+```ini
+CORS_ORIGINS=http://localhost:3000
+```
+
+### Standalone Docker Deployment
+
+```bash
+cd frontend/admin
+# Build container image
+docker build -t order-checker-admin-web .
+
+# Run standalone container
+docker run -d \
+  --name admin-web \
+  -p 3000:80 \
+  -e BASE_URL=http://localhost:8000 \
+  -e WS_URL=ws://localhost:8000 \
+  order-checker-admin-web
 ```
 
 ---

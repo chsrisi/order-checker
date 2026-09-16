@@ -82,6 +82,22 @@ services:
     volumes:
       - redis-data:/data
 
+  admin-web:
+    build:
+      context: ../frontend/admin
+      dockerfile: Dockerfile
+    container_name: ${ADMIN_WEB_CONTAINER_NAME:-admin-web-1}
+    restart: always
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    environment:
+      - BASE=${BASE:-localhost}
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
+      - WS_URL=${WS_URL:-ws://localhost:8000}
+      - WEB_PORT=80
+    depends_on:
+      - server
+
 
 
 volumes:
