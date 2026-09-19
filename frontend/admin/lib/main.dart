@@ -13,7 +13,12 @@ import 'views/account_view.dart';
 import 'views/bom_view.dart';
 
 Future<void> main() async {
-  await dotenv.load(fileName: ".env");
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Notice: could not load .env file: $e");
+  }
   final appState = AppState();
   appState.initialize();
 

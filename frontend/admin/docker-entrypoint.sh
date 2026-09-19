@@ -25,5 +25,6 @@ EOF
 fi
 
 if [ -f "$ENV_TARGET" ]; then
-    echo "[entrypoint] Serving frontend admin assets/.env"
+    cp "$ENV_TARGET" /usr/share/nginx/html/.env 2>/dev/null || true
+    echo "[entrypoint] Serving frontend admin assets/.env and .env"
 fi

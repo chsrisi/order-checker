@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:jose/jose.dart';
 import 'models.dart';
+import 'safe_storage.dart';
 
 enum AdminView {
   users(true),
@@ -28,7 +28,7 @@ enum AdminView {
 }
 
 class SecurityService {
-  static const _storage = FlutterSecureStorage();
+  static const _storage = SafeStorage();
 
   static const String jwksCacheKey = 'jwks_cache';
   static const String jwksTimestampKey = 'jwks_timestamp';
@@ -151,9 +151,73 @@ class AppState extends ChangeNotifier {
   String _username = '';
   AdminView _currentView = AdminView.orders;
 
-  final _storage = const FlutterSecureStorage();
-  final String _baseUrl = dotenv.env['BASE_URL'] ?? '';
-  final String _wsUrl = dotenv.env['WS_URL'] ?? '';
+  final _storage = const SafeStorage();
+  late String _baseUrl = resolveBaseUrl(dotenv.env['BASE_URL']);
+  late String _wsUrl = resolveWsUrl(dotenv.env['WS_URL'], _baseUrl);
+
+  static String resolveBaseUrl(String? configured) {
+    var url = (configured ?? '').trim();
+
+    if (kIsWeb) {
+      if (url.isEmpty || url.startsWith('/')) {
+        final origin = Uri.base.origin;
+        if (url.isEmpty || url == '/') {
+          return origin;
+        }
+        return '$origin$url';
+      }
+
+      final uri = Uri.tryParse(url);
+      if (uri != null && (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+        final currentHost = Uri.base.host;
+        if (currentHost.isNotEmpty &&
+            currentHost != 'localhost' &&
+            currentHost != '127.0.0.1') {
+          return uri.replace(host: currentHost).toString();
+        }
+      }
+    }
+
+    return url.isNotEmpty ? url : 'http://localhost:8000';
+  }
+
+  static String resolveWsUrl(String? configured, String resolvedBaseUrl) {
+    var ws = (configured ?? '').trim();
+
+    if (kIsWeb) {
+      if (ws.isEmpty || ws.startsWith('/')) {
+        final isHttps = Uri.base.scheme == 'https';
+        final wsScheme = isHttps ? 'wss' : 'ws';
+        final host = Uri.base.host;
+        final port = Uri.base.port != 0 && Uri.base.port != 80 && Uri.base.port != 443
+            ? ':${Uri.base.port}'
+            : '';
+        final path = ws.isNotEmpty && ws != '/' ? ws : '';
+        return '$wsScheme://$host$port$path';
+      }
+
+      final uri = Uri.tryParse(ws);
+      if (uri != null && (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+        final currentHost = Uri.base.host;
+        if (currentHost.isNotEmpty &&
+            currentHost != 'localhost' &&
+            currentHost != '127.0.0.1') {
+          return uri.replace(host: currentHost).toString();
+        }
+      }
+    }
+
+    if (ws.isNotEmpty) return ws;
+
+    final baseUri = Uri.tryParse(resolvedBaseUrl);
+    if (baseUri != null) {
+      final wsScheme = baseUri.scheme == 'https' ? 'wss' : 'ws';
+      final port = baseUri.hasPort ? ':${baseUri.port}' : '';
+      return '$wsScheme://${baseUri.host}$port';
+    }
+
+    return 'ws://localhost:8000';
+  }
 
   WebSocketChannel? _channel;
   StreamSubscription? _wsSubscription;
@@ -187,6 +251,10 @@ class AppState extends ChangeNotifier {
   String get baseUrl => _baseUrl;
 
   void initialize() {
+    _baseUrl = resolveBaseUrl(dotenv.env['BASE_URL']);
+    _wsUrl = resolveWsUrl(dotenv.env['WS_URL'], _baseUrl);
+    log("Admin API BASE_URL: $_baseUrl");
+    log("Admin WS_URL: $_wsUrl");
     SecurityService.init(_baseUrl);
     checkLoginStatus();
   }

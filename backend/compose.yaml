@@ -91,9 +91,11 @@ services:
     ports:
       - "${WEB_PORT:-3000}:80"
     environment:
-      - BASE=${BASE:-localhost}
-      - BASE_URL=${BASE_URL:-http://localhost:8000}
-      - WS_URL=${WS_URL:-ws://localhost:8000}
+      - BACKEND_HOST=${BACKEND_HOST:-server}
+      - BACKEND_PORT=${PORT:-8000}
+      - BASE=${BASE:-}
+      - BASE_URL=${BASE_URL:-}
+      - WS_URL=${WS_URL:-}
       - WEB_PORT=80
     depends_on:
       - server

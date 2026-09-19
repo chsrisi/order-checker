@@ -162,14 +162,24 @@ async def log_requests(request: Request, call_next: Any):
         request_id_context.reset(context_token)
 
 
+cors_origins_raw = get_config_value("CORS_ORIGINS", "*") or "*"
+cors_origins = [
+    origin.strip()
+    for origin in cors_origins_raw.split(",")
+    if origin.strip()
+]
+is_wildcard = cors_origins == ["*"] or cors_origins_raw == "*"
+
+# Custom regex for allowed origins, or default to allowing localhost/127.0.0.1 on any port for dev
+cors_origin_regex = get_config_value("CORS_ORIGIN_REGEX", None)
+if not cors_origin_regex and not is_wildcard:
+    cors_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        origin.strip()
-        for origin in (get_config_value("CORS_ORIGINS", "*") or "*").split(",")
-        if origin.strip()
-    ],
-    allow_credentials=(get_config_value("CORS_ORIGINS", "*") or "*") != "*",
+    allow_origins=["*"] if is_wildcard else cors_origins,
+    allow_origin_regex=None if is_wildcard else cors_origin_regex,
+    allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )

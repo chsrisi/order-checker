@@ -56,3 +56,23 @@ async def test_domain_exception_handler_uses_stable_envelope():
     response = await domain_exception_handler(request(), DomainException(409, "conflict"))
     assert response.status_code == 409
     assert response.body == b'{"detail":"conflict"}'
+
+
+def test_cors_preflight_allows_localhost_on_any_port():
+    from starlette.testclient import TestClient
+    from src.main import app
+
+    client = TestClient(app)
+    # Test random port such as used by Flutter Web dev (flutter run -d chrome)
+    response = client.options(
+        "/auth/admin",
+        headers={
+            "Origin": "http://localhost:44413",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") in ("http://localhost:44413", "*")
+    assert "POST" in response.headers.get("access-control-allow-methods", "")
+

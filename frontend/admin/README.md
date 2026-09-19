@@ -42,7 +42,9 @@ cp .env.example .env
 | `WEB_BASE_HREF`| `/` | Base URL path if hosting under a sub-path or reverse proxy prefix. |
 
 > [!TIP]
-> **Backend CORS Coordination**: When hosting on web, ensure the web app's origin (e.g. `http://localhost:3000` or your production domain) is included in the backend's `CORS_ORIGINS` setting in `backend/.env`.
+> **Backend CORS & Networking**:
+> - When running via Docker Compose, Nginx reverse-proxies backend routes (`/auth/`, `/admin/`, `/ws`), ensuring seamless same-origin connectivity across all devices and platforms without CORS configuration.
+> - When connecting directly (or running `flutter run -d chrome`), ensure the backend allows the origin via `CORS_ORIGINS=*` (or `CORS_ORIGIN_REGEX`) in `backend/.env`.
 
 ---
 
