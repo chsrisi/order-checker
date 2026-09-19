@@ -35,8 +35,10 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker-entrypoint.sh /docker-entrypoint.d/40-generate-env.sh
 RUN chmod +x /docker-entrypoint.d/40-generate-env.sh
 
-# Default web hosting port
-ENV WEB_PORT=80
+# Default web hosting port and proxy destinations
+ENV WEB_PORT=80 \
+    BACKEND_HOST=server \
+    BACKEND_PORT=8000
 
 EXPOSE 80
 
