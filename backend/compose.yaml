@@ -92,7 +92,7 @@ services:
       - "${WEB_PORT:-3000}:80"
     environment:
       - BACKEND_HOST=${BACKEND_HOST:-server}
-      - BACKEND_PORT=${PORT:-8000}
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
       - BASE=${BASE:-}
       - BASE_URL=${BASE_URL:-}
       - WS_URL=${WS_URL:-}

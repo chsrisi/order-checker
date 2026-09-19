@@ -326,16 +326,16 @@ Configuration is managed via `.env` in `frontend/admin/.env`, modeled after `fro
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `BASE` | `localhost` | Hostname or IP of the backend server. |
-| `BASE_URL` | `http://${BASE}:8000` | Full HTTP/HTTPS base URL for backend REST API calls. |
-| `WS_URL` | `ws://${BASE}:8000` | Full WS/WSS base URL for backend WebSocket real-time updates. |
+| `BASE` | Empty in Docker | Optional hostname or IP for direct backend access. |
+| `BASE_URL` | `/` in Docker | Full HTTP/HTTPS base URL for backend REST API calls. |
+| `WS_URL` | `/` in Docker | Full WS/WSS base URL for backend WebSocket real-time updates. |
 | `WEB_PORT` | `80` (container) / `3000` (host) | Nginx listening port. |
 | `WEB_HOST` | `0.0.0.0` | Interface binding address for the web server. |
 | `WEB_BASE_HREF` | `/` | Base href prefix if hosted behind a reverse proxy subpath. |
 
 ### Dynamic Runtime Environment Injection
 
-Flutter Web loads environment variables via an HTTP request to `/assets/.env`. When the Docker container starts, an entrypoint script (`/docker-entrypoint.d/40-generate-env.sh`) generates or synchronizes `/usr/share/nginx/html/assets/.env` using the runtime environment variables passed to the container (`BASE_URL`, `WS_URL`, etc.). This enables deploying the same Docker image across development, staging, and production without rebuilding.
+Flutter Web loads environment variables via an HTTP request to `/assets/.env`. When the Docker container starts, an entrypoint script (`/docker-entrypoint.d/40-generate-env.sh`) writes `/usr/share/nginx/html/assets/.env` using the runtime environment variables passed to the container (`BASE_URL`, `WS_URL`, etc.). By default, both URLs are `/`, so Nginx proxies API and WebSocket requests on the same origin used to open the web page. A mounted `/app/.env` overrides the generated file.
 
 ### Deploying Frontend Admin with Docker Compose
 
@@ -346,10 +346,7 @@ docker compose --env-file .env up -d admin-web
 ```
 By default, the web interface is exposed on `http://localhost:${WEB_PORT:-3000}`.
 
-Ensure `CORS_ORIGINS` in `backend/.env` allows the web origin:
-```ini
-CORS_ORIGINS=http://localhost:3000
-```
+No CORS setting is needed for the default same-origin proxy. If `BASE_URL` and `WS_URL` point directly at another origin, allow the web origin with `CORS_ORIGINS`.
 
 ### Standalone Docker Deployment
 
@@ -362,10 +359,12 @@ docker build -t order-checker-admin-web .
 docker run -d \
   --name admin-web \
   -p 3000:80 \
-  -e BASE_URL=http://localhost:8000 \
-  -e WS_URL=ws://localhost:8000 \
+  --add-host=host.docker.internal:host-gateway \
+  -e BACKEND_HOST=host.docker.internal \
   order-checker-admin-web
 ```
+
+For standalone Docker, `BACKEND_HOST` must resolve inside the web container. The example maps the Docker host to `host.docker.internal`; alternatively, place both containers on the same Docker network and use the backend service name.
 
 ---
 

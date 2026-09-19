@@ -8,11 +8,15 @@ mkdir -p /usr/share/nginx/html/assets
 if [ -f "/app/.env" ]; then
     echo "[entrypoint] Copying mounted /app/.env to $ENV_TARGET"
     cp /app/.env "$ENV_TARGET"
-elif [ -n "$BASE_URL" ] || [ -n "$WS_URL" ] || [ -n "$BASE" ]; then
+else
     echo "[entrypoint] Generating $ENV_TARGET from container environment variables"
-    BASE_VAL="${BASE:-localhost}"
-    BASE_URL_VAL="${BASE_URL:-http://${BASE_VAL}:8000}"
-    WS_URL_VAL="${WS_URL:-ws://${BASE_VAL}:8000}"
+    BASE_VAL="${BASE:-}"
+    BASE_URL_VAL="${BASE_URL:-/}"
+    WS_URL_VAL="${WS_URL:-/}"
+    if [ -n "$BASE_VAL" ]; then
+        BASE_URL_VAL="${BASE_URL:-http://${BASE_VAL}:8000}"
+        WS_URL_VAL="${WS_URL:-ws://${BASE_VAL}:8000}"
+    fi
 
     cat <<EOF > "$ENV_TARGET"
 # Auto-generated runtime environment
