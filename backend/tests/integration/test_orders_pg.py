@@ -86,3 +86,22 @@ def test_concurrent_claims_have_exactly_one_winner(pg_session_factory):
     assert len(winners) == 1
     assert _owner(pg_session_factory, "260101RACE") == winners[0]
     assert all(isinstance(r, ValueError) for u, r in results.items() if u not in winners)
+
+
+async def test_http_orders_are_scoped_to_the_operator(pg_session_factory, monkeypatch):
+    """T2.8 / A-9: operators get only their own claimed orders over HTTP, admins get all."""
+    from src.services import shopee_service
+
+    with pg_session_factory() as db:
+        add_user(db, "alice")
+        add_user(db, "bob")
+        add_order(db, "260101ALICE", owner="alice")
+        add_order(db, "260101BOB", owner="bob")
+        add_order(db, "260101FREE")
+        db.commit()
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_valid", lambda: True)
+
+    alice = await shopee_service.sync_shopee_orders(False, "alice", "client")
+    admin = await shopee_service.sync_shopee_orders(False, "boss", "admin")
+    assert [o.order_sn for o in alice] == ["260101ALICE"]
+    assert {o.order_sn for o in admin} == {"260101ALICE", "260101BOB", "260101FREE"}

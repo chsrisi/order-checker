@@ -255,7 +255,9 @@ async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
     )
     monkeypatch.setattr(shopee_service.queries, "get_all_shopee_order_data", lambda: [mock_order])
 
-    results = await shopee_service.sync_shopee_orders(refresh=True, username="test_user")
+    results = await shopee_service.sync_shopee_orders(
+        refresh=True, username="test_user", scope="admin"
+    )
     assert len(results) == 1
     assert results[0].order_sn == "250801MOCK0001"
     shopee_service.conn_mgr.broadcast.assert_awaited_once()

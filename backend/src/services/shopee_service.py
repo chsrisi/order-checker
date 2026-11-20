@@ -498,20 +498,30 @@ def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
     )
 
 
-async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderResponse]:
+def _orders_visible_to(username: str, scope: str) -> list[ShopeeOrderResponse]:
+    """Operators see only their own claimed orders, as on the WebSocket (A-9, F-M7)."""
+    orders = (
+        queries.get_all_shopee_order_data()
+        if scope == "admin"
+        else queries.get_shopee_order_data(username)
+    )
+    return [build_shopee_order_response(o) for o in orders]
+
+
+async def sync_shopee_orders(
+    refresh: bool, username: str, scope: str = "client"
+) -> list[ShopeeOrderResponse]:
     start_time = time.perf_counter()
 
     if refresh:
         cache_mgr.invalidate()
 
     if cache_mgr.is_valid():
-        orders = queries.get_all_shopee_order_data()
-        return [build_shopee_order_response(o) for o in orders]
+        return _orders_visible_to(username, scope)
 
     async with cache_mgr.lock:
         if cache_mgr.is_valid():
-            orders = queries.get_all_shopee_order_data()
-            return [build_shopee_order_response(o) for o in orders]
+            return _orders_visible_to(username, scope)
 
         now = int(time.time())
         time_from = now - (SHOPEE_SYNC_WINDOW_DAYS * 24 * 60 * 60)
@@ -588,9 +598,7 @@ async def sync_shopee_orders(refresh: bool, username: str) -> list[ShopeeOrderRe
         await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
         await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
 
-        orders = queries.get_all_shopee_order_data()
-        final_orders = [build_shopee_order_response(o) for o in orders]
-        return final_orders
+        return _orders_visible_to(username, scope)
 
 
 async def acquire_order(order_sn: str, username: str) -> None:

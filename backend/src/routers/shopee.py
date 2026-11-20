@@ -16,7 +16,11 @@ router = APIRouter(prefix="/shopee", tags=["Shopee"])
     "/orders",
     response_model=List[ShopeeOrderResponse],
     summary="Synchronize active Shopee orders",
-    description="Returns eligible active orders. `refresh=true` invalidates the two-minute in-process cache before synchronization.",
+    description=(
+        "Synchronizes with Shopee, then returns active orders: all of them for admins, only "
+        "the caller's claimed orders for operators. `refresh=true` invalidates the two-minute "
+        "in-process cache before synchronization."
+    ),
     responses={
         401: {"description": "Invalid bearer token"},
         502: {"description": "Shopee request failed"},
@@ -28,7 +32,9 @@ async def get_shopee_orders(
 ):
     logger.info(f"User {current_user.username} requested Shopee synchronization.")
 
-    return await shopee_service.sync_shopee_orders(refresh=refresh, username=current_user.username)
+    return await shopee_service.sync_shopee_orders(
+        refresh=refresh, username=current_user.username, scope=current_user.scope or "client"
+    )
 
 
 @router.post(
