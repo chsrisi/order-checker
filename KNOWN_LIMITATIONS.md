@@ -109,14 +109,15 @@ This document tracks known architectural, library, and system limitations within
 
 ---
 
-### 7. Flutter Web Cross-Platform WebSocket Channel
-- **Issue**: Using `IOWebSocketChannel.connect` (from `package:web_socket_channel/io.dart`) directly in Flutter client/admin apps crashes with an `UnsupportedError` when running in a web browser, because `dart:io` WebSocket connections are not supported in browser runtimes.
-- **Countermeasure**:
-  - Always use `WebSocketChannel.connect(uri)` from `package:web_socket_channel/web_socket_channel.dart`.
-  - The top-level `WebSocketChannel.connect` factory conditionally delegates to `HtmlWebSocketChannel` on web and `IOWebSocketChannel` on desktop and mobile.
-- **Code References**:
-  - Admin app state: `frontend/admin/lib/app_state.dart`
-  - **Not yet applied to the operator client**: `frontend/client/lib/app_state.dart` still calls `IOWebSocketChannel.connect` (see `docs/BRANCH_SPLIT_REVIEW.md` F-H7). The fix needs a client release, so it follows limitation #8.
+### 7. Flutter Web Cross-Platform WebSocket Channel (admin web only)
+- **Scope**: only the **admin** app runs in a browser. The operator client's web build was
+  dropped (delta D2.1), so its `IOWebSocketChannel.connect` (`dart:io`) is correct for its
+  Android and Windows targets. Earlier review item F-H7 no longer applies to it.
+- **Rule for browser code**: `IOWebSocketChannel.connect` (from `package:web_socket_channel/io.dart`)
+  crashes with `UnsupportedError` in a browser. Use `WebSocketChannel.connect(uri)` from
+  `package:web_socket_channel/web_socket_channel.dart`, which picks `HtmlWebSocketChannel` on
+  web and `IOWebSocketChannel` elsewhere.
+- **Code References**: `frontend/admin/lib/app_state.dart` (uses `WebSocketChannel.connect`).
 
 ---
 

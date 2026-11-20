@@ -62,10 +62,7 @@ flutter pub get
 flutter run -d chrome
 ```
 
-### 3. Run as Desktop Application (Windows)
-```bash
-flutter run -d windows
-```
+The Windows desktop build was dropped (delta D2.1); the admin app is web-only.
 
 ---
 
