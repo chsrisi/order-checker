@@ -416,7 +416,3 @@ def get_stocks_data(join_warehouse: bool = False):
             ).join(WarehouseItem, Stock.sku == WarehouseItem.sku)
         results = db.execute(query)
         return list(results.all() if join_warehouse else results.scalars().all())
-
-
-def get_all_stocks_data(join_warehouse: bool = False):
-    return get_stocks_data(join_warehouse=join_warehouse)

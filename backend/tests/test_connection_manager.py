@@ -96,7 +96,7 @@ def test_get_data_builds_user_pick_and_stock_payloads(monkeypatch):
     stock = SimpleNamespace(
         _mapping={"id": 1, "sku": "SKU", "stock": 2, "location": "A", "item_name": "Cake"}
     )
-    monkeypatch.setattr(connection_manager.queries, "get_all_stocks_data", lambda **_: [stock])
+    monkeypatch.setattr(connection_manager.queries, "get_stocks_data", lambda **_: [stock])
     assert manager._get_data(WSMessageType.USERS, "admin")[0]["username"] == "operator"
     assert manager._get_data(WSMessageType.PICK_ITEM_ENTRIES, "admin")[0]["item_name"] == "Cake"
     assert manager._get_data(WSMessageType.STOCKS, "admin")[0]["stock"] == 2

@@ -7,7 +7,6 @@ import time
 from typing import Any, Optional, cast
 import aiohttp
 from fastapi import HTTPException
-from sqlalchemy import select
 
 from ..exceptions import DomainException
 
@@ -23,11 +22,7 @@ from ..models import (
     ShpOrderDetails,
     ShopeeOrder,
     ShopeeOrderResponse,
-    ShopeeOrderItemBOMResponse,
     WSMessageType,
-    WarehouseItem,
-    ShopeeOrderRecipientResponse,
-    ShopeeOrderInfoResponse,
 )
 from . import queries
 from .order_payload import build_order_responses

@@ -86,41 +86,6 @@ def get_marketplace_bom_headers() -> List[dict]:
         ]
 
 
-def resolve_standard_bom(sku: str, qty: int) -> List[tuple[str, int]]:
-    with get_db() as db:
-        hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
-        if not hdr:
-            return [(sku, qty)]
-
-        details = (
-            db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
-        )
-        result: List[tuple[str, int]] = []
-        for detail in details:
-            sub_components = resolve_standard_bom_internal(
-                detail.component_sku, detail.quantity_standard * qty, db
-            )
-            result.extend(sub_components)
-        return result
-
-
-def resolve_standard_bom_internal(sku: str, qty: int, db: Session) -> List[tuple[str, int]]:
-    hdr = db.execute(select(BOMHeader).filter(BOMHeader.sku == sku)).scalar_one_or_none()
-    if not hdr:
-        return [(sku, qty)]
-
-    details = (
-        db.execute(select(BOMDetail).filter(BOMDetail.bom_header_id == hdr.id)).scalars().all()
-    )
-    result: List[tuple[str, int]] = []
-    for detail in details:
-        sub_components = resolve_standard_bom_internal(
-            detail.component_sku, detail.quantity_standard * qty, db
-        )
-        result.extend(sub_components)
-    return result
-
-
 def get_standard_bom_node(sku: str, qty: int, is_not_primary_child: Optional[bool] = None) -> dict:
     with get_db() as db:
         return get_standard_bom_node_internal(sku, qty, is_not_primary_child, db)

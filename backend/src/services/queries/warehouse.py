@@ -118,8 +118,3 @@ def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
             .scalars()
             .all()
         )
-
-
-def get_all_warehouse_items() -> List[WarehouseItem]:
-    with get_db() as db:
-        return list(db.execute(select(WarehouseItem)).scalars().all())

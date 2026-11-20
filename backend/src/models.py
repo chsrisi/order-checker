@@ -533,10 +533,6 @@ class RefreshTokenRequest(BaseModel):
     )
 
 
-class ShopeeOrderCreate(BaseModel):
-    label: str
-
-
 class ShopeeOrderItemResponse(BaseModel):
     id: int
     item_id: Optional[int] = None

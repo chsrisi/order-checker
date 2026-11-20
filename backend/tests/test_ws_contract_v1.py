@@ -44,7 +44,7 @@ def _fake_queries(monkeypatch, scope="client"):
     stock_row = SimpleNamespace(
         _mapping={"id": 1, "sku": "A01_001", "stock": 3, "location": None, "item_name": None}
     )
-    monkeypatch.setattr(q, "get_all_stocks_data", lambda **_: [stock_row])
+    monkeypatch.setattr(q, "get_stocks_data", lambda **_: [stock_row])
     monkeypatch.setattr(q, "get_all_user_data", lambda: [user])
     monkeypatch.setattr(q, "get_shopee_order_data", lambda _u: [])
     monkeypatch.setattr(q, "get_all_shopee_order_data", lambda: [])

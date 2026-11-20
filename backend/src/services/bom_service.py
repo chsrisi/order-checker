@@ -1,13 +1,9 @@
 import logging
-from typing import List, Optional
+from typing import Optional
 
 from . import queries
 
 logger = logging.getLogger("backend.services.bom")
-
-
-def resolve_standard_bom(sku: str, qty: int) -> List[tuple[str, int]]:
-    return queries.resolve_standard_bom(sku, qty)
 
 
 def get_standard_bom_node(

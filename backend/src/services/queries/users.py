@@ -73,11 +73,6 @@ def set_password_and_revoke_sessions(username: str, password_hash: str) -> bool:
         return True
 
 
-def get_refresh_token(jti: str) -> RefreshToken | None:
-    with get_db() as db:
-        return db.execute(select(RefreshToken).filter(RefreshToken.jti == jti)).scalars().first()
-
-
 def create_refresh_token(jti: str, username: str, expires_at: datetime) -> RefreshToken:
     with get_db() as db:
         db_refresh_token = RefreshToken(jti=jti, username=username, expires_at=expires_at)

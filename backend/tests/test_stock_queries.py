@@ -215,7 +215,6 @@ def test_get_stocks_data_queries(sqlite_test_db):
     assert isinstance(stocks_joined, list)
 
     # All stocks alias
-    assert isinstance(stock_queries.get_all_stocks_data(), list)
 
 
 def test_single_location_bypass_add_and_set_no_location(sqlite_test_db, monkeypatch):

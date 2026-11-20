@@ -120,7 +120,7 @@ class ConnectionManager:
                     )
                 )
         elif message_type == WSMessageType.STOCKS:
-            stocks = queries.get_all_stocks_data(join_warehouse=True)
+            stocks = queries.get_stocks_data(join_warehouse=True)
             data = [StockResponse.model_validate(dict(s._mapping)) for s in stocks]
 
         if data is not None:
