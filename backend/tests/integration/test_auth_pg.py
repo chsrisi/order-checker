@@ -36,3 +36,18 @@ def test_concurrent_consumes_have_one_winner(pg_session_factory):
     for t in threads:
         t.join()
     assert sum(r is not None for r in results) == 1
+
+
+def test_password_reset_revokes_all_refresh_tokens(pg_session_factory):
+    with pg_session_factory() as db:
+        add_user(db, "alice")
+        add_user(db, "boss", scope="admin")
+        db.commit()
+    for jti in ("a1", "a2"):
+        queries.create_refresh_token(jti, "alice", datetime.now(UTC) + timedelta(hours=1))
+    assert queries.set_password_and_revoke_sessions("alice", "new-hash") is True
+    assert queries.get_user_data("alice").password_hash == "new-hash"
+    assert queries.consume_refresh_token("a1") is None
+    assert queries.consume_refresh_token("a2") is None
+    assert queries.set_password_and_revoke_sessions("boss", "x") is False  # admin-side only
+    assert queries.set_password_and_revoke_sessions("ghost", "x") is False

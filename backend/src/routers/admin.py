@@ -1,12 +1,14 @@
 import logging
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import StreamingResponse
 
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
+    AdminPasswordReset,
+    AdminUserCreate,
     DeleteCountResponse,
     MessageResponse,
     OutboundResponse,
@@ -35,6 +37,48 @@ def get_users(current_user: User = Depends(require_admin)):
     users = queries.get_all_user_data()
     logger.info(f"Admin {current_user.username} fetched {len(users)} client users")
     return users
+
+
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    summary="Create an operator account",
+    description=(
+        "Creates a client-scope account. This is how operator accounts are created when "
+        "self-registration is disabled (production)."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        409: {"description": "Username already exists"},
+    },
+)
+async def create_user(body: AdminUserCreate, current_user: User = Depends(require_admin)):
+    user = await auth_service.admin_create_user(body.username, body.password)
+    logger.info(f"Admin {current_user.username} created user {body.username}")
+    return user
+
+
+@router.post(
+    "/users/{username}/password",
+    response_model=MessageResponse,
+    summary="Reset an operator password",
+    description=(
+        "Sets a new password, revokes all of the user's refresh tokens and closes their "
+        "WebSocket sessions, so every device must log in again."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Client account not found"},
+    },
+)
+async def reset_user_password(
+    body: AdminPasswordReset,
+    username: str = Path(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$"),
+    current_user: User = Depends(require_admin),
+):
+    await auth_service.admin_reset_password(username, body.password)
+    logger.info(f"Admin {current_user.username} reset the password of {username}")
+    return {"message": "Password reset; all sessions revoked"}
 
 
 @router.delete(

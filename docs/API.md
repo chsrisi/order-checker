@@ -21,14 +21,16 @@ it does not blacklist the short-lived access token. Public signing keys are at
 
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | Public | Create client account and tokens |
+| POST | `/auth/register` | Public | Create client account and tokens. **403** "Registration is disabled" unless `ALLOW_REGISTRATION` is on (off under production rules) |
 | POST | `/auth/login` | Public | Operator login |
 | POST | `/auth/admin` | Public | Admin-only login |
 | POST | `/auth/refresh` | Public | Rotate refresh token pair |
 | POST | `/auth/logout` | Public | Delete refresh-token record |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
-| GET/DELETE | `/admin/users` | Admin | List/delete client users |
+| GET/DELETE | `/admin/users` | Admin | List/delete client users (delete also closes the user's WebSocket sessions) |
+| POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
+| POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scan history |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history |
 | GET | `/admin/export/scans` | Admin | Open scans CSV |

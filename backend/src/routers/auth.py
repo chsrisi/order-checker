@@ -24,8 +24,15 @@ public_router = APIRouter(tags=["authentication"])
     "/register",
     response_model=Token,
     summary="Register an operator account",
-    description="Creates a client-scoped account and returns a new access/refresh token pair.",
-    responses={400: {"description": "Username already exists"}},
+    description=(
+        "Creates a client-scoped account and returns a new access/refresh token pair. "
+        "Disabled (403) unless ALLOW_REGISTRATION is on; production creates operator "
+        "accounts through POST /admin/users."
+    ),
+    responses={
+        400: {"description": "Username already exists"},
+        403: {"description": "Registration is disabled"},
+    },
 )
 async def register_client(auth: UserAuth):
     return await auth_service.register_client(auth.username, auth.password)

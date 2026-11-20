@@ -287,6 +287,25 @@ If the project permanently moves away from single-location bypass support:
 
 ---
 
+## Dormant Hardening Switches
+
+Some hardening rules are already written but commented out, so they can be enabled later
+without new design work. Each spot carries a grep-able tag:
+
+```bash
+grep -rn "HARDENING(" backend/
+```
+
+| Tag | What it enforces | Where |
+|---|---|---|
+| `HARDENING(password-min-length)` | Minimum 8 characters for passwords set by an admin (create user, reset password). Login and the v1 client's register request are unaffected; existing passwords keep working. | `backend/src/models.py` (`AdminUserCreate`, `AdminPasswordReset`), test in `backend/tests/test_admin_users.py` |
+
+To enable a switch:
+
+1. In the code, delete the line directly above the tag comment and uncomment the line below it.
+2. Uncomment the tagged test block, then run the test suite.
+3. Update `KNOWN_LIMITATIONS.md` (remove or amend the entry) and release as a normal backend update.
+
 ## Shopee Token Storage & Initial Seeding
 
 Shopee OpenAPI authentication uses dynamic OAuth access and refresh tokens:

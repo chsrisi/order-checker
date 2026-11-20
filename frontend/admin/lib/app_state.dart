@@ -189,7 +189,8 @@ class AppState extends ChangeNotifier {
         final isHttps = Uri.base.scheme == 'https';
         final wsScheme = isHttps ? 'wss' : 'ws';
         final host = Uri.base.host;
-        final port = Uri.base.port != 0 && Uri.base.port != 80 && Uri.base.port != 443
+        final port =
+            Uri.base.port != 0 && Uri.base.port != 80 && Uri.base.port != 443
             ? ':${Uri.base.port}'
             : '';
         final path = ws.isNotEmpty && ws != '/' ? ws : '';
@@ -280,7 +281,11 @@ class AppState extends ChangeNotifier {
       final response = await fetchWebSocketTicket();
       if (response == null || response.statusCode >= 500) {
         _isConnecting = false;
-        _reconnectWebSocket(error: response != null ? "Status ${response.statusCode}" : "Connection error");
+        _reconnectWebSocket(
+          error: response != null
+              ? "Status ${response.statusCode}"
+              : "Connection error",
+        );
         return;
       }
       if (response.statusCode != 200) {
@@ -753,6 +758,54 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Creates a client-scope operator account. Returns null on success, or an error message.
+  Future<String?> createUser(String username, String password) async {
+    final response = await makeRequest(
+      '$_baseUrl/admin/users',
+      method: 'POST',
+      body: {'username': username, 'password': password},
+    );
+    if (response == null) return 'Network error';
+    if (response.statusCode == 200) {
+      fetchUsers();
+      return null;
+    }
+    return _errorDetail(
+      response,
+      fallback: 'Create failed (${response.statusCode})',
+    );
+  }
+
+  /// Sets a new password; the backend revokes all of the user's sessions.
+  Future<String?> resetUserPassword(String username, String password) async {
+    final response = await makeRequest(
+      '$_baseUrl/admin/users/${Uri.encodeComponent(username)}/password',
+      method: 'POST',
+      body: {'password': password},
+    );
+    if (response == null) return 'Network error';
+    if (response.statusCode == 200) return null;
+    return _errorDetail(
+      response,
+      fallback: 'Reset failed (${response.statusCode})',
+    );
+  }
+
+  String _errorDetail(http.Response response, {required String fallback}) {
+    try {
+      final body = jsonDecode(response.body);
+      final detail = body is Map ? body['detail'] : null;
+      if (detail is String && detail.isNotEmpty) return detail;
+      if (detail is List && detail.isNotEmpty) {
+        final first = detail.first;
+        if (first is Map && first['msg'] is String) {
+          return first['msg'] as String;
+        }
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
   Future<bool> deleteUser(String username) async {
     try {
       final response = await makeRequest(
@@ -981,10 +1034,7 @@ class AppState extends ChangeNotifier {
       final response = await makeRequest(
         '$_baseUrl/admin/shopee-config?token=$_shopeeConfigToken',
         method: 'POST',
-        body: {
-          'access_token': accessToken,
-          'refresh_token': refreshToken,
-        },
+        body: {'access_token': accessToken, 'refresh_token': refreshToken},
       );
       if (response?.statusCode == 200) {
         _shopeeAccessToken = accessToken;

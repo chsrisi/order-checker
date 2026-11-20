@@ -51,6 +51,23 @@ class ConnectionManager:
         else:
             logger.debug(f"User {username} has no sessions remaining")
 
+    async def disconnect_user(self, username: str, code: int = 1008) -> int:
+        """Close and forget every socket of ``username`` (deleted user, reset password).
+
+        A v1 client sees the socket end, asks for a new ticket, fails to refresh (its tokens
+        were revoked) and returns to the login screen (F-M9).
+        """
+        sockets = self.active_connections.pop(username, [])
+        for ws in sockets:
+            self.user_scopes.pop(ws, None)
+            try:
+                await ws.close(code=code)
+            except Exception as e:  # already gone
+                logger.debug(f"Closing socket for {username} failed: {e}")
+        if sockets:
+            logger.info(f"Closed {len(sockets)} WebSocket session(s) for {username}")
+        return len(sockets)
+
     def _get_data(self, message_type: WSMessageType, username: str):
         is_admin = False
         user = queries.get_user_data(username)

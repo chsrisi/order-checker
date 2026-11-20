@@ -121,4 +121,10 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**:
   - Client API calls and WS parser: `frontend/client/lib/app_state.dart`, `frontend/client/lib/models.dart`
   - Contract inventory and plan: `docs/BRANCH_SPLIT_REVIEW.md`
-  - Proposed contract test (not yet written): `backend/tests/test_client_contract_v1.py`
+  - Contract tests: `backend/tests/test_client_contract_v1.py` (HTTP snapshot `tests/contracts/client_v1.json`) and `backend/tests/test_ws_contract_v1.py` (WS frame rules, 403 handshake)
+
+### 9. Dormant Password Minimum Length (Admin-Created Accounts)
+- **Issue**: Passwords set through the admin app (`POST /admin/users`, `POST /admin/users/{username}/password`) accept any length from 1 character. A minimum length rule is written in the code but **commented out**.
+- **Countermeasure**: The rule is a dormant hardening switch tagged `HARDENING(password-min-length)` in `backend/src/models.py` (`AdminUserCreate`, `AdminPasswordReset`), with a matching commented-out test in `backend/tests/test_admin_users.py`. Enable it by following `docs/OPERATIONS.md` → "Dormant Hardening Switches". Enabling it is a normal backend release with no client impact.
+- **Scope**: It applies only to **new or reset** passwords. Existing passwords keep working at login, and the operator client's login/register requests (`UserAuth`, contract v1) are unaffected.
+- **Code References**: `backend/src/models.py`, `backend/tests/test_admin_users.py`

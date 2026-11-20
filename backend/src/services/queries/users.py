@@ -61,6 +61,18 @@ def delete_user_by_username(username: str) -> bool:
         return True
 
 
+def set_password_and_revoke_sessions(username: str, password_hash: str) -> bool:
+    """Replace a client account's password and delete all its refresh tokens atomically."""
+    with get_db() as db:
+        user = db.execute(select(User).filter(User.username == username)).scalars().first()
+        if not user or user.scope == "admin":
+            return False
+        user.password_hash = password_hash
+        db.execute(delete(RefreshToken).where(RefreshToken.username == username))
+        db.commit()
+        return True
+
+
 def get_refresh_token(jti: str) -> RefreshToken | None:
     with get_db() as db:
         return db.execute(select(RefreshToken).filter(RefreshToken.jti == jti)).scalars().first()

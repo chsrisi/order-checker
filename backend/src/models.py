@@ -412,6 +412,28 @@ class UserAuth(BaseModel):
         return v
 
 
+class AdminUserCreate(UserAuth):
+    """Admin-side operator creation (A-3). Reuses the ``UserAuth`` username rule."""
+
+    password: str = Field(
+        min_length=1,
+        # HARDENING(password-min-length): to enforce, delete the line above and uncomment below.
+        # min_length=8,
+        max_length=256,
+        examples=["correct-horse-battery-staple"],
+    )
+
+
+class AdminPasswordReset(BaseModel):
+    password: str = Field(
+        min_length=1,
+        # HARDENING(password-min-length): to enforce, delete the line above and uncomment below.
+        # min_length=8,
+        max_length=256,
+        examples=["correct-horse-battery-staple"],
+    )
+
+
 class UserResponse(BaseModel):
     username: str
     scope: str

@@ -170,3 +170,28 @@ async def test_disconnect_is_idempotent_for_multi_session_user():
     manager.disconnect(ws2, "operator")
     assert manager.active_connections == {}
     assert manager.user_scopes == {}
+
+
+@pytest.mark.asyncio
+async def test_disconnect_user_closes_and_forgets_all_sessions():
+    """T2.7 / F-M9: deleted or reset users lose every live socket."""
+
+    class ClosableSocket(FakeWebSocket):
+        def __init__(self):
+            super().__init__()
+            self.closed_with = None
+
+        async def close(self, code=1000):
+            self.closed_with = code
+
+    manager = ConnectionManager()
+    a, b, other = ClosableSocket(), ClosableSocket(), ClosableSocket()
+    await manager.connect(a, "operator", "client")
+    await manager.connect(b, "operator", "client")
+    await manager.connect(other, "someone", "client")
+    assert await manager.disconnect_user("operator") == 2
+    assert a.closed_with == b.closed_with == 1008
+    assert "operator" not in manager.active_connections
+    assert a not in manager.user_scopes and b not in manager.user_scopes
+    assert manager.active_connections["someone"] == [other]
+    assert await manager.disconnect_user("operator") == 0

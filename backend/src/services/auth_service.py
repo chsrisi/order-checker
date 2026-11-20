@@ -10,7 +10,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
+from sqlalchemy.exc import IntegrityError
+
 from . import queries
+from .. import config
+from ..exceptions import DomainException
 from ..models import User, WSMessageType
 from ..config import (
     JWT_ALGORITHM,
@@ -171,22 +175,43 @@ def get_tokens(user: User):
 
 
 async def delete_user(username: str) -> None:
-    from . import queries
-
     success = queries.delete_user_by_username(username)
     if not success:
-        from ..exceptions import DomainException
-
         raise DomainException(status_code=404, detail="User not found")
 
-    from .managers import conn_mgr
-    from ..models import WSMessageType
+    await conn_mgr.disconnect_user(username)
+    await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
 
+
+async def admin_create_user(username: str, password: str) -> User:
+    """Create a client-scope operator account (A-3: accounts are created admin-side)."""
+    if queries.get_user_data(username):
+        raise DomainException(status_code=409, detail="Username already exists")
+    password_hash = get_password_hash(password)
+    try:
+        user = queries.create_user(username=username, password_hash=password_hash, scope="client")
+    except IntegrityError as exc:  # lost a race with another create
+        raise DomainException(status_code=409, detail="Username already exists") from exc
+    logger.info(f"Operator account {username} created by an administrator")
+    await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
+    return user
+
+
+async def admin_reset_password(username: str, password: str) -> None:
+    """Set a new password, revoke every refresh token and close the user's sockets."""
+    password_hash = get_password_hash(password)
+    if not queries.set_password_and_revoke_sessions(username, password_hash):
+        raise DomainException(status_code=404, detail="User not found")
+    logger.info(f"Password reset for {username}; sessions revoked")
+    await conn_mgr.disconnect_user(username)
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
 
 
 async def register_client(username: str, password: str) -> dict:
     logger.info(f"Registration attempt for username: {username}")
+    if not config.ALLOW_REGISTRATION:
+        # Path and schema stay (client contract v1); production creates accounts admin-side.
+        raise DomainException(status_code=403, detail="Registration is disabled")
     user = queries.get_user_data(username)
     if user:
         logger.warning(f"Registration failed: Username {username} already exists")
