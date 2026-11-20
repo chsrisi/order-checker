@@ -57,6 +57,21 @@ it does not blacklist the short-lived access token. Public signing keys are at
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.
 
+## Request size limits
+
+Request bodies are bounded to stop abusive input; anything larger returns `422`.
+
+| Field | Limit |
+|---|---|
+| `content` (`POST /outbound`), `sku` (pick, unassign, stock update) | 1024 characters |
+| `order_sn` (pick, assign, unassign) | 64 characters |
+| `location`, `move_to` (stock update) | 128 characters |
+| `tags` (`POST /outbound`) | 16 items × 64 characters |
+| `POST /outbound/close` body (admin) | 10,000 items × 1024 characters |
+
+These are the only deliberate narrowings of client contract v1 (snapshot updated in T2.14).
+They sit far above real scanner payloads.
+
 ## Errors
 
 Validation failures use FastAPI's `422` response. Authentication failures use

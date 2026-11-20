@@ -365,12 +365,26 @@ class ShopeeItem(Base):
 
 
 # Pydantic Models ----
+# Request size limits (IMPLEMENTATION_PLAN T2.14). They bound abusive input; real scanner
+# payloads (including multi-line QR content) stay far below them.
+SCAN_MAX_LENGTH = 1024
+ORDER_SN_MAX_LENGTH = 64
+LOCATION_MAX_LENGTH = 128
+TAG_MAX_LENGTH = 64
+TAGS_MAX_ITEMS = 16
+CLOSE_MAX_ITEMS = 10_000
+
 class OutboundCreate(BaseModel):
     content: str = Field(
-        min_length=1, description="Order number or shipping label value.", examples=["240719ABC123"]
+        min_length=1,
+        max_length=SCAN_MAX_LENGTH,
+        description="Order number or shipping label value.",
+        examples=["240719ABC123"],
     )
-    tags: Optional[List[str]] = Field(
-        default=None, description="Optional scanner-supplied classification tags."
+    tags: Optional[List[Annotated[str, Field(max_length=TAG_MAX_LENGTH)]]] = Field(
+        default=None,
+        max_length=TAGS_MAX_ITEMS,
+        description="Optional scanner-supplied classification tags.",
     )
 
 
@@ -535,9 +549,11 @@ class ShopeeConfigUpdateRequest(BaseModel):
 
 
 class PickItemEntryCreate(BaseModel):
-    sku: str = Field(min_length=1, description="Warehouse SKU or recognized barcode.")
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Warehouse SKU or recognized barcode."
+    )
     qty: int = Field(gt=0, description="Quantity to add to the pick list.")
-    order_sn: Optional[str] = None
+    order_sn: Optional[str] = Field(default=None, max_length=ORDER_SN_MAX_LENGTH)
 
 
 class PickItemEntryResponse(BaseModel):
@@ -553,7 +569,9 @@ class PickItemEntryResponse(BaseModel):
 
 
 class PickItemEntryAssign(BaseModel):
-    order_sn: str = Field(min_length=1, description="Claimed Shopee order number.")
+    order_sn: str = Field(
+        min_length=1, max_length=ORDER_SN_MAX_LENGTH, description="Claimed Shopee order number."
+    )
     qty: Optional[int] = Field(
         default=None, gt=0, description="Quantity to assign; defaults to the full entry."
     )
@@ -562,13 +580,15 @@ class PickItemEntryAssign(BaseModel):
 
 
 class StockCreate(BaseModel):
-    sku: str = Field(min_length=1, description="Warehouse SKU or recognized barcode.")
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Warehouse SKU or recognized barcode."
+    )
     stock: int = Field(ge=0, description="Quantity to set/add, or transfer amount.")
     mode: Literal["add", "set"] = Field(
         default="set", description="Adjustment behavior when not transferring."
     )
-    location: Optional[str] = None
-    move_to: Optional[str] = None
+    location: Optional[str] = Field(default=None, max_length=LOCATION_MAX_LENGTH)
+    move_to: Optional[str] = Field(default=None, max_length=LOCATION_MAX_LENGTH)
 
     @model_validator(mode="after")
     def validate_transfer(self):
@@ -591,8 +611,8 @@ class StockResponse(BaseModel):
 
 
 class PickItemEntryUnassign(BaseModel):
-    order_sn: str = Field(min_length=1)
-    sku: str = Field(min_length=1)
+    order_sn: str = Field(min_length=1, max_length=ORDER_SN_MAX_LENGTH)
+    sku: str = Field(min_length=1, max_length=SCAN_MAX_LENGTH)
     qty: int = Field(gt=0)
 
 

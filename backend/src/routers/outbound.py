@@ -1,8 +1,16 @@
 import logging
-from typing import List
-from fastapi import APIRouter, Depends
+from typing import Annotated, List
+from fastapi import APIRouter, Body, Depends
+from pydantic import Field
 
-from ..models import OutboundCloseResponse, User, OutboundCreate, OutboundResponse
+from ..models import (
+    CLOSE_MAX_ITEMS,
+    SCAN_MAX_LENGTH,
+    OutboundCloseResponse,
+    OutboundCreate,
+    OutboundResponse,
+    User,
+)
 from ..dependencies import get_current_user, require_admin
 from ..services import outbound_service, queries
 
@@ -83,7 +91,10 @@ def read_outbounds(current_user: User = Depends(get_current_user)):
     responses={403: {"description": "Admin scope required"}},
 )
 async def close_outbound_period(
-    contents: List[str],
+    contents: Annotated[
+        List[Annotated[str, Field(max_length=SCAN_MAX_LENGTH)]],
+        Body(max_length=CLOSE_MAX_ITEMS),
+    ],
     current_user: User = Depends(require_admin),
 ):
     result = await outbound_service.close_outbound_items(

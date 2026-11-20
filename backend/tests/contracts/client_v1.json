@@ -410,6 +410,7 @@
         "nullable": false,
         "properties": {
           "content": {
+            "maxLength": 1024,
             "minLength": 1,
             "nullable": false,
             "required": true,
@@ -417,9 +418,11 @@
           },
           "tags": {
             "items": {
+              "maxLength": 64,
               "nullable": false,
               "type": "string"
             },
+            "maxItems": 16,
             "nullable": true,
             "required": false,
             "type": "array"
@@ -482,6 +485,7 @@
         "nullable": false,
         "properties": {
           "order_sn": {
+            "maxLength": 64,
             "nullable": true,
             "required": false,
             "type": "string"
@@ -492,6 +496,7 @@
             "type": "integer"
           },
           "sku": {
+            "maxLength": 1024,
             "minLength": 1,
             "nullable": false,
             "required": true,
@@ -550,6 +555,7 @@
         "nullable": false,
         "properties": {
           "order_sn": {
+            "maxLength": 64,
             "minLength": 1,
             "nullable": false,
             "required": true,
@@ -561,6 +567,7 @@
             "type": "integer"
           },
           "sku": {
+            "maxLength": 1024,
             "minLength": 1,
             "nullable": false,
             "required": true,
@@ -595,6 +602,7 @@
         "nullable": false,
         "properties": {
           "order_sn": {
+            "maxLength": 64,
             "minLength": 1,
             "nullable": false,
             "required": true,
@@ -686,6 +694,7 @@
         "nullable": false,
         "properties": {
           "location": {
+            "maxLength": 128,
             "nullable": true,
             "required": false,
             "type": "string"
@@ -696,11 +705,13 @@
             "type": "string"
           },
           "move_to": {
+            "maxLength": 128,
             "nullable": true,
             "required": false,
             "type": "string"
           },
           "sku": {
+            "maxLength": 1024,
             "minLength": 1,
             "nullable": false,
             "required": true,
