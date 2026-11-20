@@ -1,0 +1,102 @@
+"""WebSocket frame rules of operator client contract v1 (KNOWN_LIMITATIONS.md #8).
+
+Both Flutter apps run ``List<Map<String, dynamic>>.from(frame['data'])`` *before* looking at
+``frame['type']``, so every frame must carry ``data`` as a JSON list of objects, and a bad
+ticket must be rejected with an HTTP 403 handshake (the client matches "403").
+"""
+
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi.testclient import TestClient
+from starlette.testclient import WebSocketDenialResponse
+
+from src.models import WSMessageType
+from src.routers import websocket as ws_router
+from src.services.managers import connection_manager
+from src.services.managers.connection_manager import ConnectionManager
+
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def _fake_queries(monkeypatch, scope="client"):
+    q = connection_manager.queries
+    user = SimpleNamespace(username="operator", scope=scope)
+    monkeypatch.setattr(q, "get_user_data", lambda _u: user)
+    outbound = SimpleNamespace(
+        id=1,
+        content="label",
+        tags=["tag"],
+        created_at=NOW,
+        owner_user="operator",
+        closed=False,
+        closed_at=None,
+    )
+    monkeypatch.setattr(q, "get_outbounds_data", lambda _u: [outbound])
+    monkeypatch.setattr(q, "get_all_outbound_data", lambda: [outbound])
+    pick = SimpleNamespace(
+        id=1, sku="A01_001", qty=2, order_sn=None, timestamp=NOW, owner_user="operator"
+    )
+    monkeypatch.setattr(q, "get_pie_data", lambda **_: [pick])
+    monkeypatch.setattr(q, "resolve_barcode_to_item", lambda _s: None)
+    stock_row = SimpleNamespace(
+        _mapping={"id": 1, "sku": "A01_001", "stock": 3, "location": None, "item_name": None}
+    )
+    monkeypatch.setattr(q, "get_all_stocks_data", lambda **_: [stock_row])
+    monkeypatch.setattr(q, "get_all_user_data", lambda: [user])
+    monkeypatch.setattr(q, "get_shopee_order_data", lambda _u: [])
+    monkeypatch.setattr(q, "get_all_shopee_order_data", lambda: [])
+
+
+@pytest.mark.parametrize(
+    "message_type",
+    [
+        WSMessageType.OUTBOUNDS,
+        WSMessageType.SHOPEE_ORDERS,
+        WSMessageType.PICK_ITEM_ENTRIES,
+        WSMessageType.STOCKS,
+    ],
+)
+@pytest.mark.parametrize("scope", ["client", "admin"])
+def test_ws_payloads_are_lists_of_objects(monkeypatch, message_type, scope):
+    _fake_queries(monkeypatch, scope)
+    data = ConnectionManager()._get_data(message_type, "operator")
+    assert isinstance(data, list)
+    assert all(isinstance(item, dict) for item in data)
+
+
+def _client_with_ticket(monkeypatch, scope="client"):
+    monkeypatch.setattr(ws_router.ticket_mgr, "consume_ticket", AsyncMock(return_value="operator"))
+    monkeypatch.setattr(
+        ws_router.queries,
+        "get_user_data",
+        lambda _u: SimpleNamespace(username="operator", scope=scope),
+    )
+    from src.main import app
+
+    return TestClient(app)
+
+
+@pytest.mark.xfail(strict=True, reason="string error frames; fixed by IMPLEMENTATION_PLAN T1.9")
+@pytest.mark.parametrize("command", [{"command": "nope"}, {"command": "get_users"}])
+def test_ws_error_frames_carry_list_data(monkeypatch, command):
+    client = _client_with_ticket(monkeypatch, scope="client")
+    with client.websocket_connect("/ws?token=t") as ws:
+        ws.send_json(command)
+        frame = ws.receive_json()
+    assert frame["type"] == "error"
+    assert isinstance(frame["data"], list)
+    assert all(isinstance(item, dict) for item in frame["data"])
+
+
+@pytest.mark.parametrize("url", ["/ws", "/ws?token=bad"])
+def test_ws_bad_ticket_is_rejected_with_http_403(monkeypatch, url):
+    monkeypatch.setattr(ws_router.ticket_mgr, "consume_ticket", AsyncMock(return_value=None))
+    from src.main import app
+
+    with pytest.raises(WebSocketDenialResponse) as exc:
+        with TestClient(app).websocket_connect(url):
+            pass
+    assert exc.value.status_code == 403
