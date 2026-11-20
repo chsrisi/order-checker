@@ -40,7 +40,7 @@ This document tracks known architectural, library, and system limitations within
 ---
 
 ### 3. Backend Settings & Version Metadata Synchronization to Frontends
-- **Issue**: Backend settings, runtime configuration flags, and active bypass schemes (such as `MOCK_ORDER_BYPASS` and `SINGLE_LOCATION_STOCK_BYPASS`) are not synchronized to the frontend applications (Client and Admin). Furthermore, frontends have no built-in mechanism for discovering backend application update/version metadata or server configuration states.
+- **Issue**: Backend settings, runtime configuration flags, and active bypass schemes (such as `MOCK_ORDER_BYPASS` and `STOCK_LOCATION_MODE`) are not synchronized to the frontend applications (Client and Admin). Furthermore, frontends have no built-in mechanism for discovering backend application update/version metadata or server configuration states.
 - **Countermeasure / Impact**:
   - Frontends operate under default architectural assumptions and cannot dynamically reflect backend bypass modes (e.g. automatically adjusting single-location vs. multi-location stock UX or displaying active bypass banners).
   - Developers and operators testing the system must ensure frontend workflows align with the server's configured `.env` flags.

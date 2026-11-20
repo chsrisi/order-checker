@@ -635,3 +635,34 @@ def test_single_location_bypass_alias_and_disabled_mode(sqlite_test_db, monkeypa
         assert len(records) >= 2
 
 
+
+
+def test_stock_location_mode_precedence(monkeypatch):
+    """T2.9 / A-8: STOCK_LOCATION_MODE wins; legacy flags are aliases; default multi."""
+    from src import config
+
+    for key in ("STOCK_LOCATION_MODE", *config._LEGACY_STOCK_MODE_FLAGS):
+        monkeypatch.delenv(key, raising=False)
+    assert config.stock_location_mode() == "multi"
+
+    monkeypatch.setenv("SINGLE_LOCATION_STOCK_BYPASS", "1")
+    assert config.stock_location_mode() == "single"
+    monkeypatch.setenv("STOCK_LOCATION_MODE", "multi")
+    assert config.stock_location_mode() == "multi"
+    monkeypatch.setenv("STOCK_LOCATION_MODE", "SINGLE")
+    assert config.stock_location_mode() == "single"
+    monkeypatch.setenv("STOCK_LOCATION_MODE", "bogus")
+    assert config.stock_location_mode() == "multi"
+
+
+def test_single_mode_via_new_variable(sqlite_test_db, monkeypatch):
+    item = WarehouseItem(sku="TEST-SKU-002", item_name="Test Product 002")
+    monkeypatch.setattr(stock_queries, "resolve_barcode_to_item", lambda barcode: item)
+    monkeypatch.setenv("STOCK_LOCATION_MODE", "single")
+    stock_queries.update_or_move_stock(
+        sku_in="TEST-SKU-002", stock_qty=5, username="t", mode="set", location="A"
+    )
+    res, _ = stock_queries.update_or_move_stock(
+        sku_in="TEST-SKU-002", stock_qty=2, username="t", mode="add", location="B"
+    )
+    assert (res.location, res.stock) == ("B", 7)

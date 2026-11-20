@@ -3,29 +3,23 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ...models import Stock, StocksLog, WarehouseItem
-from ...config import get_config_bool
+from ...config import stock_location_mode
 from .engine import get_db
 from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.stocks")
 
-SINGLE_LOCATION_STOCK_BYPASS = get_config_bool("SINGLE_LOCATION_STOCK_BYPASS", False)
-
-
-def _is_single_location_bypass_active() -> bool:
-    return get_config_bool(
-        "SINGLE_LOCATION_STOCK_BYPASS",
-        get_config_bool("STOCK_SINGLE_LOCATION_BYPASS", SINGLE_LOCATION_STOCK_BYPASS),
-    )
+def _is_single_location_mode() -> bool:
+    return stock_location_mode() == "single"
 
 
 # ==============================================================================
-# SINGLE-LOCATION STOCK BYPASS
+# STOCK LOCATION MODE (STOCK_LOCATION_MODE=multi|single, default multi)
 # ==============================================================================
-# The default data model allows a many-to-one relationship between stocks and items
-# (i.e. an item can be distributed across multiple warehouse locations).
+# Both modes are supported business modes (delta A-8), not a development bypass.
+# The default data model allows many stock rows per item (one per warehouse location).
 #
-# When SINGLE_LOCATION_STOCK_BYPASS is enabled (SINGLE_LOCATION_STOCK_BYPASS=1/true):
+# When STOCK_LOCATION_MODE=single:
 #   1. An item stock can only exist in a single location in the database.
 #   2. For add or set operations with NO location specified (location=None):
 #      - If the item already has a stock record in some location, update the stock
@@ -40,19 +34,10 @@ def _is_single_location_bypass_active() -> bool:
 #      - Transfers all stock of the item to move_to, ensuring the item remains in
 #        only 1 location.
 #
-# When SINGLE_LOCATION_STOCK_BYPASS is disabled (SINGLE_LOCATION_STOCK_BYPASS=0, default),
-# the standard multi-location stock behavior is preserved.
-#
-# HOW TO REMOVE THIS BYPASS COMPLETELY (Code Cleanup):
-# To remove this bypass mechanism entirely without relying on environment variables:
-# 1. In this file (`backend/src/services/queries/stocks.py`):
-#    - Remove the `if _is_single_location_bypass_active():` branch in `update_or_move_stock`
-#      and `get_or_merge_stock`, keeping only the standard multi-location logic.
-#    - Remove `SINGLE_LOCATION_STOCK_BYPASS` and `_is_single_location_bypass_active()`.
-# 2. In `backend/.env.example` and `backend/.env`:
-#    - Remove the `SINGLE_LOCATION_STOCK_BYPASS` configuration variable.
-# 3. In `docs/OPERATIONS.md`:
-#    - Remove the single-location bypass section and configuration table entry.
+# STOCK_LOCATION_MODE=multi (default) keeps the standard multi-location behaviour.
+# Legacy flags SINGLE_LOCATION_STOCK_BYPASS / STOCK_SINGLE_LOCATION_BYPASS are deprecated
+# aliases (see src/config.py: stock_location_mode). The duplicated branches below are
+# replaced by one engine with a LocationPolicy in IMPLEMENTATION_PLAN T4.3.
 # ==============================================================================
 
 
@@ -76,7 +61,7 @@ def update_or_move_stock(
         raise ValueError("Stock quantity cannot be negative")
 
     with get_db() as db:
-        if _is_single_location_bypass_active():
+        if _is_single_location_mode():
             existing_records = list(
                 db.execute(select(Stock).filter(Stock.sku == sku)).scalars().all()
             )
@@ -277,7 +262,7 @@ def get_all_stocks_data(join_warehouse: bool = False):
 def get_or_merge_stock(sku: str, location: Optional[str], qty: int, username: str) -> Stock:
     loc_clean = location.strip() if location and location.strip() else None
     with get_db() as db:
-        if _is_single_location_bypass_active():
+        if _is_single_location_mode():
             existing_records = list(
                 db.execute(select(Stock).filter(Stock.sku == sku)).scalars().all()
             )

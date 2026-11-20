@@ -155,3 +155,33 @@ ALLOW_REGISTRATION: bool = get_config_bool("ALLOW_REGISTRATION", not PRODUCTION_
 EXPOSE_API_DOCS: bool = get_config_bool("EXPOSE_API_DOCS", not PRODUCTION_RULES)
 RECIPIENT_RETENTION_DAYS: int = get_config_int("RECIPIENT_RETENTION_DAYS", 30)
 RECIPIENT_RETENTION_MAX_DAYS: int = 90  # Shopee DPP maximum
+
+# ------------------------------------------------------------------------------
+# Stock location mode (docs/OPERATIONS.md "Stock Location Mode", delta A-8)
+# ------------------------------------------------------------------------------
+STOCK_LOCATION_MODES = ("multi", "single")
+_LEGACY_STOCK_MODE_FLAGS = ("SINGLE_LOCATION_STOCK_BYPASS", "STOCK_SINGLE_LOCATION_BYPASS")
+_warned_legacy_stock_flags: set[str] = set()
+
+
+def stock_location_mode() -> str:
+    """``multi`` (default) or ``single``, evaluated on every call.
+
+    ``STOCK_LOCATION_MODE`` wins. The legacy boolean flags are accepted as deprecated aliases
+    (a truthy value means ``single``) and log a warning once per process.
+    """
+    raw = (get_config_value("STOCK_LOCATION_MODE") or "").strip().lower()
+    if raw in STOCK_LOCATION_MODES:
+        return raw
+    if raw:
+        logger.warning(f"Unknown STOCK_LOCATION_MODE {raw!r}; using 'multi'")
+        return "multi"
+    for flag in _LEGACY_STOCK_MODE_FLAGS:
+        value = get_config_value(flag)
+        if value is None or value.strip() == "":
+            continue
+        if flag not in _warned_legacy_stock_flags:
+            _warned_legacy_stock_flags.add(flag)
+            logger.warning(f"{flag} is deprecated; set STOCK_LOCATION_MODE=single|multi instead")
+        return "single" if get_config_bool(flag, False) else "multi"
+    return "multi"

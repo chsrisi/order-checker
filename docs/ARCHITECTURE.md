@@ -87,7 +87,7 @@ Stock is stored per SKU/location (many-to-one relationship from stocks to wareho
 
 Item picking (`POST /pick-items` / `create_pick_item_entry`) deducts available inventory based on the picked quantity. If a pick would cause negative inventory (insufficient or missing stock), the system logs a warning, sets available stock to 0, and proceeds with a successful response to prevent blocking picking operations while broadcasting real-time `stocks_update` and `pick_item_entries_update` events.
 
-When `SINGLE_LOCATION_STOCK_BYPASS=1` is active, the system enforces a single-location invariant per SKU: mutations without a location update the existing location, while mutations specifying a new location automatically transfer all inventory to the new location first. Synchronizing active bypass modes and settings dynamically to client frontends is scheduled under the future **Sync Milestone** alongside Over-The-Air (OTA) updates.
+When `STOCK_LOCATION_MODE=single` is active, the system enforces a single-location invariant per SKU: mutations without a location update the existing location, while mutations specifying a new location automatically transfer all inventory to the new location first. Synchronizing active modes and settings dynamically to client frontends is scheduled under the future **Sync Milestone** alongside Over-The-Air (OTA) updates.
 
 
 ## Data ownership

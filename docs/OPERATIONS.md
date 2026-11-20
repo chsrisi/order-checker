@@ -220,7 +220,8 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | Name | Type | Default | Required | Notes |
 | --- | --- | --- | --- | --- |
 | `MOCK_ORDER_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to bypass Shopee OpenAPI synchronization failures and serve local/seeded database orders. Default `0` raises exceptions on sync failure. |
-| `SINGLE_LOCATION_STOCK_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to restrict inventory items to a single warehouse location. Default `0` preserves standard multi-location stock. |
+| `STOCK_LOCATION_MODE` | string | `multi` | No | `multi`: an item may have stock in several locations. `single`: at most one location per item. Both are valid in production. See "Stock Location Mode". |
+| `SINGLE_LOCATION_STOCK_BYPASS`, `STOCK_SINGLE_LOCATION_BYPASS` | bool | unset | No | **Deprecated aliases** of `STOCK_LOCATION_MODE` (truthy = `single`). Used only when `STOCK_LOCATION_MODE` is unset; they log a deprecation warning. |
 
 ---
 
@@ -262,28 +263,31 @@ If the project no longer requires the mock order bypass mechanism and you wish t
 
 ---
 
-## Single-Location Stock Bypass
+## Stock Location Mode
 
 ### Purpose & Behavior
-The default inventory data model allows a many-to-one relationship between stock records and warehouse items (i.e., an item can be distributed across multiple physical storage bins or shelf locations).
+`STOCK_LOCATION_MODE` selects how inventory locations work. Both modes are supported
+business modes, not development bypasses (delta A-8), and the value is not restricted in production.
 
-The **Single-Location Stock Bypass** (`SINGLE_LOCATION_STOCK_BYPASS=1`) enforces an operational constraint where an item can only exist in at most **one** warehouse location:
+- **`multi` (default)**: an item may have stock in several bins. Adding or setting stock at
+  location `A` does not affect stock at location `B`.
+- **`single`**: an item has stock in at most **one** location:
+  - **Add or set without a location (`location=None`)**: updates the item's sole existing
+    location (or the item's default location if no stock row exists).
+  - **Add or set with a location (`location="LOC-X"`)**: first moves all existing stock of
+    that item to `LOC-X` (removing the old rows), then applies the `add` or `set` there.
+  - **Move / transfer (`move_to="LOC-Y"`)**: moves all stock of the item to `LOC-Y`.
 
-- **`SINGLE_LOCATION_STOCK_BYPASS=0` (default)**: Multi-location stock enabled. Adding or setting stock at location `A` does not affect stock at location `B`.
-- **`SINGLE_LOCATION_STOCK_BYPASS=1` (or `true`)**: Single-location bypass enabled:
-  - **Add or Set without Location (`location=None`)**: Updates or sets the quantity in the item's sole existing location (or default item location if none exists).
-  - **Add or Set with Location (`location="LOC-X"`)**: Automatically transfers all existing stock from other locations to `LOC-X` first (deleting the old location records), and then applies the `add` or `set` operation at `LOC-X`.
-  - **Move / Transfer (`move_to="LOC-Y"`)**: Transfers all stock for that item to `LOC-Y`.
+The legacy variables `SINGLE_LOCATION_STOCK_BYPASS` and `STOCK_SINGLE_LOCATION_BYPASS` still
+work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them with
+`STOCK_LOCATION_MODE=single`.
 
-### Complete Removal Instructions (Code Cleanup)
-If the project permanently moves away from single-location bypass support:
-
-1. **Modify `backend/src/services/queries/stocks.py`**:
-   - Remove `_is_single_location_bypass_active()`, `SINGLE_LOCATION_STOCK_BYPASS`, and the `if _is_single_location_bypass_active():` branches in `update_or_move_stock` and `get_or_merge_stock`.
-2. **Clean `.env.example` and `.env`**:
-   - Remove `SINGLE_LOCATION_STOCK_BYPASS`.
-3. **Update Documentation**:
-   - Remove the Single-Location Stock Bypass section from `docs/OPERATIONS.md`.
+### Switching modes
+- `single` → `multi`: no data change is needed.
+- `multi` → `single`: items that already have stock in several bins stay as they are until
+  their next mutation. A one-off merge command (`scripts/stock_merge_single.py`, delta A-8b)
+  is planned with the inventory integrity release (IMPLEMENTATION_PLAN T4.3). Until then,
+  switch to `single` only when every item has at most one stock row.
 
 ---
 
