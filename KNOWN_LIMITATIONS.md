@@ -29,9 +29,9 @@ This document tracks known architectural, library, and system limitations within
 ---
 
 ### 2. API Stability & Production Hardening
-- **Issue**: The project has not been thoroughly tested and hardened for production settings. As a result, backend APIs, request/response schemas, and endpoints may change frequently or unexpectedly.
+- **Issue**: The admin API and backend internals still change between releases. Production hardening is tracked in `docs/IMPLEMENTATION_PLAN.md`. Startup rules per environment (`APP_ENV`), the production compose override, Redis auth, login throttling and request size limits are in place (step 2).
 - **Countermeasure / Impact**:
-  - Frontend components and external consumers calling the API must account for API volatility.
+  - The **operator client** API is frozen as contract v1 and protected by contract tests (see #8). Only the admin app and backend internals may change.
   - When making backend changes, keep `docs/API.md` updated with the latest endpoint specifications to prevent contract mismatches.
 - **Code References**:
   - Backend API routers: `backend/`

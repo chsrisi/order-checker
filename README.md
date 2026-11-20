@@ -37,6 +37,11 @@ Requirements: Docker with Compose, Flutter 3.x/Dart 3.9+ for the UIs.
 
    For sensitive credentials (passwords, keys), Docker Secrets and secret files in `backend/.secrets/` are used.
 
+   Keep `APP_ENV=development` (set in `.env.example`) for local work. If `APP_ENV` is unset,
+   **production rules** apply, and startup refuses default passwords, `CORS_ORIGINS=*`,
+   unauthenticated Redis and similar settings. Production uses
+   `docker compose -f compose.yaml -f compose.prod.yaml`; see `docs/OPERATIONS.md`.
+
 3. Start the stack:
 
    ```bash
@@ -46,7 +51,8 @@ Requirements: Docker with Compose, Flutter 3.x/Dart 3.9+ for the UIs.
 
 
    The API runs at `http://localhost:8000`; interactive OpenAPI docs are at
-   `http://localhost:8000/docs`. Alembic migrations run on container startup.
+   `http://localhost:8000/docs` (development only, or with `EXPOSE_API_DOCS=1`). Alembic
+   migrations run on container startup.
 
 4. Add this untracked `.env` to each Flutter app:
 
