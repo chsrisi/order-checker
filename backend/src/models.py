@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 from datetime import datetime, UTC
 from typing import List, Optional, Union, Annotated, Any, Literal
 
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float
+from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float, Index, text
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from pydantic import (
@@ -200,6 +200,32 @@ class PickItemEntry(Base):
 
     owner: Mapped["User"] = relationship("User", back_populates="pies")
     order: Mapped[Optional["ShopeeOrder"]] = relationship("ShopeeOrder", back_populates="pies")
+    allocations: Mapped[List["PickStockAllocation"]] = relationship(
+        "PickStockAllocation",
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        order_by="PickStockAllocation.id",
+    )
+
+
+class PickStockAllocation(Base):
+    """Where a pick entry's deducted stock came from (delta D4.3 rule 1): the restore source.
+
+    ``sum(qty)`` can be lower than the entry's ``qty`` when the pick found too little stock
+    (shortfall); only allocated quantity is ever restored."""
+
+    __tablename__ = "pick_stock_allocations"
+    __table_args__ = {"schema": "orders"}
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pick_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.pick_item_entries.id", ondelete="CASCADE"), index=True
+    )
+    sku: Mapped[str] = mapped_column(String)
+    location: Mapped[Optional[str]] = mapped_column(String)
+    qty: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    entry: Mapped["PickItemEntry"] = relationship("PickItemEntry", back_populates="allocations")
 
 
 class PickItemEntryLog(Base):
@@ -285,9 +311,17 @@ class WarehouseItem(Base):
 
 
 class Stock(Base):
-    # one (WarehouseItem) to many (Stock)
+    # one (WarehouseItem) to many (Stock); at most one row per (sku, location), NULL included
     __tablename__ = "stocks"
-    __table_args__ = {"schema": "warehouse"}
+    __table_args__ = (
+        Index(
+            "uq_stocks_sku_location",
+            "sku",
+            text("coalesce(location, '')"),
+            unique=True,
+        ),
+        {"schema": "warehouse"},
+    )
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     sku: Mapped[str] = mapped_column(ForeignKey("warehouse.items.sku"))
     stock: Mapped[int] = mapped_column(Integer)
@@ -297,11 +331,23 @@ class Stock(Base):
 
 
 class StocksLog(Base):
+    """Stock audit trail. ``message`` is the legacy free-text form; rows written since T4.3
+    also carry the structured fields (``reason`` values: see queries/stocks.py REASONS)."""
+
     __tablename__ = "stocks_log"
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     message: Mapped[str] = mapped_column(String)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    sku: Mapped[Optional[str]] = mapped_column(String, index=True)
+    location: Mapped[Optional[str]] = mapped_column(String)
+    delta: Mapped[Optional[int]] = mapped_column(Integer)
+    before: Mapped[Optional[int]] = mapped_column(Integer)
+    after: Mapped[Optional[int]] = mapped_column(Integer)
+    reason: Mapped[Optional[str]] = mapped_column(String)
+    actor: Mapped[Optional[str]] = mapped_column(String)
+    ref_type: Mapped[Optional[str]] = mapped_column(String)
+    ref_id: Mapped[Optional[str]] = mapped_column(String)
 
 
 class BOMHeader(Base):

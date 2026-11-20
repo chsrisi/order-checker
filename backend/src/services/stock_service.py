@@ -37,15 +37,3 @@ async def update_or_move_stock(
 
     await conn_mgr.broadcast(WSMessageType.STOCKS)
     return res, item_name
-
-
-async def get_or_merge_stock(sku: str, location: Optional[str], qty: int, username: str) -> Stock:
-    try:
-        res = await asyncio.to_thread(
-            queries.get_or_merge_stock, sku=sku, location=location, qty=qty, username=username
-        )
-    except ValueError as e:
-        raise DomainException(status_code=400, detail=str(e))
-
-    await conn_mgr.broadcast(WSMessageType.STOCKS)
-    return res

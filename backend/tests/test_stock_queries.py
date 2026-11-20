@@ -205,28 +205,6 @@ def test_update_or_move_stock_validation_and_zero_qty(sqlite_test_db, monkeypatc
     assert res.stock == 0
 
 
-def test_get_or_merge_stock_returns_accessible_stock(sqlite_test_db):
-    res = stock_queries.get_or_merge_stock(
-        sku="TEST-SKU-001",
-        location="LOC-MERGE",
-        qty=8,
-        username="tester",
-    )
-    assert res.sku == "TEST-SKU-001"
-    assert res.stock == 8
-    assert res.location == "LOC-MERGE"
-
-    # Merge / update
-    res2 = stock_queries.get_or_merge_stock(
-        sku="TEST-SKU-001",
-        location="LOC-MERGE",
-        qty=12,
-        username="tester",
-    )
-    assert res2.sku == "TEST-SKU-001"
-    assert res2.stock == 12
-
-
 def test_get_stocks_data_queries(sqlite_test_db):
     # Retrieve without join
     stocks = stock_queries.get_stocks_data(join_warehouse=False)
@@ -454,48 +432,6 @@ def test_single_location_bypass_move_to_operations(sqlite_test_db, monkeypatch):
         assert len(records) == 1
         assert records[0].location == "LOC-2"
         assert records[0].stock == 15
-
-
-def test_single_location_bypass_get_or_merge_stock(sqlite_test_db, monkeypatch):
-    monkeypatch.setenv("SINGLE_LOCATION_STOCK_BYPASS", "1")
-
-    # First merge at LOC-A
-    res1 = stock_queries.get_or_merge_stock(
-        sku="TEST-SKU-001",
-        location="LOC-A",
-        qty=10,
-        username="tester",
-    )
-    assert res1.stock == 10
-    assert res1.location == "LOC-A"
-
-    # Merge at LOC-B -> removes LOC-A and sets LOC-B
-    res2 = stock_queries.get_or_merge_stock(
-        sku="TEST-SKU-001",
-        location="LOC-B",
-        qty=25,
-        username="tester",
-    )
-    assert res2.stock == 25
-    assert res2.location == "LOC-B"
-
-    # Merge with location=None -> preserves sole location LOC-B
-    res3 = stock_queries.get_or_merge_stock(
-        sku="TEST-SKU-001",
-        location=None,
-        qty=30,
-        username="tester",
-    )
-    assert res3.stock == 30
-    assert res3.location == "LOC-B"
-
-    with sqlite_test_db() as db:
-        records = db.execute(
-            select(Stock).filter(Stock.sku == "TEST-SKU-001")
-        ).scalars().all()
-        assert len(records) == 1
-        assert records[0].stock == 30
-        assert records[0].location == "LOC-B"
 
 
 def test_single_location_bypass_move_to_errors_and_edge_cases(sqlite_test_db, monkeypatch):

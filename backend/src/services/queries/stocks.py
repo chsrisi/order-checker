@@ -1,44 +1,267 @@
+"""Inventory engine (IMPLEMENTATION_PLAN T4.3, delta D4.3, STOCK_MODEL_DISCUSSION §8).
+
+One engine for both stock location modes. The only mode-specific decisions live in a
+``LocationPolicy``:
+
+==================  ===========================================  ==============================
+decision            ``multi`` (default)                          ``single``
+==================  ===========================================  ==============================
+target for set/add  requested location; else the SKU's only bin;   requested location; else the
+                    else the unlocated bin                         SKU's current location
+invariant           none                                           merge every other row into
+                                                                   the target (``mode_merge``)
+transfer source     the requested bin, requested quantity          all rows, everything
+deduction order     ``location`` ascending, unlocated bin last     same (one row)
+restore target      the allocation's original bin (recreated)      the current sole location
+==================  ===========================================  ==============================
+
+Shared rules:
+
+* rows are locked ``ORDER BY sku, location FOR UPDATE`` (pick entry, then allocations, then
+  stock, in pick paths)
+* a row that reaches 0 is deleted; restores recreate it
+* every change writes a structured ``StocksLog`` row (``REASONS``)
+* functions taking ``db`` never commit: the caller owns the transaction (T4.2). The public
+  ``update_or_move_stock`` is its own unit of work.
+
+The schema has no per-item default location (``WarehouseItem.location`` is derived from the
+existing bins), so the "item default first" deduction rule (Q3) reduces to location order.
+"""
+
+from __future__ import annotations
+
 import logging
+from dataclasses import dataclass
 from typing import Optional
-from sqlalchemy import select
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from ...models import Stock, StocksLog, WarehouseItem
+
 from ...config import stock_location_mode
+from ...models import PickItemEntry, PickStockAllocation, Stock, StocksLog, WarehouseItem
 from .engine import get_db
 from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.stocks")
 
-def _is_single_location_mode() -> bool:
-    return stock_location_mode() == "single"
+REASONS = (
+    "adjust_set",
+    "adjust_add",
+    "transfer_out",
+    "transfer_in",
+    "pick",
+    "pick_shortfall",
+    "pick_restore",
+    "mode_merge",
+    "cutover_clear",
+    "migration_merge",
+)
 
 
-# ==============================================================================
-# STOCK LOCATION MODE (STOCK_LOCATION_MODE=multi|single, default multi)
-# ==============================================================================
-# Both modes are supported business modes (delta A-8), not a development bypass.
-# The default data model allows many stock rows per item (one per warehouse location).
-#
-# When STOCK_LOCATION_MODE=single:
-#   1. An item stock can only exist in a single location in the database.
-#   2. For add or set operations with NO location specified (location=None):
-#      - If the item already has a stock record in some location, update the stock
-#        in that sole existing location.
-#      - If the item has no existing stock records, create the stock at the item's
-#        default location (from WarehouseItem.location) or None.
-#   3. For add or set operations WITH a location specified (location="..."):
-#      - If existing stock exists at another location (or multiple locations),
-#        transfer all existing stock to the new location first (removing the old
-#        records), and then apply the add or set operation at the new location.
-#   4. For transfer (move_to) operations:
-#      - Transfers all stock of the item to move_to, ensuring the item remains in
-#        only 1 location.
-#
-# STOCK_LOCATION_MODE=multi (default) keeps the standard multi-location behaviour.
-# Legacy flags SINGLE_LOCATION_STOCK_BYPASS / STOCK_SINGLE_LOCATION_BYPASS are deprecated
-# aliases (see src/config.py: stock_location_mode). The duplicated branches below are
-# replaced by one engine with a LocationPolicy in IMPLEMENTATION_PLAN T4.3.
-# ==============================================================================
+# ---------------------------------------------------------------------------- policies
+def _location_key(row: Stock) -> tuple[bool, str]:
+    return (row.location is None, row.location or "")
+
+
+class LocationPolicy:
+    name = "base"
+    merge_into_target = False
+    transfer_all = False
+
+    def resolve_target(self, rows: list[Stock], requested: Optional[str]) -> Optional[str]:
+        raise NotImplementedError
+
+    def deduction_order(self, rows: list[Stock]) -> list[Stock]:
+        return sorted(rows, key=_location_key)
+
+    def restore_target(self, rows: list[Stock], original: Optional[str]) -> Optional[str]:
+        raise NotImplementedError
+
+
+class MultiLocationPolicy(LocationPolicy):
+    name = "multi"
+
+    def resolve_target(self, rows, requested):
+        if requested is not None:
+            return requested
+        return rows[0].location if len(rows) == 1 else None
+
+    def restore_target(self, rows, original):
+        return original
+
+
+class SingleLocationPolicy(LocationPolicy):
+    name = "single"
+    merge_into_target = True
+    transfer_all = True
+
+    def resolve_target(self, rows, requested):
+        if requested is not None:
+            return requested
+        return self.deduction_order(rows)[0].location if rows else None
+
+    def restore_target(self, rows, original):
+        return self.deduction_order(rows)[0].location if rows else original
+
+
+_POLICIES = {"multi": MultiLocationPolicy(), "single": SingleLocationPolicy()}
+
+
+def location_policy() -> LocationPolicy:
+    """Evaluated per call, so tests and an env change take effect without re-import."""
+    return _POLICIES[stock_location_mode()]
+
+
+# ------------------------------------------------------------------------ primitives
+def _clean(location: Optional[str]) -> Optional[str]:
+    if location is None:
+        return None
+    location = location.strip()
+    return location or None
+
+
+@dataclass
+class StockChange:
+    actor: str
+    reason: str
+    ref_type: Optional[str] = None
+    ref_id: Optional[str] = None
+
+
+class _Bins:
+    """The locked stock rows of one SKU, keyed by location, with logged mutations."""
+
+    def __init__(self, db: Session, sku: str):
+        self.db = db
+        self.sku = sku
+        rows = (
+            db.execute(
+                select(Stock)
+                .filter(Stock.sku == sku)
+                .order_by(Stock.sku, Stock.location, Stock.id)
+                .with_for_update()
+            )
+            .scalars()
+            .all()
+        )
+        self.rows: dict[Optional[str], Stock] = {}
+        for row in rows:
+            if row.location in self.rows:  # pre-migration duplicate: fold silently
+                self.rows[row.location].stock += row.stock
+                db.delete(row)
+            else:
+                self.rows[row.location] = row
+
+    def list(self) -> list[Stock]:
+        return list(self.rows.values())
+
+    def qty(self, location: Optional[str]) -> int:
+        row = self.rows.get(location)
+        return row.stock if row else 0
+
+    def total(self) -> int:
+        return sum(r.stock for r in self.rows.values())
+
+    def change(self, location: Optional[str], delta: int, why: StockChange) -> Stock:
+        """Apply ``delta`` at ``location`` and log it. Returns the row, or a transient
+        ``Stock(id=0, stock=0)`` when the row reached 0 and was deleted."""
+        before = self.qty(location)
+        after = before + delta
+        if after < 0:
+            raise ValueError("Insufficient stock at source location")
+        row = self.rows.get(location)
+        if delta != 0 or why.reason.startswith("adjust"):
+            self.db.add(
+                StocksLog(
+                    message=(
+                        f"{why.reason}: sku={self.sku}, location={location}, "
+                        f"delta={delta:+d}, user={why.actor}"
+                    ),
+                    sku=self.sku,
+                    location=location,
+                    delta=delta,
+                    before=before,
+                    after=after,
+                    reason=why.reason,
+                    actor=why.actor,
+                    ref_type=why.ref_type,
+                    ref_id=why.ref_id,
+                )
+            )
+        if after == 0:
+            if row is not None:
+                self.db.delete(row)
+                del self.rows[location]
+                self.db.flush()  # before any re-insert of this (sku, location)
+            return Stock(id=0, sku=self.sku, stock=0, location=location)
+        if row is None:
+            row = Stock(sku=self.sku, stock=after, location=location)
+            self.db.add(row)
+            self.rows[location] = row
+        else:
+            row.stock = after
+        self.db.flush()
+        return row
+
+    def merge_into(self, target: Optional[str], actor: str) -> None:
+        """``single`` invariant: move every other row into ``target`` (logged mode_merge)."""
+        for location in [loc for loc in self.rows if loc != target]:
+            qty = self.rows[location].stock
+            why = StockChange(actor=actor, reason="mode_merge")
+            self.change(location, -qty, why)
+            self.change(target, qty, why)
+
+
+def _log_note(db: Session, sku: str, reason: str, actor: str, message: str, **ref) -> None:
+    db.add(StocksLog(message=message, sku=sku, delta=0, reason=reason, actor=actor, **ref))
+
+
+# ------------------------------------------------------------------- adjust / transfer
+def apply_stock_update(
+    db: Session,
+    sku: str,
+    stock_qty: int,
+    username: str,
+    mode: str = "set",
+    location: Optional[str] = None,
+    move_to: Optional[str] = None,
+) -> Stock:
+    if stock_qty < 0:
+        raise ValueError("Stock quantity cannot be negative")
+    if mode not in ("set", "add"):
+        raise ValueError("Invalid mode")
+    policy = location_policy()
+    bins = _Bins(db, sku)
+    requested, move_to = _clean(location), _clean(move_to)
+
+    if move_to is not None:
+        source = policy.resolve_target(bins.list(), requested)
+        if source == move_to:
+            row = bins.rows.get(move_to)
+            return row or Stock(id=0, sku=sku, stock=0, location=move_to)
+        available = bins.total() if policy.transfer_all else bins.qty(source)
+        if available <= 0:
+            raise ValueError("Source location has no stock")
+        if available < stock_qty:
+            raise ValueError("Insufficient stock at source location")
+        if policy.transfer_all:
+            moves = [(loc, bins.qty(loc)) for loc in list(bins.rows) if loc != move_to]
+        else:
+            moves = [(source, stock_qty)]
+        result = bins.rows.get(move_to) or Stock(id=0, sku=sku, stock=0, location=move_to)
+        for loc, qty in moves:
+            bins.change(loc, -qty, StockChange(username, "transfer_out", "transfer", move_to))
+            result = bins.change(
+                move_to, qty, StockChange(username, "transfer_in", "transfer", str(loc))
+            )
+        return result
+
+    target = policy.resolve_target(bins.list(), requested)
+    if policy.merge_into_target:
+        bins.merge_into(target, username)
+    current = bins.qty(target)
+    delta = stock_qty if mode == "add" else stock_qty - current
+    return bins.change(target, delta, StockChange(username, f"adjust_{mode}"))
 
 
 def update_or_move_stock(
@@ -48,196 +271,136 @@ def update_or_move_stock(
     mode: str = "set",
     location: Optional[str] = None,
     move_to: Optional[str] = None,
-    is_location_set: bool = True,
+    is_location_set: bool = True,  # accepted for compatibility; the policy decides
 ) -> tuple[Stock, Optional[str]]:
     item = resolve_barcode_to_item(sku_in)
     if not item:
         raise LookupError(f"Item with SKU or barcode '{sku_in}' not found")
-    sku = item.sku
-    loc_clean = location if location != "" and location is not None else None
-    move_to_clean = move_to if move_to != "" and move_to is not None else None
-
     if stock_qty < 0:
         raise ValueError("Stock quantity cannot be negative")
-
     with get_db() as db:
-        if _is_single_location_mode():
-            existing_records = list(
-                db.execute(select(Stock).filter(Stock.sku == sku)).scalars().all()
+        try:
+            res = apply_stock_update(
+                db, item.sku, stock_qty, username, mode=mode, location=location, move_to=move_to
             )
-            total_existing_stock = sum(r.stock for r in existing_records)
-
-            if move_to_clean is not None:
-                if loc_clean == move_to_clean:
-                    target_rec = next(
-                        (r for r in existing_records if r.location == loc_clean), None
-                    )
-                    if not target_rec:
-                        target_rec = Stock(sku=sku, stock=0, location=loc_clean)
-                        db.add(target_rec)
-                        db.flush()
-                    res = target_rec
-                else:
-                    if total_existing_stock <= 0:
-                        raise ValueError("Source location has no stock")
-                    if total_existing_stock < stock_qty:
-                        raise ValueError("Insufficient stock at source location")
-
-                    # In single-location mode, transfer all stock to move_to
-                    for r in existing_records:
-                        db.delete(r)
-                    db.flush()
-
-                    new_qty = total_existing_stock
-                    if new_qty <= 0:
-                        res = Stock(id=0, sku=sku, stock=0, location=move_to_clean)
-                    else:
-                        dest = Stock(sku=sku, stock=new_qty, location=move_to_clean)
-                        db.add(dest)
-                        db.flush()
-                        res = dest
-            else:
-                # Add or Set operation in single-location bypass mode
-                if loc_clean is None:
-                    # No location provided -> update in that sole existing location
-                    if existing_records:
-                        target_location = existing_records[0].location
-                        target_rec = existing_records[0]
-                        for r in existing_records[1:]:
-                            db.delete(r)
-
-                        if mode == "add":
-                            target_rec.stock = total_existing_stock + stock_qty
-                        else:
-                            target_rec.stock = stock_qty
-
-                        if target_rec.stock <= 0:
-                            db.delete(target_rec)
-                            res = Stock(id=0, sku=sku, stock=0, location=target_location)
-                        else:
-                            res = target_rec
-                    else:
-                        # No existing stock -> create at item's default location or None
-                        target_location = loc_clean if is_location_set else item.location
-                        new_stock = stock_qty
-                        if new_stock <= 0:
-                            res = Stock(id=0, sku=sku, stock=0, location=target_location)
-                        else:
-                            stock_rec = Stock(
-                                sku=sku,
-                                stock=new_stock,
-                                location=target_location,
-                            )
-                            db.add(stock_rec)
-                            db.flush()
-                            res = stock_rec
-                else:
-                    # Location is provided -> transfer all existing to new location, then do add/set op
-                    for r in existing_records:
-                        db.delete(r)
-                    db.flush()
-
-                    if mode == "add":
-                        new_stock = total_existing_stock + stock_qty
-                    else:
-                        new_stock = stock_qty
-
-                    if new_stock <= 0:
-                        res = Stock(id=0, sku=sku, stock=0, location=loc_clean)
-                    else:
-                        dest = Stock(sku=sku, stock=new_stock, location=loc_clean)
-                        db.add(dest)
-                        db.flush()
-                        res = dest
-        else:
-            # Standard multi-location mode
-            if move_to_clean is not None:
-                if loc_clean == move_to_clean:
-                    stock_rec = (
-                        db.execute(
-                            select(Stock).filter(Stock.sku == sku, Stock.location == loc_clean)
-                        )
-                        .scalars()
-                        .first()
-                    )
-                    if not stock_rec:
-                        stock_rec = Stock(sku=sku, stock=0, location=loc_clean)
-                        db.add(stock_rec)
-                        db.flush()
-                    res = stock_rec
-                else:
-                    source = (
-                        db.execute(
-                            select(Stock).filter(Stock.sku == sku, Stock.location == loc_clean)
-                        )
-                        .scalars()
-                        .first()
-                    )
-                    if not source:
-                        raise ValueError("Source location has no stock")
-                    if source.stock < stock_qty:
-                        raise ValueError("Insufficient stock at source location")
-
-                    dest = (
-                        db.execute(
-                            select(Stock).filter(Stock.sku == sku, Stock.location == move_to_clean)
-                        )
-                        .scalars()
-                        .first()
-                    )
-                    if not dest:
-                        dest = Stock(sku=sku, stock=0, location=move_to_clean)
-                        db.add(dest)
-                        db.flush()
-
-                    source.stock -= stock_qty
-                    dest.stock += stock_qty
-
-                    if source.stock <= 0:
-                        db.delete(source)
-                    if dest.stock <= 0:
-                        db.delete(dest)
-                        res = Stock(id=0, sku=sku, stock=0, location=move_to_clean)
-                    else:
-                        res = dest
-            else:
-                stock_rec = (
-                    db.execute(
-                        select(Stock).filter(
-                            Stock.sku == sku,
-                            Stock.location == loc_clean,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if stock_rec:
-                    if mode == "add":
-                        stock_rec.stock += stock_qty
-                    else:
-                        stock_rec.stock = stock_qty
-                else:
-                    location_val = loc_clean if is_location_set else item.location
-                    stock_rec = Stock(
-                        sku=sku,
-                        stock=stock_qty,
-                        location=location_val,
-                    )
-                    db.add(stock_rec)
-                    db.flush()
-
-                if stock_rec.stock <= 0:
-                    db.delete(stock_rec)
-                    res = Stock(id=0, sku=sku, stock=0, location=loc_clean)
-                else:
-                    res = stock_rec
-
-        log_entry = StocksLog(
-            message=f"stock update: sku={sku}, qty={stock_qty}, mode={mode}, user={username}"
-        )
-        db.add(log_entry)
-        db.commit()
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         return res, item.item_name
+
+
+# ------------------------------------------------------------------------------ picks
+def deduct_for_pick(db: Session, entry: PickItemEntry, qty: int, actor: str) -> int:
+    """Deduct ``qty`` of ``entry.sku`` bin by bin, writing one allocation per bin.
+
+    Never blocks the pick: unmet quantity is logged as ``pick_shortfall`` and stays
+    unallocated (it is never restored). Returns the quantity actually deducted."""
+    if qty <= 0:
+        return 0
+    if entry.id is None:
+        db.flush()
+    bins = _Bins(db, entry.sku)
+    remaining = qty
+    ref = {"ref_type": "pick_entry", "ref_id": str(entry.id)}
+    for row in location_policy().deduction_order(bins.list()):
+        if remaining <= 0:
+            break
+        take = min(row.stock, remaining)
+        if take <= 0:
+            continue
+        location = row.location
+        bins.change(location, -take, StockChange(actor, "pick", **ref))
+        entry.allocations.append(PickStockAllocation(sku=entry.sku, location=location, qty=take))
+        remaining -= take
+    if remaining:
+        logger.warning(
+            "pick_shortfall",
+            extra={"sku": entry.sku, "requested": qty, "unmet": remaining, "username": actor},
+        )
+        _log_note(
+            db,
+            entry.sku,
+            "pick_shortfall",
+            actor,
+            f"pick_shortfall: sku={entry.sku}, requested={qty}, unmet={remaining}, user={actor}",
+            **ref,
+        )
+    db.flush()
+    return qty - remaining
+
+
+def move_pick_quantity(db: Session, src: PickItemEntry, dst: PickItemEntry, qty: int) -> None:
+    """Move ``qty`` from ``src`` to ``dst`` (assign/unassign split, Q1). Deducted quantity
+    moves first, FIFO by allocation id; shortfall stays with the remainder. No stock change."""
+    remaining = qty
+    for alloc in list(src.allocations):
+        if remaining <= 0:
+            break
+        if alloc.qty <= remaining:
+            remaining -= alloc.qty
+            alloc.entry = dst
+        else:
+            alloc.qty -= remaining
+            dst.allocations.append(
+                PickStockAllocation(
+                    sku=alloc.sku,
+                    location=alloc.location,
+                    qty=remaining,
+                    created_at=alloc.created_at,
+                )
+            )
+            remaining = 0
+    src.qty -= qty
+    dst.qty = (dst.qty or 0) + qty
+    db.flush()
+
+
+def restore_for_pick(db: Session, entry: PickItemEntry, actor: str) -> int:
+    """Return every allocation of ``entry`` to stock (delete path). Returns the quantity."""
+    allocations = (
+        db.execute(
+            select(PickStockAllocation)
+            .filter(PickStockAllocation.pick_entry_id == entry.id)
+            .order_by(PickStockAllocation.id)
+            .with_for_update()
+        )
+        .scalars()
+        .all()
+    )
+    if not allocations:
+        return 0
+    bins = _Bins(db, entry.sku)
+    policy = location_policy()
+    restored = 0
+    for alloc in allocations:
+        target = policy.restore_target(bins.list(), alloc.location)
+        bins.change(
+            target,
+            alloc.qty,
+            StockChange(actor, "pick_restore", "pick_entry", str(entry.id)),
+        )
+        restored += alloc.qty
+    return restored
+
+
+# -------------------------------------------------------------------- maintenance/read
+def merge_all_to_single(db: Session, actor: str = "maintenance") -> dict[str, int]:
+    """A-8b: collapse every multi-row SKU onto its first bin (location order)."""
+    skus = (
+        db.execute(
+            select(Stock.sku).group_by(Stock.sku).having(func.count() > 1).order_by(Stock.sku)
+        )
+        .scalars()
+        .all()
+    )
+    merged: dict[str, int] = {}
+    policy = SingleLocationPolicy()
+    for sku in skus:
+        bins = _Bins(db, sku)
+        merged[sku] = len(bins.rows)
+        bins.merge_into(policy.resolve_target(bins.list(), None), actor)
+    return merged
 
 
 def get_stocks_data(join_warehouse: bool = False):
@@ -257,130 +420,3 @@ def get_stocks_data(join_warehouse: bool = False):
 
 def get_all_stocks_data(join_warehouse: bool = False):
     return get_stocks_data(join_warehouse=join_warehouse)
-
-
-def get_or_merge_stock(sku: str, location: Optional[str], qty: int, username: str) -> Stock:
-    loc_clean = location.strip() if location and location.strip() else None
-    with get_db() as db:
-        if _is_single_location_mode():
-            existing_records = list(
-                db.execute(select(Stock).filter(Stock.sku == sku)).scalars().all()
-            )
-            target_location = loc_clean
-            if target_location is None and existing_records:
-                target_location = existing_records[0].location
-
-            for r in existing_records:
-                db.delete(r)
-            db.flush()
-
-            db_stock = Stock(
-                sku=sku,
-                location=target_location,
-                stock=qty,
-            )
-            db.add(db_stock)
-
-            log_entry = StocksLog(
-                message=f"stock update/merge: sku={sku}, qty={qty}, user={username}"
-            )
-            db.add(log_entry)
-
-            db.commit()
-            db.refresh(db_stock)
-            return db_stock
-
-        existing = (
-            db.execute(
-                select(Stock).filter(
-                    Stock.sku == sku,
-                    Stock.location == loc_clean,
-                )
-            )
-            .scalars()
-            .first()
-        )
-
-        if existing:
-            existing.stock = qty
-
-            log_entry = StocksLog(
-                message=f"stock update/merge: sku={sku}, qty={qty}, user={username}"
-            )
-            db.add(log_entry)
-
-            db.commit()
-            db.refresh(existing)
-            return existing
-
-        db_stock = Stock(
-            sku=sku,
-            location=loc_clean,
-            stock=qty,
-        )
-        db.add(db_stock)
-
-        log_entry = StocksLog(message=f"stock update/merge: sku={sku}, qty={qty}, user={username}")
-        db.add(log_entry)
-
-        db.commit()
-        db.refresh(db_stock)
-        return db_stock
-
-
-def _reduce_stock_for_pick_db(sku: str, qty: int, username: str, db: Session) -> int:
-    existing_records = list(db.execute(select(Stock).filter(Stock.sku == sku)).scalars().all())
-    total_existing_stock = sum(r.stock for r in existing_records)
-
-    if total_existing_stock < qty:
-        logger.warning(
-            f"Insufficient stock for SKU '{sku}' during pick by user '{username}': "
-            f"requested {qty}, available {total_existing_stock}. Available qty set to 0."
-        )
-        for r in existing_records:
-            db.delete(r)
-
-        log_entry = StocksLog(
-            message=f"stock pick: sku={sku}, qty={qty}, user={username}, warning=insufficient_stock"
-        )
-        db.add(log_entry)
-        db.flush()
-        return 0
-    else:
-        remaining_to_deduct = qty
-        for r in existing_records:
-            if remaining_to_deduct <= 0:
-                break
-            deduct = min(r.stock, remaining_to_deduct)
-            r.stock -= deduct
-            remaining_to_deduct -= deduct
-            if r.stock <= 0:
-                db.delete(r)
-
-        log_entry = StocksLog(message=f"stock pick: sku={sku}, qty={qty}, user={username}")
-        db.add(log_entry)
-        db.flush()
-        return total_existing_stock - qty
-
-
-def reduce_stock_for_pick(
-    sku: str,
-    qty: int,
-    username: str,
-    db: Optional[Session] = None,
-) -> int:
-    """
-    Reduces available stock for a given SKU based on pick quantity.
-    If pick qty exceeds available stock (or no stock exists), logs a warning,
-    clamps available stock to 0 without blocking the pick, and records to StocksLog.
-    Returns the remaining available stock for the SKU (>= 0).
-    """
-    if qty <= 0:
-        return 0
-
-    if db is not None:
-        return _reduce_stock_for_pick_db(sku=sku, qty=qty, username=username, db=db)
-    with get_db() as db_session:
-        res = _reduce_stock_for_pick_db(sku=sku, qty=qty, username=username, db=db_session)
-        db_session.commit()
-        return res

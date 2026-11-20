@@ -68,18 +68,27 @@ This document tracks known architectural, library, and system limitations within
 
 ---
 
-### 5. Incomplete Inventory & Stock Keeping Logic during Item Picking
-- **Issue**: The system's stock keeping logic has not been fully implemented end-to-end (historically only supporting inbound stocks via add/set stock operations). Discrepancies between physical inventory and tracked stock records could cause negative stock calculations during item picking.
-- **Countermeasure / Milestone Context**:
-  - Item picking (`POST /pick-items` / `create_pick_item_entry`) deducts the picked quantity from available warehouse inventory.
-  - When a pick operation encounters insufficient stock (or no stock records exist for the item), the backend logs a warning, sets available stock to 0 (clearing depleted stock records), and completes the pick with a successful HTTP 200 response to avoid blocking warehouse operators.
-  - Real-time updates for both `stocks_update` and `pick_item_entries_update` are broadcast via WebSockets.
-  - This fix will be issued as part of the **Integration Milestone**.
-- **Code References**:
-  - Stock reduction query: `backend/src/services/queries/stocks.py` (`reduce_stock_for_pick`)
-  - Pick item query: `backend/src/services/queries/pick_items.py` (`create_pick_item_entry`)
-  - Pick item service: `backend/src/services/pick_item_service.py` (`create_pick_item_entry`)
-  - Pick items router: `backend/src/routers/pick_items.py` (`create_pie`)
+### 5. Inventory Is Deduct-at-Pick, Not Reserved (resolved for restores in v0.5 / T4.3)
+- **History**: picks once deducted stock without recording where it came from, so a deleted
+  pick could not be restored and a concurrent pick could lose an update.
+- **Now**:
+  - One engine (`backend/src/services/queries/stocks.py`) with a `LocationPolicy` per
+    `STOCK_LOCATION_MODE`.
+  - Row locks, per-bin allocations (`orders.pick_stock_allocations`) and a structured
+    `stocks_log`.
+  - A delete restores exactly what was deducted.
+  - Shortfalls still never block a pick (HTTP 200, logged `pick_shortfall`). See OPERATIONS
+    "Inventory".
+- **Remaining limits**:
+  - Stock is *deducted* at pick time, not reserved until outbound close (stock Q6). Revisit
+    only if the Integration milestone needs available versus on-hand stock.
+  - There is no shortfall or reconciliation report yet (stock Q5: admin-only, later).
+  - There is no per-item default bin. Deduction uses location order only.
+  - A concurrent restore that recreates the same deleted bin can fail one request on the
+    unique index. It is rare; retrying succeeds.
+- **Code References**: `queries/stocks.py` (`apply_stock_update`, `deduct_for_pick`,
+  `move_pick_quantity`, `restore_for_pick`), `queries/pick_items.py`,
+  `tests/integration/test_stock_engine_pg.py`.
 
 ---
 

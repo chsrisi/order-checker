@@ -23,7 +23,10 @@ router = APIRouter(prefix="/pick-items", tags=["pick items"])
     response_model=PickItemEntryResponse,
     summary="Add a pick-list entry",
     description="Resolves the SKU/barcode and merges the quantity into a matching user/order entry.",
-    responses={404: {"description": "SKU/barcode not found"}},
+    responses={
+        404: {"description": "SKU/barcode not found, or `order_sn` not claimed by the caller"},
+        409: {"description": "`order_sn` is already completed"},
+    },
 )
 async def create_pie(
     payload: PickItemEntryCreate,
@@ -87,6 +90,7 @@ def get_pies(current_user: User = Depends(get_current_user)):
     responses={
         400: {"description": "Invalid quantity"},
         404: {"description": "Entry or claimed order not found"},
+        409: {"description": "Order already completed"},
     },
 )
 async def assign_pie(
@@ -119,7 +123,10 @@ async def assign_pie(
     "/{entry_id}",
     response_model=MessageResponse,
     summary="Delete a pick entry",
-    description="Operators may delete their own entries; administrators may delete any entry.",
+    description=(
+        "Operators may delete their own entries; administrators may delete any entry. "
+        "The stock the entry deducted is returned to inventory."
+    ),
     responses={404: {"description": "Entry not found or not owned by user"}},
 )
 async def delete_pie(

@@ -49,10 +49,10 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET | `/shopee/orders` | User | Synchronize active orders; returns all for admins, only the caller's claimed orders for operators |
 | POST | `/shopee/orders/acquire` | User | Atomically claim an order. 404 if unknown; 409 if another operator owns it or it is already completed |
 | POST | `/shopee/reset-cache-state` | Admin | Reset sync circuit/cache |
-| GET/POST | `/pick-items` | User | List/create pick entries (POST deducts from available stock; clamps to 0 on negative) |
-| POST | `/pick-items/{id}/assign` | User | Assign quantity to claimed order |
+| GET/POST | `/pick-items` | User | List/create pick entries (POST deducts stock bin by bin; a shortfall never fails the pick; `order_sn` must be claimed by the caller and not done: 404/409) |
+| POST | `/pick-items/{id}/assign` | User | Assign quantity to a claimed, unfinished order (404/409); stock unchanged |
 | POST | `/pick-items/unassign` | User | Return quantity to general picks |
-| DELETE | `/pick-items/{id}` | User | Delete owned entry; admin may delete any |
+| DELETE | `/pick-items/{id}` | User | Delete owned entry (admin: any) and return its deducted stock |
 
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.

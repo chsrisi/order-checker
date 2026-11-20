@@ -104,15 +104,23 @@ docker compose -f compose.yaml -f compose.prod.yaml exec server python -m script
 It writes `.secrets/admin_password` to the existing admin, refuses placeholder values,
 and revokes the admin's sessions.
 
-### Step 4 release (inventory integrity, T4.3/T4.4)
+### Step 4 release (inventory integrity, T4.3/T4.4; planned v0.5.0)
 
-This window ships the allocation table and the structured stock log. Per delta D5 / Q4:
+This window ships the allocation table and the structured stock log (migration
+`b7c4e1a9d2f3`, down revision `d862d86e8707`). Per delta D5 / Q4:
 
 1. Operators finish their open picks before the window.
-2. Deploy as in §2. The migration adds the new table and columns and merges duplicate
-   `(sku, location)` rows.
-3. Run the cutover command, which deletes the remaining open pick entries **without restoring
+2. Back up and deploy as in §2. The migration adds the new table and columns. It folds duplicate
+   `(sku, location)` stock rows into one, logged `migration_merge`, before the unique index is
+   created. A downgrade keeps the folded rows.
+3. Run the cutover command. It deletes the remaining open pick entries **without restoring
    stock** and writes one `cutover_clear` log row:
-   `docker compose exec server python -m scripts.clear_open_pick_entries --confirm`
-4. If production runs `STOCK_LOCATION_MODE=single`, also run the merge command
-   (`scripts.stock_merge_single`) per OPERATIONS "Stock Location Mode".
+   ```bash
+   docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries            # count only
+   docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries --confirm
+   ```
+   If this step is missed, a legacy entry has no allocations, and deleting it restores nothing.
+   Nothing is guessed.
+4. If production runs `STOCK_LOCATION_MODE=single`, also run
+   `python -m scripts.stock_merge_single --confirm` (OPERATIONS "Stock Location Mode").
+5. Smoke test: pick 1 of an item, delete the entry, and check that the stock is back.

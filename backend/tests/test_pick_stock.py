@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import create_engine, event, select
@@ -12,6 +13,7 @@ from src.models import (
     PickItemEntry,
     WSMessageType,
     PickItemEntryCreate,
+    ShopeeOrder,
     User,
 )
 from src.services.queries import stocks as stock_queries
@@ -70,87 +72,56 @@ def sqlite_test_db(monkeypatch):
     test_engine.dispose()
 
 
-def test_reduce_stock_for_pick_zero_or_negative_qty(sqlite_test_db):
-    assert stock_queries.reduce_stock_for_pick("SKU-PICK-001", 0, "tester") == 0
-    assert stock_queries.reduce_stock_for_pick("SKU-PICK-001", -5, "tester") == 0
+def _stocks(db_factory):
+    with db_factory() as db:
+        rows = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
+        return {r.location: r.stock for r in rows}
 
 
-def test_reduce_stock_for_pick_sufficient_stock_single_location(sqlite_test_db):
-    with sqlite_test_db() as db:
-        db.add(Stock(sku="SKU-PICK-001", stock=10, location="LOC-A"))
+def _logs(db_factory, reason):
+    with db_factory() as db:
+        return db.execute(select(StocksLog).filter(StocksLog.reason == reason)).scalars().all()
+
+
+def _seed_stock(db_factory, *bins):
+    with db_factory() as db:
+        for location, qty in bins:
+            db.add(Stock(sku="SKU-PICK-001", stock=qty, location=location))
         db.commit()
 
-    remaining = stock_queries.reduce_stock_for_pick("SKU-PICK-001", 4, "tester")
-    assert remaining == 6
 
-    with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 1
-        assert records[0].stock == 6
-
-        logs = db.execute(select(StocksLog)).scalars().all()
-        assert any("stock pick: sku=SKU-PICK-001, qty=4" in log.message for log in logs)
-
-
-def test_reduce_stock_for_pick_multi_location_sequential_deduction(sqlite_test_db):
-    with sqlite_test_db() as db:
-        db.add(Stock(sku="SKU-PICK-001", stock=3, location="LOC-A"))
-        db.add(Stock(sku="SKU-PICK-001", stock=7, location="LOC-B"))
+def _seed_order(db_factory, order_sn="240830123", owner="operator_1", done=False):
+    with db_factory() as db:
+        db.add(
+            ShopeeOrder(
+                order_sn=order_sn,
+                owner_user=owner,
+                done=done,
+                split_up=False,
+                ship_by=datetime.now(UTC),
+                status="PROCESSED",
+            )
+        )
         db.commit()
 
-    # Deduct 5 (3 from LOC-A -> deleted, 2 from LOC-B -> 5 remaining)
-    remaining = stock_queries.reduce_stock_for_pick("SKU-PICK-001", 5, "tester")
-    assert remaining == 5
 
-    with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 1
-        assert records[0].location == "LOC-B"
-        assert records[0].stock == 5
+def test_pick_deducts_bins_in_location_order_with_allocations(sqlite_test_db):
+    _seed_stock(sqlite_test_db, ("LOC-B", 7), ("LOC-A", 3))
+    pie = pick_queries.create_pick_item_entry(sku="SKU-PICK-001", qty=5, username="tester")
 
-
-def test_reduce_stock_for_pick_insufficient_stock_clamps_to_zero_and_logs_warning(
-    sqlite_test_db, caplog
-):
-    with sqlite_test_db() as db:
-        db.add(Stock(sku="SKU-PICK-001", stock=3, location="LOC-A"))
-        db.commit()
-
-    with caplog.at_level(logging.WARNING):
-        remaining = stock_queries.reduce_stock_for_pick("SKU-PICK-001", 10, "tester")
-
-    assert remaining == 0
-    assert "Insufficient stock for SKU 'SKU-PICK-001'" in caplog.text
-    assert "requested 10, available 3. Available qty set to 0." in caplog.text
-
-    with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 0
-
-        logs = db.execute(select(StocksLog)).scalars().all()
-        assert any("warning=insufficient_stock" in log.message for log in logs)
-
-
-def test_reduce_stock_for_pick_no_stock_records_clamps_to_zero_and_logs_warning(
-    sqlite_test_db, caplog
-):
-    with caplog.at_level(logging.WARNING):
-        remaining = stock_queries.reduce_stock_for_pick("SKU-PICK-001", 2, "tester")
-
-    assert remaining == 0
-    assert "Insufficient stock for SKU 'SKU-PICK-001'" in caplog.text
-    assert "requested 2, available 0" in caplog.text
-
-    with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 0
+    assert _stocks(sqlite_test_db) == {"LOC-B": 5}  # LOC-A emptied first, then LOC-B
+    assert [(a.location, a.qty) for a in pie.allocations] == [("LOC-A", 3), ("LOC-B", 2)]
+    picks = _logs(sqlite_test_db, "pick")
+    assert [(log.location, log.delta, log.before, log.after) for log in picks] == [
+        ("LOC-A", -3, 3, 0),
+        ("LOC-B", -2, 7, 5),
+    ]
+    assert all(log.actor == "tester" and log.ref_id == str(pie.id) for log in picks)
 
 
 def test_create_pick_item_entry_reduces_stock(sqlite_test_db):
-    item = WarehouseItem(sku="SKU-PICK-001", item_name="Pickable Item 001")
-    with sqlite_test_db() as db:
-        db.add(Stock(sku="SKU-PICK-001", stock=15, location="LOC-1"))
-        db.commit()
+    _seed_stock(sqlite_test_db, ("LOC-1", 15))
+    _seed_order(sqlite_test_db)
 
     pie = pick_queries.create_pick_item_entry(
         sku="SKU-PICK-001", qty=5, username="operator_1", order_sn="240830123"
@@ -160,30 +131,90 @@ def test_create_pick_item_entry_reduces_stock(sqlite_test_db):
     assert pie.qty == 5
     assert pie.owner_user == "operator_1"
     assert pie.order_sn == "240830123"
-
-    with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 1
-        assert records[0].stock == 10
+    assert _stocks(sqlite_test_db) == {"LOC-1": 10}
 
 
 def test_create_pick_item_entry_insufficient_stock_succeeds_with_warning(sqlite_test_db, caplog):
-    with sqlite_test_db() as db:
-        db.add(Stock(sku="SKU-PICK-001", stock=2, location="LOC-1"))
-        db.commit()
+    _seed_stock(sqlite_test_db, ("LOC-1", 2))
 
     with caplog.at_level(logging.WARNING):
         pie = pick_queries.create_pick_item_entry(sku="SKU-PICK-001", qty=5, username="operator_1")
 
-    # Pick entry is successfully created despite insufficient stock
-    assert pie.sku == "SKU-PICK-001"
+    # Pick entry is created despite insufficient stock; only 2 are allocated.
     assert pie.qty == 5
-    assert "Insufficient stock for SKU 'SKU-PICK-001'" in caplog.text
+    assert sum(a.qty for a in pie.allocations) == 2
+    assert "pick_shortfall" in caplog.text
+    assert _stocks(sqlite_test_db) == {}
+    (shortfall,) = _logs(sqlite_test_db, "pick_shortfall")
+    assert "unmet=3" in shortfall.message
 
-    # Stock is clamped to 0 (records deleted)
+
+def test_pick_with_no_stock_records_allocates_nothing(sqlite_test_db):
+    pie = pick_queries.create_pick_item_entry(sku="SKU-PICK-001", qty=2, username="operator_1")
+    assert pie.qty == 2 and pie.allocations == []
+    assert len(_logs(sqlite_test_db, "pick_shortfall")) == 1
+
+
+def test_pick_for_unknown_or_foreign_order_is_404_and_done_order_409(sqlite_test_db):
+    _seed_stock(sqlite_test_db, ("LOC-1", 5))
+    _seed_order(sqlite_test_db, "OWNED-BY-OTHER", owner="someone_else")
+    _seed_order(sqlite_test_db, "DONE-ORDER", owner="operator_1", done=True)
+    with pytest.raises(LookupError):
+        pick_queries.create_pick_item_entry("SKU-PICK-001", 1, "operator_1", order_sn="MISSING")
+    with pytest.raises(LookupError):
+        pick_queries.create_pick_item_entry(
+            "SKU-PICK-001", 1, "operator_1", order_sn="OWNED-BY-OTHER"
+        )
+    with pytest.raises(pick_queries.OrderClosedError):
+        pick_queries.create_pick_item_entry("SKU-PICK-001", 1, "operator_1", order_sn="DONE-ORDER")
+    assert _stocks(sqlite_test_db) == {"LOC-1": 5}  # nothing half-applied (T4.2)
+
+
+@pytest.mark.parametrize("mode", ["multi", "single"])
+def test_split_then_delete_restores_deducted_amounts(sqlite_test_db, monkeypatch, mode):
+    monkeypatch.setenv("STOCK_LOCATION_MODE", mode)
+    _seed_stock(sqlite_test_db, ("LOC-A", 4))
+    _seed_order(sqlite_test_db, "ORD-1")
+    pie = pick_queries.create_pick_item_entry("SKU-PICK-001", 6, "operator_1")  # 4 + 2 short
+
+    assigned = pick_queries.assign_pick_item_entry(pie.id, "ORD-1", 3, "operator_1")
+    assert assigned.qty == 3 and sum(a.qty for a in assigned.allocations) == 3  # deducted first
     with sqlite_test_db() as db:
-        records = db.execute(select(Stock).filter(Stock.sku == "SKU-PICK-001")).scalars().all()
-        assert len(records) == 0
+        remainder = db.get(PickItemEntry, pie.id)
+        assert remainder.qty == 3 and sum(a.qty for a in remainder.allocations) == 1
+    assert _stocks(sqlite_test_db) == {}  # assign never touches stock
+
+    assert pick_queries.delete_pie(assigned.id, "operator_1")
+    assert _stocks(sqlite_test_db) == {"LOC-A": 3}  # bin recreated
+    assert pick_queries.delete_pie(pie.id, "operator_1")
+    assert _stocks(sqlite_test_db) == {"LOC-A": 4}  # no phantom stock from the shortfall
+    assert {log.actor for log in _logs(sqlite_test_db, "pick_restore")} == {"operator_1"}
+
+
+def test_restore_target_differs_per_mode(sqlite_test_db, monkeypatch):
+    _seed_stock(sqlite_test_db, ("LOC-A", 2))
+    pie = pick_queries.create_pick_item_entry("SKU-PICK-001", 2, "operator_1")
+    # stock later moved/recounted at another bin
+    stock_queries.update_or_move_stock("SKU-PICK-001", 5, "admin", location="LOC-Z")
+
+    monkeypatch.setenv("STOCK_LOCATION_MODE", "single")
+    stock_queries.update_or_move_stock("SKU-PICK-001", 5, "admin", location="LOC-Z")
+    assert pick_queries.delete_pie(pie.id, "admin_user", is_admin=True)
+    assert _stocks(sqlite_test_db) == {"LOC-Z": 7}  # single: the current sole location
+    (restore,) = _logs(sqlite_test_db, "pick_restore")
+    assert restore.actor == "admin_user"
+
+
+def test_unassign_moves_quantity_without_stock_change(sqlite_test_db):
+    _seed_stock(sqlite_test_db, ("LOC-A", 10))
+    _seed_order(sqlite_test_db, "ORD-1")
+    pie = pick_queries.create_pick_item_entry("SKU-PICK-001", 4, "operator_1", order_sn="ORD-1")
+    assert pick_queries.unassign_pick_item_entry("ORD-1", "SKU-PICK-001", 1, "operator_1")
+    assert _stocks(sqlite_test_db) == {"LOC-A": 6}
+    with sqlite_test_db() as db:
+        entries = {e.order_sn: e.qty for e in db.execute(select(PickItemEntry)).scalars()}
+    assert entries == {"ORD-1": 3, None: 1}
+    assert pie.id
 
 
 def test_create_pick_item_entry_merges_existing_pie(sqlite_test_db):

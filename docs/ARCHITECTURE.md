@@ -94,12 +94,28 @@ number.
 
 ### Inventory
 
-Stock is stored per SKU/location (many-to-one relationship from stocks to warehouse items). Updates support `set`, `add`, or a transfer to `move_to`. Transfers reject missing/insufficient source stock so the source cannot become negative. Every mutation adds a stock audit-log row and broadcasts the new inventory snapshot.
+Stock is stored per SKU/location, with at most one row per pair (unlocated included). One
+engine (`queries/stocks.py`) serves both `STOCK_LOCATION_MODE`s. The mode only selects a
+`LocationPolicy`:
 
-Item picking (`POST /pick-items` / `create_pick_item_entry`) deducts available inventory based on the picked quantity. If a pick would cause negative inventory (insufficient or missing stock), the system logs a warning, sets available stock to 0, and proceeds with a successful response to prevent blocking picking operations while broadcasting real-time `stocks_update` and `pick_item_entries_update` events.
+- the target bin for set/add
+- whether other bins merge into it (`single`)
+- the transfer source
+- the deduction order
+- the restore target
 
-When `STOCK_LOCATION_MODE=single` is active, the system enforces a single-location invariant per SKU: mutations without a location update the existing location, while mutations specifying a new location automatically transfer all inventory to the new location first. Synchronizing active modes and settings dynamically to client frontends is scheduled under the future **Sync Milestone** alongside Over-The-Air (OTA) updates.
+Updates support `set`, `add`, or a transfer to `move_to`; a transfer never makes the source
+negative.
 
+A pick locks the item's stock rows (`ORDER BY sku, location FOR UPDATE`) and deducts bin by
+bin. It writes one allocation per bin and a structured `stocks_log` row per change. A
+shortfall never blocks the pick. Assign and unassign move allocations, oldest first, without
+touching stock. A delete returns the allocations to stock. Each operation is one transaction,
+and `stocks_update` / `pick_item_entries_update` are broadcast after the commit. Rules and log
+reasons: OPERATIONS "Inventory".
+
+Synchronizing the active mode to client frontends is scheduled under the future **Sync
+Milestone**, alongside Over-The-Air (OTA) updates.
 
 ## Data ownership
 

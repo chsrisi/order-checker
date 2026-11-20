@@ -9,6 +9,8 @@ from ..exceptions import DomainException
 
 logger = logging.getLogger("backend.services.pick_item")
 
+# Each query below is one transaction (T4.2); WS events are published only after it committed.
+
 
 async def create_pick_item_entry(
     sku: str, qty: int, username: str, order_sn: Optional[str] = None
@@ -19,6 +21,8 @@ async def create_pick_item_entry(
         )
     except LookupError as e:
         raise DomainException(status_code=404, detail=str(e))
+    except queries.OrderClosedError as e:
+        raise DomainException(status_code=409, detail=str(e))
 
     await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
@@ -39,6 +43,8 @@ async def assign_pick_item_entry(
         )
     except LookupError as e:
         raise DomainException(status_code=404, detail=str(e))
+    except queries.OrderClosedError as e:
+        raise DomainException(status_code=409, detail=str(e))
     except ValueError as e:
         raise DomainException(status_code=400, detail=str(e))
 
@@ -69,13 +75,5 @@ async def delete_pie(pie_id: int, username: str, is_admin: bool = False) -> bool
 
     await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.STOCKS)  # delete restores stock (D1.4.2)
     return res
-
-
-def merge_or_create_pie(
-    username: str,
-    sku: str,
-    qty: int,
-    order_sn: Optional[str] = None,
-) -> PickItemEntry:
-    return queries.merge_or_create_pie(sku=sku, qty=qty, order_sn=order_sn, username=username)

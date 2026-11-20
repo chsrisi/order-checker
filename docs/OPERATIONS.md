@@ -290,10 +290,11 @@ If the project no longer requires the mock order bypass mechanism and you wish t
 business modes, not development bypasses (delta A-8), and the value is not restricted in production.
 
 - **`multi` (default)**: an item may have stock in several bins. Adding or setting stock at
-  location `A` does not affect stock at location `B`.
+  location `A` does not affect stock at location `B`. Without a location, the item's only bin
+  is used if it has exactly one, and the unlocated bin otherwise.
 - **`single`**: an item has stock in at most **one** location:
   - **Add or set without a location (`location=None`)**: updates the item's sole existing
-    location (or the item's default location if no stock row exists).
+    location (or creates unlocated stock if no stock row exists).
   - **Add or set with a location (`location="LOC-X"`)**: first moves all existing stock of
     that item to `LOC-X` (removing the old rows), then applies the `add` or `set` there.
   - **Move / transfer (`move_to="LOC-Y"`)**: moves all stock of the item to `LOC-Y`.
@@ -304,10 +305,58 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
 
 ### Switching modes
 - `single` → `multi`: no data change is needed.
-- `multi` → `single`: items that already have stock in several bins stay as they are until
-  their next mutation. A one-off merge command (`scripts/stock_merge_single.py`, delta A-8b)
-  is planned with the inventory integrity release (IMPLEMENTATION_PLAN T4.3). Until then,
-  switch to `single` only when every item has at most one stock row.
+- `multi` → `single`: merge first, in a maintenance window:
+  ```bash
+  docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.stock_merge_single            # report only
+  docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.stock_merge_single --confirm  # apply
+  ```
+  Each item's stock moves to its first bin in location order (unlocated stock last). Every move
+  is logged as `mode_merge`. If the merge is skipped, `single` mode still merges an item on
+  its next adjustment.
+
+## Inventory
+
+### Picks, allocations and restores
+- A pick (`POST /pick-items`) deducts stock bin by bin, in location order with unlocated
+  stock last. For each bin it records an **allocation** (`orders.pick_stock_allocations`).
+  The schema has no per-item default bin, so location order is the whole rule.
+- If there is not enough stock, the pick still succeeds (HTTP 200). The unmet quantity is
+  logged as `pick_shortfall` and is never allocated.
+- Assigning part of an entry to an order moves the **deducted** quantity first (oldest
+  allocation first). Any shortfall stays with the remainder. Assign and unassign never
+  change stock.
+- A pick for an order (`order_sn`) needs an order claimed by the caller that is not done.
+  Otherwise the API returns 404, or 409 for a completed order.
+
+> **Deleting a pick entry returns its stock.** This applies to both unassigned and order-assigned
+> entries. A delete means the item was not used. The amount returned is what the pick actually
+> deducted. If a pick found less stock than requested, only the stock that existed is returned.
+> The stock goes back to the bin it came from; in single-location mode it goes to the item's
+> current location. Every return is logged with the user who deleted the entry. Operations had
+> not reached this case before this change. If an entry was deleted to correct a shipment that
+> actually left the warehouse, adjust stock manually afterwards.
+
+### Stock audit log
+`warehouse.stocks_log` rows carry `sku, location, delta, before, after, reason, actor,
+ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
+
+| Reason | Written by |
+|---|---|
+| `adjust_set`, `adjust_add` | `POST /stocks/update` without `move_to` |
+| `transfer_out`, `transfer_in` | `POST /stocks/update` with `move_to` |
+| `pick`, `pick_shortfall` | `POST /pick-items` (`ref_type=pick_entry`) |
+| `pick_restore` | `DELETE /pick-items/{id}` (actor = the deleting user, admin included) |
+| `mode_merge` | `single` mode merging bins, or `scripts.stock_merge_single` |
+| `cutover_clear` | `scripts.clear_open_pick_entries` (one row; `ref_id` = entries deleted) |
+| `migration_merge` | the T4.3 migration folding duplicate `(sku, location)` rows |
+
+Each `(sku, location)` pair, including an unlocated one, has at most one stock row (unique
+index `uq_stocks_sku_location`). A row that reaches 0 is deleted, and a restore recreates it.
+
+### Cutover of legacy pick entries (one time)
+Entries created before the allocation table existed cannot be restored correctly. The release
+that ships it clears them once, without touching stock (`docs/RELEASE.md`, delta D5):
+`python -m scripts.clear_open_pick_entries --confirm`.
 
 ---
 
