@@ -11,9 +11,34 @@ The backend suite focuses on fast deterministic unit and contract tests:
 - Structured logging fields and exception output.
 - Generated OpenAPI completeness, security declarations, and regression routes.
 
-PostgreSQL query behavior should additionally be exercised against the Compose
-database before releases. SQLite is not an integration substitute because the
-models use multiple PostgreSQL schemas.
+PostgreSQL behavior (row locks, `RETURNING`, schema-qualified migrations, unique
+indexes) is covered by the **integration layer** in `backend/tests/integration/`.
+SQLite is not an integration substitute because the models use multiple PostgreSQL
+schemas.
+
+### PostgreSQL integration layer
+
+- Runs only when `TEST_DATABASE_URL` is set. Otherwise those tests are skipped, so the
+  fast loop needs no database.
+- The URL must point at a **local, disposable** database whose name ends in `_test`;
+  anything else fails the run. The URL is passed to Alembic explicitly, so a test run
+  never falls back to a secret file or to `DATABASE_URL`.
+- The schema is always built from an empty database with `alembic upgrade head`. The
+  suite also checks the full downgrade/upgrade round trip, and that the models match the
+  migrated schema (no autogenerate drift).
+- Each test starts from truncated tables (`pg_session_factory` fixture), and every
+  `get_db()` in the app is routed to the test database.
+
+The Docker test stack starts a throwaway `test-postgres` service automatically. For a
+host-side loop, any container engine works:
+
+```bash
+podman run -d --rm --name oc-test-pg -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=bakingholic_test -p 127.0.0.1:55432:5432 docker.io/library/postgres:18.4-alpine
+cd backend && TEST_DATABASE_URL=postgresql+psycopg://postgres:test@127.0.0.1:55432/bakingholic_test \
+  uv run python -m pytest -m integration
+podman stop oc-test-pg
+```
 
 The release migration smoke test must start with an empty PostgreSQL volume and
 run `alembic upgrade head`; testing only an already-upgraded developer database

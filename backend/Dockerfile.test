@@ -20,6 +20,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY src ./src
 COPY alembic ./alembic
 COPY tests ./tests
-COPY pyproject.toml ./
+COPY pyproject.toml alembic.ini ./
 
 CMD ["pytest"]

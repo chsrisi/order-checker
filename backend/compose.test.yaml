@@ -1,13 +1,29 @@
 services:
+  test-postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: bakingholic_test
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bakingholic_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   tests:
     build:
       context: .
       dockerfile: Dockerfile.test
     environment:
       DATABASE_URL: "sqlite:///:memory:"
+      TEST_DATABASE_URL: "postgresql+psycopg://postgres:test@test-postgres:5432/bakingholic_test"
       REDIS_URL: "redis://redis:6379/15"
       LOG_TO_FILE: "false"
       LOG_FORMAT: text
     depends_on:
       redis:
         condition: service_started
+      test-postgres:
+        condition: service_healthy

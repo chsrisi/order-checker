@@ -15,8 +15,20 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
+# Programmatic callers (the PostgreSQL integration tests) pass
+# ``config.attributes["configure_logger"] = False`` so the test process keeps its loggers.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
+
+
+def _database_url() -> str | None:
+    """An explicit URL from the caller wins over configuration lookup.
+
+    ``config.attributes["url"]`` is set by the integration tests so a test run can never fall
+    back to a secret file or environment ``DATABASE_URL`` pointing at a real database.
+    """
+    return config.attributes.get("url") or get_config_value("DATABASE_URL")
+
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -40,7 +52,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = get_config_value("DATABASE_URL")
+    url = _database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -63,7 +75,7 @@ def run_migrations_online() -> None:
     """
     global config
     conf = config.get_section(config.config_ini_section, {})
-    url = get_config_value("DATABASE_URL")
+    url = _database_url()
     if url is None:
         raise ValueError("DATABASE_URL is not initialized.")
     conf["sqlalchemy.url"] = url
