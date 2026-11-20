@@ -640,5 +640,9 @@ same change as the task.
 | T4.6 | done | the contract snapshot caught the first attempt (`format: date-time` was lost); fixed with `WithJsonSchema` |
 | T4.7 | done | features: `self_registration`, `pick_stock_restore`, `utc_datetimes` |
 | T4.8 | done | **Extra finding:** a resync wrote the buyer note back after the retention purge, and a failed tracking lookup nulled stored tracking numbers. Both fixed. Decision: a partial sync answers 502 after storing the chunks that arrived |
-| T5.1–T5.4 | todo | |
-| TH.1–TH.2 | todo | |
+| T5.1 | done | `X-Config-Token` header; the admin app's `makeRequest` gained `extraHeaders`. The WS `?token=` ticket stays (frozen v1 contract) |
+| T5.2 | done | `limit` (default 500, max 2000) and `offset`; the response stays a list and `X-Total-Count` carries the total; the admin app has a "Load older history" button. Order history is sorted by `done_at` (the admin date filter's `doneAt!` used to crash while `done_at` was always null, which T4.5 fixed) |
+| T5.3 | done | **Open question:** `PickItemEntryLog` and its table `orders.pick_item_entries_log` are unused but kept; dropping them needs a migration, and the plan asks first. Stale imports from T4.5 were removed too |
+| T5.4 | done | nginx also proxies `/meta`. The `/bom/tree` response uses `exclude_unset`, so marketplace nodes keep their exact shape |
+| TH.1 | done | removed the git-ignored `frontend/admin/windows/flutter/ephemeral` symlinks too. KL #7 now covers the admin web only: the client's `IOWebSocketChannel` is correct for Android and Windows, so F-H7 no longer applies |
+| TH.2 | done | CODE_REVIEW/BRANCH_SPLIT_REVIEW keep their historical wording |
