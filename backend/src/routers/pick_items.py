@@ -64,10 +64,10 @@ def get_pies(current_user: User = Depends(get_current_user)):
     username = None if current_user.scope == "admin" else current_user.username
     entries = queries.get_pie_data(username=username)
 
+    names = queries.item_names_for(e.sku for e in entries)
     results = []
     for entry in entries:
-        item = queries.resolve_barcode_to_item(entry.sku or "")
-        item_name = item.item_name if item else None
+        item_name = names.get(entry.sku or "")
         results.append(
             PickItemEntryResponse(
                 id=entry.id,

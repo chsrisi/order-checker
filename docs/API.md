@@ -57,6 +57,18 @@ it does not blacklist the short-lived access token. Public signing keys are at
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.
 
+## Order payload
+
+`GET /shopee/orders`, `/admin/history/shopee/orders` and the `shopee_orders_update` frame
+share one shape:
+
+- `item_list` holds the order's sold items expanded through marketplace and standard BOMs into
+  warehouse components, summed per component and location.
+- `info` holds **one entry per package**, ordered by creation. A split order (`split_up: true`)
+  has several. Before v0.5 only one arbitrary package was shown.
+- `split_up`, `shipping_carrier` and `done_at` are filled from the stored order. Before v0.5
+  they were always `null`. These are additive changes within contract v1.
+
 ## Request size limits
 
 Request bodies are bounded to stop abusive input; anything larger returns `422`.

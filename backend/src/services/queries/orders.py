@@ -28,7 +28,6 @@ def active_orders_query(now: Optional[datetime] = None):
     cutoff = now or datetime.now(UTC)
     return (
         select(ShopeeOrder)
-        .outerjoin(ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
         .filter(
             ShopeeOrder.done == False,  # noqa: E712
             ShopeeOrder.status.in_(ACTIVE_ORDER_STATUSES),

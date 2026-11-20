@@ -30,6 +30,7 @@ from ..models import (
     ShopeeOrderInfoResponse,
 )
 from . import queries
+from .order_payload import build_order_responses
 
 logger = logging.getLogger("backend.services.shopee")
 
@@ -437,84 +438,14 @@ async def fetch_chunk_details(
     return order_details_list, tracking_map, fail_pkgs
 
 
-def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
-    info = order.info
-    recipient = None
-    item_list = []
-
+def build_shopee_order_responses(orders: list[ShopeeOrder]) -> list[ShopeeOrderResponse]:
+    """Batched payloads for many orders (T4.5): bounded queries, independent of len(orders)."""
     with queries.get_db() as db:
-        if order.recipient_address:
-            recipient = ShopeeOrderRecipientResponse.model_validate(order.recipient_address)
+        return build_order_responses(db, orders)
 
-        def get_item_info(sku: str) -> tuple[Optional[str], Optional[str]]:
-            item = db.execute(
-                select(WarehouseItem).filter(WarehouseItem.sku == sku)
-            ).scalar_one_or_none()
-            if item:
-                return item.item_name, item.location
-            return None, None
 
-        def flatten_bom_tree(node: dict) -> list[dict]:
-            children = node.get("children")
-            if children:
-                flat = []
-                for child in children:
-                    flat.extend(flatten_bom_tree(child))
-                return flat
-            else:
-                sku = node.get("sku", "")
-                name = node.get("name", "")
-                qty = node.get("quantity", 1)
-                _, loc = get_item_info(sku)
-                return [
-                    {"component_sku": sku, "component_name": name, "quantity": qty, "location": loc}
-                ]
-
-        components_map = {}
-
-        raw_item_list = order.item_list or []
-        for raw_item in raw_item_list:
-            sku = raw_item.model_sku or raw_item.item_sku or ""
-            shopee_id = raw_item.model_id or raw_item.item_id
-            qty = raw_item.model_quantity_purchased or 1
-
-            bom_tree = queries.resolve_shopee_order_bom_tree(shopee_id, sku, qty)
-
-            if bom_tree:
-                flat_components = flatten_bom_tree(bom_tree)
-                for comp in flat_components:
-                    comp_sku = comp["component_sku"]
-                    comp_name = comp["component_name"]
-                    comp_qty = comp["quantity"]
-                    comp_loc = comp["location"]
-                    key = (comp_sku, comp_name, comp_loc)
-                    components_map[key] = components_map.get(key, 0) + comp_qty
-            else:
-                name, loc = get_item_info(sku)
-                if not name:
-                    name = raw_item.item_name or sku
-                key = (sku, name, loc)
-                components_map[key] = components_map.get(key, 0) + qty
-
-        item_list = [
-            ShopeeOrderItemBOMResponse(
-                component_sku=sku, component_name=name, quantity=qty, location=loc
-            )
-            for (sku, name, loc), qty in components_map.items()
-        ]
-
-    info_response = [ShopeeOrderInfoResponse.model_validate(info)] if info else []
-
-    return ShopeeOrderResponse(
-        order_sn=order.order_sn,
-        owner_user=order.owner_user,
-        done=order.done,
-        status=order.status,
-        ship_by=order.ship_by,
-        info=info_response,
-        recipient_address=recipient,
-        item_list=item_list,
-    )
+def build_shopee_order_response(order: ShopeeOrder) -> ShopeeOrderResponse:
+    return build_shopee_order_responses([order])[0]
 
 
 def _orders_visible_to(username: str, scope: str) -> list[ShopeeOrderResponse]:
@@ -524,7 +455,7 @@ def _orders_visible_to(username: str, scope: str) -> list[ShopeeOrderResponse]:
         if scope == "admin"
         else queries.get_shopee_order_data(username)
     )
-    return [build_shopee_order_response(o) for o in orders]
+    return build_shopee_order_responses(orders)
 
 
 async def sync_shopee_orders(
@@ -568,11 +499,7 @@ async def sync_shopee_orders(
         # 2. Remove `MOCK_ORDER_BYPASS = get_config_bool("MOCK_ORDER_BYPASS", False)` and its
         #    import if no longer used.
         # 3. Remove `MOCK_ORDER_BYPASS` from `.env` and `.env.example`.
-        # 4. (Optional) Delete `backend/temp/seed_mock_order.py` and purge any seeded mock rows:
-        #      DELETE FROM shopee.order_recipient_address WHERE order_sn = '250801MOCK0001';
-        #      DELETE FROM shopee.order_info               WHERE order_sn = '250801MOCK0001';
-        #      DELETE FROM shopee.order_item_list          WHERE order_sn = '250801MOCK0001';
-        #      DELETE FROM shopee.orders                   WHERE order_sn = '250801MOCK0001';
+        # 4. (Optional) Purge synthetic rows: `python -m scripts.seed_dev --reset` (dev only).
         # ==============================================================================
         try:
             tasks = [fetch_sns_for_status(status, time_from, now) for status in STATUSES]

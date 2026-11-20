@@ -68,13 +68,18 @@ class ConnectionManager:
             logger.info(f"Closed {len(sockets)} WebSocket session(s) for {username}")
         return len(sockets)
 
-    def _get_data(self, message_type: WSMessageType, username: str):
-        is_admin = False
-        user = queries.get_user_data(username)
-        if user:
-            is_admin = user.scope == "admin"
-        else:
-            raise ValueError(f"User {username} not found")
+    # Payloads identical for every recipient: built once per broadcast (T4.5).
+    SCOPE_INDEPENDENT = frozenset({WSMessageType.USERS, WSMessageType.STOCKS})
+
+    def _get_data(self, message_type: WSMessageType, username: str, scope: Optional[str] = None):
+        """Build a payload for ``username``. Pass ``scope`` when the caller knows it (the
+        socket's authenticated scope) to skip the per-recipient user lookup."""
+        if scope is None:
+            user = queries.get_user_data(username)
+            if not user:
+                raise ValueError(f"User {username} not found")
+            scope = user.scope
+        is_admin = scope == "admin"
 
         data = None
 
@@ -89,20 +94,20 @@ class ConnectionManager:
             )
             data = [OutboundResponse.model_validate(o) for o in outbounds]
         elif message_type == WSMessageType.SHOPEE_ORDERS:
-            from ..shopee_service import build_shopee_order_response
+            from ..shopee_service import build_shopee_order_responses
 
             orders = (
                 queries.get_all_shopee_order_data()
                 if is_admin
                 else queries.get_shopee_order_data(username)
             )
-            data = [build_shopee_order_response(o) for o in orders]
+            data = build_shopee_order_responses(orders)
         elif message_type == WSMessageType.PICK_ITEM_ENTRIES:
             entries = queries.get_pie_data(username=None if is_admin else username)
+            names = queries.item_names_for(e.sku for e in entries)
             data = []
             for entry in entries:
-                item = queries.resolve_barcode_to_item(entry.sku or "")
-                item_name = item.item_name if item else None
+                item_name = names.get(entry.sku or "")
                 data.append(
                     PickItemEntryResponse(
                         id=entry.id,
@@ -149,14 +154,17 @@ class ConnectionManager:
         data: Any = None,
     ):
         if data is None:
-            data = await asyncio.to_thread(self._get_data, message_type, username)
+            data = await asyncio.to_thread(
+                self._get_data, message_type, username, self.user_scopes.get(websocket)
+            )
         logger.debug(f"Sending {message_type.value} to {username} session")
         await self._send_raw(message_type, data, websocket, username)
 
     async def send_to_user(self, message_type: WSMessageType, username: str):
         if username in self.active_connections:
-            data = await asyncio.to_thread(self._get_data, message_type, username)
             connections = list(self.active_connections.get(username, []))
+            scope = self.user_scopes.get(connections[0]) if connections else None
+            data = await asyncio.to_thread(self._get_data, message_type, username, scope)
             logger.debug(
                 f"Sending {message_type.value} to {username} ({len(connections)} sessions)"
             )
@@ -164,28 +172,27 @@ class ConnectionManager:
             await asyncio.gather(*tasks)
 
     async def broadcast(self, message_type: WSMessageType, scope: Optional[str] = None):
-        admin_data = None
-        client_data_cache: dict[str, list[Any] | None] = {}
+        # One payload per audience: every admin shares one, each operator gets their own, and
+        # scope-independent types share one for everybody (T4.5).
+        payloads: dict[str, Any] = {}
 
         tasks: list[Any] = []
         for username, connections in list(self.active_connections.items()):
             for ws in list(connections):
                 user_scope = self.user_scopes.get(ws)
-                if scope is None or user_scope == scope:
-                    if user_scope == "admin":
-                        if admin_data is None:
-                            admin_data = await asyncio.to_thread(
-                                self._get_data, message_type, username
-                            )
-                        data = admin_data
-                    else:
-                        if username not in client_data_cache:
-                            client_data_cache[username] = await asyncio.to_thread(
-                                self._get_data, message_type, username
-                            )
-                        data = client_data_cache[username]
-
-                    tasks.append(self._send_raw(message_type, data, ws, username))
+                if scope is not None and user_scope != scope:
+                    continue
+                if message_type in self.SCOPE_INDEPENDENT:
+                    audience = "*"
+                elif user_scope == "admin":
+                    audience = "admin"
+                else:
+                    audience = f"user:{username}"
+                if audience not in payloads:
+                    payloads[audience] = await asyncio.to_thread(
+                        self._get_data, message_type, username, user_scope
+                    )
+                tasks.append(self._send_raw(message_type, payloads[audience], ws, username))
 
         logger.debug(f"Broadcasting {message_type.value} to {len(tasks)} sessions (scope: {scope})")
         if tasks:

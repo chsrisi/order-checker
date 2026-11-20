@@ -120,7 +120,7 @@ def get_outbound_history(current_user: User = Depends(require_admin)):
 )
 def get_shopee_orders_history(current_user: User = Depends(require_admin)):
     orders = queries.get_shopee_orders_history()
-    return [shopee_service.build_shopee_order_response(o) for o in orders]
+    return shopee_service.build_shopee_order_responses(orders)
 
 
 @router.get(

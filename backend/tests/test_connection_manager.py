@@ -91,9 +91,7 @@ def test_get_data_builds_user_pick_and_stock_payloads(monkeypatch):
         connection_manager.queries, "get_pie_data", lambda username=None: [pick_record()]
     )
     monkeypatch.setattr(
-        connection_manager.queries,
-        "resolve_barcode_to_item",
-        lambda _: SimpleNamespace(item_name="Cake"),
+        connection_manager.queries, "item_names_for", lambda skus: {s: "Cake" for s in skus}
     )
     stock = SimpleNamespace(
         _mapping={"id": 1, "sku": "SKU", "stock": 2, "location": "A", "item_name": "Cake"}
@@ -148,7 +146,9 @@ async def test_broadcast_honors_scope_and_reuses_admin_payload(monkeypatch):
     await manager.connect(client, "operator", "client")
     calls = []
     monkeypatch.setattr(
-        manager, "_get_data", lambda _, username: calls.append(username) or [username]
+        manager,
+        "_get_data",
+        lambda _, username, scope=None: calls.append(username) or [username],
     )
     await manager.broadcast(WSMessageType.STOCKS, scope="admin")
     assert len(admin_one.messages) == len(admin_two.messages) == 1
@@ -195,3 +195,31 @@ async def test_disconnect_user_closes_and_forgets_all_sessions():
     assert a not in manager.user_scopes and b not in manager.user_scopes
     assert manager.active_connections["someone"] == [other]
     assert await manager.disconnect_user("operator") == 0
+
+
+@pytest.mark.asyncio
+async def test_broadcast_builds_one_payload_per_audience_without_user_lookups(monkeypatch):
+    """T4.5: scope comes from the socket; stocks are built once for everybody."""
+    manager = ConnectionManager()
+    sockets = [FakeWebSocket() for _ in range(4)]
+    await manager.connect(sockets[0], "admin", "admin")
+    await manager.connect(sockets[1], "op1", "client")
+    await manager.connect(sockets[2], "op1", "client")
+    await manager.connect(sockets[3], "op2", "client")
+    monkeypatch.setattr(
+        connection_manager.queries,
+        "get_user_data",
+        lambda _u: (_ for _ in ()).throw(AssertionError("no per-recipient user lookup")),
+    )
+    calls = []
+    monkeypatch.setattr(
+        manager,
+        "_get_data",
+        lambda message_type, username, scope=None: calls.append((username, scope)) or [{}],
+    )
+    await manager.broadcast(WSMessageType.STOCKS)
+    assert len(calls) == 1 and all(len(ws.messages) == 1 for ws in sockets)
+
+    calls.clear()
+    await manager.broadcast(WSMessageType.SHOPEE_ORDERS)
+    assert sorted(calls) == [("admin", "admin"), ("op1", "client"), ("op2", "client")]

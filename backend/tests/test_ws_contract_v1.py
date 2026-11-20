@@ -40,7 +40,7 @@ def _fake_queries(monkeypatch, scope="client"):
         id=1, sku="A01_001", qty=2, order_sn=None, timestamp=NOW, owner_user="operator"
     )
     monkeypatch.setattr(q, "get_pie_data", lambda **_: [pick])
-    monkeypatch.setattr(q, "resolve_barcode_to_item", lambda _s: None)
+    monkeypatch.setattr(q, "item_names_for", lambda _skus: {})
     stock_row = SimpleNamespace(
         _mapping={"id": 1, "sku": "A01_001", "stock": 3, "location": None, "item_name": None}
     )

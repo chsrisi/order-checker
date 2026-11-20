@@ -82,6 +82,23 @@ def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:
         )
 
 
+def item_names_for(skus) -> dict[str, Optional[str]]:
+    """Item names for stored (already resolved) SKUs in one query (T4.5). SKUs that do not
+    match exactly fall back to the barcode pipeline, as the per-entry lookup used to."""
+    wanted = {s for s in skus if s}
+    if not wanted:
+        return {}
+    with get_db() as db:
+        rows = db.execute(
+            select(WarehouseItem.sku, WarehouseItem.item_name).filter(WarehouseItem.sku.in_(wanted))
+        ).all()
+    names: dict[str, Optional[str]] = {sku: name for sku, name in rows}
+    for sku in wanted - names.keys():
+        item = resolve_barcode_to_item(sku)
+        names[sku] = item.item_name if item else None
+    return names
+
+
 def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
     resolved = resolve_barcode_to_item(query_str)
     if resolved:

@@ -244,6 +244,8 @@ async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
 
     mock_order = SimpleNamespace(
         order_sn="250801MOCK0001",
+        split_up=False,
+        done_at=None,
         owner_user=None,
         shipping_carrier="J&T",
         done=False,

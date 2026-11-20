@@ -48,6 +48,7 @@ from .pick_items import (
 )
 from .warehouse import (
     resolve_barcode_to_item,
+    item_names_for,
     find_warehouse_items,
     get_all_warehouse_items,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "OrderClosedError",
     "delete_pie",
     "resolve_barcode_to_item",
+    "item_names_for",
     "find_warehouse_items",
     "get_all_warehouse_items",
     "get_standard_bom_node_internal",

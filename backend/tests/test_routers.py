@@ -92,7 +92,9 @@ def test_admin_history_and_exports(monkeypatch):
     monkeypatch.setattr(admin.queries, "get_outbound_history", lambda: ["scan"])
     monkeypatch.setattr(admin.queries, "get_shopee_orders_history", lambda: ["order"])
     monkeypatch.setattr(
-        admin.shopee_service, "build_shopee_order_response", lambda value: f"built-{value}"
+        admin.shopee_service,
+        "build_shopee_order_responses",
+        lambda values: [f"built-{v}" for v in values],
     )
     monkeypatch.setattr(admin.queries, "get_export_scans_csv", lambda: "a,b\n1,2\n")
     monkeypatch.setattr(admin.queries, "get_export_stocks_csv", lambda: "sku,qty\nA,1\n")
@@ -211,7 +213,7 @@ def test_pick_router_read_is_scoped(monkeypatch):
         "get_pie_data",
         lambda username=None: requested.append(username) or [pie],
     )
-    monkeypatch.setattr(pick_items.queries, "resolve_barcode_to_item", lambda _: None)
+    monkeypatch.setattr(pick_items.queries, "item_names_for", lambda _: {})
     assert len(pick_items.get_pies(actor())) == 1
     assert len(pick_items.get_pies(actor("admin", "admin"))) == 1
     assert requested == ["operator", None]

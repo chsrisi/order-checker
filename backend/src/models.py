@@ -105,7 +105,10 @@ class ShopeeOrder(Base):
     recipient_address: Mapped["ShopeeOrderRecipientAddress"] = relationship(
         "ShopeeOrderRecipientAddress", back_populates="order"
     )
-    info: Mapped["ShopeeOrderInfo"] = relationship("ShopeeOrderInfo", back_populates="order")
+    # One row per package; split orders have several (T4.5).
+    info: Mapped[List["ShopeeOrderInfo"]] = relationship(
+        "ShopeeOrderInfo", back_populates="order", order_by="ShopeeOrderInfo.id"
+    )
     pies: Mapped[List["PickItemEntry"]] = relationship("PickItemEntry", back_populates="order")
 
 
