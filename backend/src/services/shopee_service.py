@@ -552,7 +552,7 @@ async def sync_shopee_orders(
         # The Shopee fetch is wrapped in a try/except block. When MOCK_ORDER_BYPASS is
         # enabled (MOCK_ORDER_BYPASS=1/true), an offline or failed Shopee API does not
         # raise an exception or block serving orders from the database. This keeps the
-        # mock order (seeded directly into shopee.orders via temp/seed_mock_order.py)
+        # synthetic orders (seeded via `python -m scripts.seed_dev`)
         # visible on both the client (WebSocket) and admin (HTTP) paths even when the
         # Shopee API is unreachable. sync_shopee_orders_to_db only ever inserts/updates
         # API orders and never deletes, so the unique mock order_sn survives syncs.

@@ -99,3 +99,10 @@ cleanup can be reviewed as a separate mechanical change.
 Before release, run Python compilation, Ruff, backend tests with coverage, both
 Flutter analyzers/tests, Compose validation, migrations against a disposable
 PostgreSQL database, and a manual login/sync/claim/pick/scan/close smoke flow.
+
+## Synthetic data
+
+Tests and local development use invented data only (delta A-10: Shopee ToS and DPP). The
+tracked seed `backend/scripts/seed_dev/` (see `docs/OPERATIONS.md`) is covered by
+`tests/integration/test_seed_dev_pg.py`, so it stays in step with the schema. Never copy
+production rows into fixtures.

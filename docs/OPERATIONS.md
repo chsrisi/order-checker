@@ -242,12 +242,25 @@ The **Mock Order Bypass** allows the server to swallow Shopee API synchronizatio
 - **`MOCK_ORDER_BYPASS=0` (default)**: Strict production behavior. If the Shopee OpenAPI is unreachable or returns an error, the exception is raised immediately to the caller.
 - **`MOCK_ORDER_BYPASS=1` (or `true`)**: Development mode. If the Shopee API call fails, the failure is logged as a warning (`shopee.sync.fallback`), `cache_mgr.mark_synced()` is skipped (allowing subsequent requests to retry), and existing database orders are returned and broadcast to connected WebSocket clients.
 
-### Seeding a Mock Order
-To insert a sample test order (`250801MOCK0001`) with recipient address, items, and logistics tracking:
+### Seeding Synthetic Development Data
+Use the tracked synthetic seed (no real data; delta A-10). It needs `APP_ENV=development` and refuses to run otherwise:
+
 ```bash
 cd backend
-uv run temp/seed_mock_order.py
+APP_ENV=development uv run python -m scripts.seed_dev                      # idempotent
+APP_ENV=development uv run python -m scripts.seed_dev --reset              # remove, then re-add
+APP_ENV=development uv run python -m scripts.seed_dev --stock-mode single  # one bin per item
 ```
+
+It creates:
+
+- users `dev_op1` and `dev_op2` (password `dev-password`)
+- items `Z90_*`, including nested standard BOMs and marketplace BOMs `9000000xx`
+- stock: in multi mode, several bins plus one item with no stock (shortfall case)
+- orders `DEV0001`–`DEV0008`: unclaimed, claimed, split into two packages, done, retry-ship,
+  past ship-by, cancelled, and one past the 30-day retention
+
+The old untracked `temp/seed_mock_order.py` is superseded.
 
 ### Complete Removal Instructions (Code Cleanup)
 If the project no longer requires the mock order bypass mechanism and you wish to permanently remove it at the codebase level (rather than just setting `MOCK_ORDER_BYPASS=0`):
@@ -266,7 +279,7 @@ If the project no longer requires the mock order bypass mechanism and you wish t
      DELETE FROM shopee.orders                   WHERE order_sn = '250801MOCK0001';
      ```
 4. **Remove the Mock Seed Script**:
-   - Delete `backend/temp/seed_mock_order.py`.
+   - Remove seeded rows with `python -m scripts.seed_dev --reset` (development only).
 
 ---
 
