@@ -79,9 +79,11 @@ def verify_refresh_token(token: str) -> dict:
     return payload
 
 
-async def get_current_user(
+def get_current_user(
     token: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
 ) -> User:
+    # Plain def: FastAPI runs it in the threadpool, so the DB lookup and RSA verification
+    # never block the event loop (F-H1).
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid access token",
@@ -99,7 +101,7 @@ async def get_current_user(
         raise credentials_exception from exc
 
 
-async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.scope != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     return current_user
@@ -176,7 +178,7 @@ def get_tokens(user: User):
 
 
 async def delete_user(username: str) -> None:
-    success = queries.delete_user_by_username(username)
+    success = await asyncio.to_thread(queries.delete_user_by_username, username)
     if not success:
         raise DomainException(status_code=404, detail="User not found")
 
@@ -186,11 +188,13 @@ async def delete_user(username: str) -> None:
 
 async def admin_create_user(username: str, password: str) -> User:
     """Create a client-scope operator account (A-3: accounts are created admin-side)."""
-    if queries.get_user_data(username):
+    if await asyncio.to_thread(queries.get_user_data, username):
         raise DomainException(status_code=409, detail="Username already exists")
-    password_hash = get_password_hash(password)
+    password_hash = await asyncio.to_thread(get_password_hash, password)
     try:
-        user = queries.create_user(username=username, password_hash=password_hash, scope="client")
+        user = await asyncio.to_thread(
+            queries.create_user, username=username, password_hash=password_hash, scope="client"
+        )
     except IntegrityError as exc:  # lost a race with another create
         raise DomainException(status_code=409, detail="Username already exists") from exc
     logger.info(f"Operator account {username} created by an administrator")
@@ -200,8 +204,8 @@ async def admin_create_user(username: str, password: str) -> User:
 
 async def admin_reset_password(username: str, password: str) -> None:
     """Set a new password, revoke every refresh token and close the user's sockets."""
-    password_hash = get_password_hash(password)
-    if not queries.set_password_and_revoke_sessions(username, password_hash):
+    password_hash = await asyncio.to_thread(get_password_hash, password)
+    if not await asyncio.to_thread(queries.set_password_and_revoke_sessions, username, password_hash):
         raise DomainException(status_code=404, detail="User not found")
     logger.info(f"Password reset for {username}; sessions revoked")
     await conn_mgr.disconnect_user(username)
@@ -213,13 +217,15 @@ async def register_client(username: str, password: str) -> dict:
     if not config.ALLOW_REGISTRATION:
         # Path and schema stay (client contract v1); production creates accounts admin-side.
         raise DomainException(status_code=403, detail="Registration is disabled")
-    user = queries.get_user_data(username)
+    user = await asyncio.to_thread(queries.get_user_data, username)
     if user:
         logger.warning(f"Registration failed: Username {username} already exists")
         raise HTTPException(status_code=400, detail="Username already registered")
 
-    hashed_password = get_password_hash(password)
-    new_user = queries.create_user(username=username, password_hash=hashed_password, scope="client")
+    hashed_password = await asyncio.to_thread(get_password_hash, password)
+    new_user = await asyncio.to_thread(
+        queries.create_user, username=username, password_hash=hashed_password, scope="client"
+    )
     logger.info(f"User {username} successfully registered")
 
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")

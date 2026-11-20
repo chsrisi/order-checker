@@ -536,11 +536,11 @@ async def sync_shopee_orders(
         cache_mgr.invalidate()
 
     if cache_mgr.is_valid():
-        return _orders_visible_to(username, scope)
+        return await asyncio.to_thread(_orders_visible_to, username, scope)
 
     async with cache_mgr.lock:
         if cache_mgr.is_valid():
-            return _orders_visible_to(username, scope)
+            return await asyncio.to_thread(_orders_visible_to, username, scope)
 
         now = int(time.time())
         time_from = now - (SHOPEE_SYNC_WINDOW_DAYS * 24 * 60 * 60)
@@ -593,7 +593,7 @@ async def sync_shopee_orders(
                 chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
                 chunk_results = await asyncio.gather(*chunk_tasks)
 
-                queries.sync_shopee_orders_to_db(chunk_results)
+                await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
 
             cache_mgr.mark_synced()
         except Exception as exc:
@@ -617,12 +617,12 @@ async def sync_shopee_orders(
         await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
         await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
 
-        return _orders_visible_to(username, scope)
+        return await asyncio.to_thread(_orders_visible_to, username, scope)
 
 
 async def acquire_order(order_sn: str, username: str) -> None:
     try:
-        success = queries.acquire_order(order_sn, username)
+        success = await asyncio.to_thread(queries.acquire_order, order_sn, username)
     except ValueError as exc:
         raise DomainException(status_code=409, detail=str(exc)) from exc
     if not success:

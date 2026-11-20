@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 
@@ -19,7 +20,8 @@ async def update_or_move_stock(
     is_location_set: bool = True,
 ) -> tuple[Stock, Optional[str]]:
     try:
-        res, item_name = queries.update_or_move_stock(
+        res, item_name = await asyncio.to_thread(
+            queries.update_or_move_stock,
             sku_in=sku_in,
             stock_qty=stock_qty,
             username=username,
@@ -39,7 +41,9 @@ async def update_or_move_stock(
 
 async def get_or_merge_stock(sku: str, location: Optional[str], qty: int, username: str) -> Stock:
     try:
-        res = queries.get_or_merge_stock(sku=sku, location=location, qty=qty, username=username)
+        res = await asyncio.to_thread(
+            queries.get_or_merge_stock, sku=sku, location=location, qty=qty, username=username
+        )
     except ValueError as e:
         raise DomainException(status_code=400, detail=str(e))
 

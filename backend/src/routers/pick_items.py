@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List
 from fastapi import APIRouter, Depends
@@ -36,7 +37,7 @@ async def create_pie(
         order_sn=payload.order_sn,
     )
 
-    item = queries.resolve_barcode_to_item(pie.sku or "")
+    item = await asyncio.to_thread(queries.resolve_barcode_to_item, pie.sku or "")
     item_name = item.item_name if item else None
 
     return PickItemEntryResponse(
@@ -100,7 +101,7 @@ async def assign_pie(
         username=current_user.username,
     )
 
-    item = queries.resolve_barcode_to_item(pie.sku or "")
+    item = await asyncio.to_thread(queries.resolve_barcode_to_item, pie.sku or "")
     item_name = item.item_name if item else None
 
     return PickItemEntryResponse(

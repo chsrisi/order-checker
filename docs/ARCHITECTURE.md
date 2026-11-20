@@ -31,6 +31,17 @@ coordinate work and notifications. Query functions own short database
 transactions and return detached records. Managers are process-level stateful
 objects; this matters when scaling horizontally.
 
+**Sync persistence, async transport.** SQLAlchemy sessions and Argon2 are synchronous.
+They must never run on the event loop:
+
+- sync routes and dependencies (`get_current_user`, `require_admin`) are plain `def`, so
+  FastAPI runs them in its threadpool
+- async services call queries through `asyncio.to_thread`
+- `ConnectionManager` builds WebSocket payloads in a thread
+
+A new `async def` that touches the database must follow the same rule. This is guarded by
+`tests/test_event_loop.py`.
+
 ## Frontends
 
 Both Flutter apps use `Provider` and a central `AppState` for authentication,

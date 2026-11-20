@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List
 
@@ -13,8 +14,11 @@ async def create_outbound_item(
     content: str, owner_username: str, tags_in: List[str]
 ) -> OutboundItem:
     try:
-        db_item = queries.create_outbound_item(
-            content=content, owner_username=owner_username, tags_in=tags_in
+        db_item = await asyncio.to_thread(
+            queries.create_outbound_item,
+            content=content,
+            owner_username=owner_username,
+            tags_in=tags_in,
         )
     except ValueError as e:
         raise DomainException(status_code=409, detail=str(e))
@@ -26,7 +30,9 @@ async def create_outbound_item(
 
 
 async def close_outbound_items(contents: List[str], admin_username: str) -> dict:
-    result = queries.close_outbound_items(contents=contents, admin_username=admin_username)
+    result = await asyncio.to_thread(
+        queries.close_outbound_items, contents=contents, admin_username=admin_username
+    )
     cache_mgr.invalidate()
 
     # Broadcast updates
@@ -39,7 +45,7 @@ async def close_outbound_items(contents: List[str], admin_username: str) -> dict
 async def clear_outbound_items(admin_username: str) -> int:
     """Delete all scan records and notify connected administrators."""
 
-    count = queries.clear_all_outbound_items()
+    count = await asyncio.to_thread(queries.clear_all_outbound_items)
     logger.warning(
         "outbound_scans_cleared",
         extra={

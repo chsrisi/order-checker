@@ -149,14 +149,14 @@ class ConnectionManager:
         data: Any = None,
     ):
         if data is None:
-            data = self._get_data(message_type, username)
+            data = await asyncio.to_thread(self._get_data, message_type, username)
         logger.debug(f"Sending {message_type.value} to {username} session")
         await self._send_raw(message_type, data, websocket, username)
 
     async def send_to_user(self, message_type: WSMessageType, username: str):
         if username in self.active_connections:
-            data = self._get_data(message_type, username)
-            connections = list(self.active_connections[username])
+            data = await asyncio.to_thread(self._get_data, message_type, username)
+            connections = list(self.active_connections.get(username, []))
             logger.debug(
                 f"Sending {message_type.value} to {username} ({len(connections)} sessions)"
             )
@@ -174,11 +174,15 @@ class ConnectionManager:
                 if scope is None or user_scope == scope:
                     if user_scope == "admin":
                         if admin_data is None:
-                            admin_data = self._get_data(message_type, username)
+                            admin_data = await asyncio.to_thread(
+                                self._get_data, message_type, username
+                            )
                         data = admin_data
                     else:
                         if username not in client_data_cache:
-                            client_data_cache[username] = self._get_data(message_type, username)
+                            client_data_cache[username] = await asyncio.to_thread(
+                                self._get_data, message_type, username
+                            )
                         data = client_data_cache[username]
 
                     tasks.append(self._send_raw(message_type, data, ws, username))

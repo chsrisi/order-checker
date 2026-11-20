@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 from fastapi import APIRouter, WebSocket, Query, HTTPException, status
@@ -30,7 +31,7 @@ async def websocket_endpoint(
             detail="Forbidden",
         )
 
-    user = queries.get_user_data(username)
+    user = await asyncio.to_thread(queries.get_user_data, username)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
