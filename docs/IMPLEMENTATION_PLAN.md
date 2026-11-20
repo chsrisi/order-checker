@@ -632,6 +632,13 @@ same change as the task.
 | T3.4 | done | `docs/RELEASE.md`, including the v0.4.0 window. **Gap found and fixed:** the startup guard checks only the configured `ADMIN_PASSWORD`, while an existing admin kept its old hash, so `scripts.set_admin_password` was added |
 | T3.5 | todo | **maintainer:** after merging to `master`: `git tag -a v0.4.0 -m v0.4.0 && git branch dev v0.4.0 && git push origin master dev v0.4.0`; then set the default branch to `dev`, protect `dev`/`master`, and require the CI checks |
 | T3.6 | todo | **maintainer:** run the v0.4.0 window in `docs/RELEASE.md` §4 (forced relogin, secrets, `.env` edits, `set_admin_password`) |
-| T4.1–T4.8 | todo | T4.4 runs only in the production window |
+| T4.1 | done | sync routes/dependencies are plain `def`; async paths use `asyncio.to_thread`; guarded by `tests/test_event_loop.py` (fails on the old code) |
+| T4.2 | done | picks and stock: one transaction per operation, WS after commit. Other services already ran one query per operation; nothing else needed |
+| T4.3 | done | migration `b7c4e1a9d2f3`. **Deviation:** there is no per-item default-location column (`WarehouseItem.location` is derived from bins), so the Q3 order is "location ascending, unlocated last". Multi `set`/`add` without a location targets the item's only bin, otherwise the unlocated bin (this fixes a duplicate-row path). Lock tests verified to fail without `FOR UPDATE` |
+| T4.4 | done (command) | `scripts.clear_open_pick_entries --confirm`. **Maintainer:** run it in the window that ships T4.3 (RELEASE.md §4) |
+| T4.5 | done | **Extra finding:** `active_orders_query` outer-joined `order_info`, which duplicated split orders in every list. Fixed together with the list-shaped `info` |
+| T4.6 | done | the contract snapshot caught the first attempt (`format: date-time` was lost); fixed with `WithJsonSchema` |
+| T4.7 | done | features: `self_registration`, `pick_stock_restore`, `utc_datetimes` |
+| T4.8 | done | **Extra finding:** a resync wrote the buyer note back after the retention purge, and a failed tracking lookup nulled stored tracking numbers. Both fixed. Decision: a partial sync answers 502 after storing the chunks that arrived |
 | T5.1–T5.4 | todo | |
 | TH.1–TH.2 | todo | |
