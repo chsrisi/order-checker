@@ -1,7 +1,7 @@
 import logging
 import re
 from typing import List, Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from ...models import WarehouseItem
 from .engine import get_db
 
@@ -37,6 +37,16 @@ def _supplier_barcode(token: str) -> Optional[str]:
     return target
 
 
+def _equals_ci(column, value: str):
+    """Case-insensitive *exact* match. ``ilike`` would treat ``%`` and ``_`` in scanned
+    input as wildcards (``A01_001`` would also match ``A01X001``), F-H3."""
+    return func.lower(column) == value.lower()
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:
     token = _first_token(barcode)
     if not token:
@@ -44,20 +54,32 @@ def resolve_barcode_to_item(barcode: str) -> Optional[WarehouseItem]:
     with get_db() as db:
         sku_candidate = _sku_candidate(token)
         if sku_candidate:
-            item = db.execute(
-                select(WarehouseItem).filter(WarehouseItem.sku.ilike(sku_candidate))
-            ).scalars().first()
+            item = (
+                db.execute(
+                    select(WarehouseItem).filter(_equals_ci(WarehouseItem.sku, sku_candidate))
+                )
+                .scalars()
+                .first()
+            )
             if item:
                 return item
         supplier_barcode = _supplier_barcode(token)
-        item = db.execute(
-            select(WarehouseItem).filter(WarehouseItem.supplier_barcode.ilike(supplier_barcode))
-        ).scalars().first()
+        item = (
+            db.execute(
+                select(WarehouseItem).filter(
+                    _equals_ci(WarehouseItem.supplier_barcode, supplier_barcode)
+                )
+            )
+            .scalars()
+            .first()
+        )
         if item:
             return item
-        return db.execute(
-            select(WarehouseItem).filter(WarehouseItem.sku.ilike(token))
-        ).scalars().first()
+        return (
+            db.execute(select(WarehouseItem).filter(_equals_ci(WarehouseItem.sku, token)))
+            .scalars()
+            .first()
+        )
 
 
 def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
@@ -66,11 +88,14 @@ def find_warehouse_items(query_str: str) -> List[WarehouseItem]:
         return [resolved]
 
     with get_db() as db:
-        search = f"%{query_str}%"
+        search = f"%{_escape_like(query_str)}%"
         return list(
             db.execute(
                 select(WarehouseItem)
-                .filter((WarehouseItem.sku.ilike(search)) | (WarehouseItem.item_name.ilike(search)))
+                .filter(
+                    WarehouseItem.sku.ilike(search, escape="\\")
+                    | WarehouseItem.item_name.ilike(search, escape="\\")
+                )
                 .limit(50)
             )
             .scalars()
