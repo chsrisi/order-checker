@@ -502,6 +502,7 @@ class AppState extends ChangeNotifier {
     String method = 'GET',
     dynamic body,
     bool requiresAuth = true,
+    Map<String, String>? extraHeaders,
   }) async {
     _isGlobalLoading = true;
     notifyListeners();
@@ -510,7 +511,10 @@ class AppState extends ChangeNotifier {
         final uri = Uri.parse(url);
         final payload = body != null ? jsonEncode(body) : null;
 
-        final headers = <String, String>{"Content-Type": "application/json"};
+        final headers = <String, String>{
+          "Content-Type": "application/json",
+          ...?extraHeaders,
+        };
 
         if (requiresAuth && token != null) {
           headers['Authorization'] = 'Bearer $token';
@@ -992,8 +996,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await makeRequest(
-        '$_baseUrl/admin/shopee-config/lock?token=$token',
+        '$_baseUrl/admin/shopee-config/lock',
         method: 'POST',
+        extraHeaders: {'X-Config-Token': token},
       );
     } catch (e) {
       log("Lock Shopee Config Error: $e");
@@ -1006,7 +1011,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final response = await makeRequest(
-        '$_baseUrl/admin/shopee-config?token=$_shopeeConfigToken',
+        '$_baseUrl/admin/shopee-config',
+        extraHeaders: {'X-Config-Token': _shopeeConfigToken!},
       );
       if (response?.statusCode == 200) {
         final data = jsonDecode(response!.body);
@@ -1032,8 +1038,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final response = await makeRequest(
-        '$_baseUrl/admin/shopee-config?token=$_shopeeConfigToken',
+        '$_baseUrl/admin/shopee-config',
         method: 'POST',
+        extraHeaders: {'X-Config-Token': _shopeeConfigToken!},
         body: {'access_token': accessToken, 'refresh_token': refreshToken},
       );
       if (response?.statusCode == 200) {

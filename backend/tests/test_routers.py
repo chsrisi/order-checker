@@ -261,3 +261,18 @@ async def test_shopee_config_unlock_and_save(monkeypatch):
         "saved"
         in (await admin_shopee.save_shopee_config(payload, "token", admin_user))["message"].lower()
     )
+
+
+def test_shopee_config_token_is_a_header_not_a_query_param():
+    """T5.1 / F-M18."""
+    from src.main import app
+
+    schema = app.openapi()
+    for path, method in (
+        ("/admin/shopee-config", "get"),
+        ("/admin/shopee-config", "post"),
+        ("/admin/shopee-config/lock", "post"),
+    ):
+        params = {(p["in"], p["name"]) for p in schema["paths"][path][method].get("parameters", [])}
+        assert ("header", "X-Config-Token") in params
+        assert ("query", "token") not in params

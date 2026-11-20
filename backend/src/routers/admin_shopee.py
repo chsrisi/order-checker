@@ -1,6 +1,6 @@
 import logging
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from ..models import (
     MessageResponse,
@@ -57,6 +57,17 @@ async def unlock_shopee_config(
 
 
 
+# T5.1 / F-M18: the config-session token travels in a header, never in the URL (URLs end up
+# in proxy logs and browser history).
+CONFIG_TOKEN = Header(
+    ...,
+    alias="X-Config-Token",
+    min_length=1,
+    max_length=128,
+    description="Token returned by POST /admin/shopee-config/unlock.",
+)
+
+
 @shopee_config_router.post(
     "/lock",
     response_model=MessageResponse,
@@ -64,7 +75,7 @@ async def unlock_shopee_config(
     description="Immediately invalidates a temporary configuration session.",
 )
 async def lock_shopee_config(
-    token: str = Query(...),
+    token: str = CONFIG_TOKEN,
     current_user: User = Depends(require_admin),
 ):
     redis_key = f"cfg_token:{token}"
@@ -85,7 +96,7 @@ async def lock_shopee_config(
     responses={401: {"description": "Configuration session invalid or expired"}},
 )
 async def get_shopee_config(
-    token: str = Query(...),
+    token: str = CONFIG_TOKEN,
     current_user: User = Depends(require_admin),
 ):
     redis_key = f"cfg_token:{token}"
@@ -113,7 +124,7 @@ async def get_shopee_config(
 )
 async def save_shopee_config(
     body: ShopeeConfigUpdateRequest,
-    token: str = Query(...),
+    token: str = CONFIG_TOKEN,
     current_user: User = Depends(require_admin),
 ):
     redis_key = f"cfg_token:{token}"

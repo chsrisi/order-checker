@@ -40,8 +40,8 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET | `/admin/bom/headers` | Admin | Standard and marketplace BOM roots |
 | GET | `/admin/bom/tree` | Admin | BOM tree by `sku` or `shopee_id` (supports optional `qty` multiplier, default 1) |
 | POST | `/admin/shopee-config/unlock` | Admin | Create 2-minute config session |
-| GET/POST | `/admin/shopee-config` | Admin + config token | Read/update Shopee tokens |
-| POST | `/admin/shopee-config/lock` | Admin | End config session |
+| GET/POST | `/admin/shopee-config` | Admin + `X-Config-Token` header | Read/update Shopee tokens (the token was a `?token=` query parameter before v0.5) |
+| POST | `/admin/shopee-config/lock` | Admin + `X-Config-Token` header | End config session |
 | GET/POST | `/outbound` | User | List/create open scans |
 | POST | `/outbound/close` | Admin | Close scans and complete orders |
 | GET | `/items/find` | User | Search SKU, name, or barcode (uses barcode resolution pipeline) |
