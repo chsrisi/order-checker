@@ -279,3 +279,42 @@ def test_active_orders_query_cutoff_is_built_per_call():
 
     assert cutoff(active_orders_query(early)) == early
     assert cutoff(active_orders_query(late)) == late
+
+
+def test_redact_strips_signed_shopee_urls():
+    """T2.12 / F-H9: credentials in URLs never reach log text."""
+    from src.services.shopee_service import redact
+
+    msg = (
+        "0, message='Attempt to decode JSON with unexpected mimetype: text/html', "
+        "url='https://partner.shopeemobile.com/api/v2/order/get_order_list?"
+        "partner_id=1&timestamp=2&access_token=SECRETTOKEN&shop_id=3&sign=SECRETSIGN'"
+    )
+    out = redact(msg)
+    assert "SECRETTOKEN" not in out and "SECRETSIGN" not in out
+    assert "/api/v2/order/get_order_list?<redacted>" in out
+    assert redact("refresh_token=abc&x=1") == "refresh_token=<redacted>&x=1"
+
+
+@pytest.mark.asyncio
+async def test_failed_shopee_call_logs_no_credentials(monkeypatch, caplog):
+    from src.services import shopee_service
+
+    class Boom:
+        def get(self, url, params=None, headers=None):
+            raise RuntimeError(
+                f"failed url='{url}?access_token={params.get('access_token')}&sign=SECRETSIG'"
+            )
+
+    monkeypatch.setattr(shopee_service.shopee_client_session, "session", Boom())
+    monkeypatch.setattr(
+        shopee_service, "get_config_value", lambda key, default=None: f"cfg-{key}"
+    )
+    monkeypatch.setattr(
+        shopee_service.token_mgr, "get_token", AsyncMock(return_value="LIVE_ACCESS_TOKEN")
+    )
+    with caplog.at_level("DEBUG"):
+        await shopee_service.shopee_request("/api/v2/order/get_order_list", {}, None, "GET")
+    assert "Critical error during Shopee call" in caplog.text
+    assert "LIVE_ACCESS_TOKEN" not in caplog.text
+    assert "SECRETSIG" not in caplog.text

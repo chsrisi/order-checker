@@ -110,7 +110,8 @@ async def refresh_shopee_token() -> tuple[str, str] | tuple[None, None]:
 
     except Exception as e:
         logger.error(
-            f"[TOKEN SYSTEM EXCEPTION] Exception during Shopee token refresh network call: {str(e)}"
+            "[TOKEN SYSTEM EXCEPTION] Exception during Shopee token refresh network call: "
+            f"{type(e).__name__}: {redact(e)}"
         )
         return None, None
 
@@ -306,13 +307,31 @@ async def shopee_request(
         except HTTPException:
             raise
         except Exception as e:
+            # No exc_info: the traceback repr would carry the signed URL.
             logger.error(
-                f"[EXCEPTION] Critical error during Shopee call to {path}: {str(e)}",
-                exc_info=True,
+                f"[EXCEPTION] Critical error during Shopee call to {path}: "
+                f"{type(e).__name__}: {redact(e)}"
             )
             return None
 
     return None
+
+
+_URL_QUERY = re.compile(r"(https?://[^\s'\"?]+)\?[^\s'\"]*")
+_SECRET_PARAM = re.compile(
+    r"\b(access_token|refresh_token|sign|partner_key|code)=[^&\s'\"]+", re.IGNORECASE
+)
+
+
+def redact(value: object) -> str:
+    """Strip query strings and credential parameters before text reaches the logs (F-H9).
+
+    aiohttp errors embed the full request URL, which for Shopee carries ``access_token``
+    and ``sign``. Log the exception type, path and Shopee request id instead.
+    """
+    text = str(value)
+    text = _URL_QUERY.sub(r"\1?<redacted>", text)
+    return _SECRET_PARAM.sub(r"\1=<redacted>", text)
 
 
 async def fetch_sns_for_status(status: str, time_from: int, now: int) -> list[str]:
@@ -590,7 +609,7 @@ async def sync_shopee_orders(
                 extra={
                     "event": "shopee.sync.fallback",
                     "reason": "Shopee API unreachable; serving database orders (mock order bypass enabled)",
-                    "error": str(exc),
+                    "error": f"{type(exc).__name__}: {redact(exc)}",
                 },
             )
 
