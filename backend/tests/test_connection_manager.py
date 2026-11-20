@@ -154,3 +154,19 @@ async def test_broadcast_honors_scope_and_reuses_admin_payload(monkeypatch):
     assert len(admin_one.messages) == len(admin_two.messages) == 1
     assert client.messages == []
     assert calls == ["admin"]
+
+
+@pytest.mark.asyncio
+async def test_disconnect_is_idempotent_for_multi_session_user():
+    """T1.7 / F-M10: send failure + WebSocketDisconnect must not raise."""
+    manager = ConnectionManager()
+    ws1, ws2 = FakeWebSocket(), FakeWebSocket()
+    await manager.connect(ws1, "operator", "client")
+    await manager.connect(ws2, "operator", "client")
+    manager.disconnect(ws1, "operator")
+    manager.disconnect(ws1, "operator")  # second call for the same socket
+    assert manager.active_connections["operator"] == [ws2]
+    manager.disconnect(ws2, "operator")
+    manager.disconnect(ws2, "operator")
+    assert manager.active_connections == {}
+    assert manager.user_scopes == {}

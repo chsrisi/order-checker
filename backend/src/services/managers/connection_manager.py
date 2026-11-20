@@ -28,12 +28,15 @@ class ConnectionManager:
         )
 
     def disconnect(self, websocket: WebSocket, username: str):
-        if username in self.active_connections:
-            self.active_connections[username].remove(websocket)
-            if not self.active_connections[username]:
+        # Idempotent: a failed send may already have removed this socket before the
+        # router's WebSocketDisconnect handler calls disconnect() again (F-M10).
+        sessions = self.active_connections.get(username)
+        if sessions is not None:
+            if websocket in sessions:
+                sessions.remove(websocket)
+            if not sessions:
                 del self.active_connections[username]
-        if websocket in self.user_scopes:
-            del self.user_scopes[websocket]
+        self.user_scopes.pop(websocket, None)
         logger.info(f"WebSocket disconnected: {username}")
         if username in self.active_connections:
             logger.debug(
