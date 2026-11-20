@@ -1,8 +1,8 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..models import User
+from ..models import BOMHeadersResponse, BOMNodeResponse, User
 from ..dependencies import require_admin
 from ..services import queries
 from ..services.bom_service import get_standard_bom_node, get_marketplace_bom_node
@@ -14,6 +14,7 @@ bom_router = APIRouter(prefix="/bom", tags=["BOM"])
 
 @bom_router.get(
     "/headers",
+    response_model=BOMHeadersResponse,
     summary="List BOM roots",
     description="Returns standard warehouse BOM headers and Shopee marketplace BOM headers.",
     responses={403: {"description": "Admin scope required"}},
@@ -28,6 +29,8 @@ def get_bom_headers(current_user: User = Depends(require_admin)):
 
 @bom_router.get(
     "/tree",
+    response_model=BOMNodeResponse,
+    response_model_exclude_unset=True,
     summary="Resolve a BOM tree",
     description="Provide exactly one of `sku` or `shopee_id` to recursively resolve a standard or marketplace BOM.",
     responses={
@@ -39,7 +42,7 @@ def get_bom_headers(current_user: User = Depends(require_admin)):
 def get_bom_tree(
     sku: Optional[str] = None,
     shopee_id: Optional[int] = None,
-    qty: int = 1,
+    qty: int = Query(1, ge=1, le=100_000, description="Quantity to scale the tree by."),
     current_user: User = Depends(require_admin),
 ):
     if (sku is None) == (shopee_id is None):

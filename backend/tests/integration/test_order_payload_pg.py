@@ -87,3 +87,13 @@ def test_query_count_is_independent_of_order_count(pg_session_factory, pg_engine
     _, many = _count_queries(pg_engine, lambda: shopee_service.build_shopee_order_responses(orders))
     assert many <= few + 2  # only extra BOM depth levels may add queries, never per order
     assert many <= 10
+
+
+def test_bom_headers_load_in_one_query(pg_session_factory, pg_engine):
+    seed()
+    headers, count = _count_queries(pg_engine, queries.get_bom_headers)
+    assert count == 1
+    assert {(h["sku"], h["item_name"]) for h in headers} == {
+        ("Z90_010", "Synthetic cookie kit"),
+        ("Z90_011", "Synthetic gift box"),
+    }

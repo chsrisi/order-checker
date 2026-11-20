@@ -34,11 +34,11 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
-| GET | `/admin/export/scans` | Admin | Open scans CSV |
+| GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |
 | GET | `/admin/bom/headers` | Admin | Standard and marketplace BOM roots |
-| GET | `/admin/bom/tree` | Admin | BOM tree by `sku` or `shopee_id` (supports optional `qty` multiplier, default 1) |
+| GET | `/admin/bom/tree` | Admin | Resolve one BOM: exactly one of `sku` / `shopee_id`; `qty` ≥ 1 (422 otherwise) |
 | POST | `/admin/shopee-config/unlock` | Admin | Create 2-minute config session |
 | GET/POST | `/admin/shopee-config` | Admin + `X-Config-Token` header | Read/update Shopee tokens (the token was a `?token=` query parameter before v0.5) |
 | POST | `/admin/shopee-config/lock` | Admin + `X-Config-Token` header | End config session |

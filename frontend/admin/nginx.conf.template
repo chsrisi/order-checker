@@ -44,7 +44,7 @@ server {
     }
 
     # Reverse proxy backend API endpoints (same-origin, eliminates CORS in Docker hosting)
-    location ~ ^/(auth|admin|outbound|items|stocks|shopee|pick_items|\.well-known)(/|$) {
+    location ~ ^/(auth|admin|outbound|items|stocks|shopee|pick-items|meta|\.well-known)(/|$) {
         proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

@@ -533,6 +533,35 @@ class RefreshTokenRequest(BaseModel):
     )
 
 
+class BOMStandardHeaderResponse(BaseModel):
+    id: int
+    sku: str
+    item_name: Optional[str] = None
+    note: Optional[str] = None
+
+
+class BOMMarketplaceHeaderResponse(BaseModel):
+    shopee_id: int
+    item_name: Optional[str] = None
+    quantity_standard: Optional[int] = None
+
+
+class BOMHeadersResponse(BaseModel):
+    standard: List[BOMStandardHeaderResponse]
+    marketplace: List[BOMMarketplaceHeaderResponse]
+
+
+class BOMNodeResponse(BaseModel):
+    """A resolved BOM node. ``is_not_primary_child`` exists on standard nodes only."""
+
+    sku: str
+    name: str
+    quantity: int
+    type: Literal["standard", "marketplace"]
+    is_not_primary_child: Optional[bool] = None
+    children: List["BOMNodeResponse"] = Field(default_factory=list)
+
+
 class ShopeeOrderItemResponse(BaseModel):
     id: int
     item_id: Optional[int] = None

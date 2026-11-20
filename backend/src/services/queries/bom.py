@@ -60,17 +60,17 @@ def get_standard_bom_node_internal(
 
 
 def get_bom_headers() -> List[dict]:
+    """Standard BOM roots with their item name and note, in one query (T5.4)."""
     with get_db() as db:
-        headers = db.execute(select(BOMHeader)).scalars().all()
-        result = []
-        for h in headers:
-            item = db.execute(
-                select(WarehouseItem).filter(WarehouseItem.sku == h.sku)
-            ).scalar_one_or_none()
-            name = item.item_name if item else None
-            note = item.note if item else None
-            result.append({"id": h.id, "sku": h.sku, "item_name": name, "note": note})
-        return result
+        rows = db.execute(
+            select(BOMHeader.id, BOMHeader.sku, WarehouseItem.item_name, WarehouseItem.note)
+            .outerjoin(WarehouseItem, WarehouseItem.sku == BOMHeader.sku)
+            .order_by(BOMHeader.id)
+        ).all()
+        return [
+            {"id": id_, "sku": sku, "item_name": name, "note": note}
+            for id_, sku, name, note in rows
+        ]
 
 
 def get_marketplace_bom_headers() -> List[dict]:

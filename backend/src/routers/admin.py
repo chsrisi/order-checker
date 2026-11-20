@@ -143,8 +143,8 @@ def get_shopee_orders_history(
 
 @router.get(
     "/export/scans",
-    summary="Export open scans as CSV",
-    description="Streams the current outbound scan set as a timestamped CSV file.",
+    summary="Export all outbound scans as CSV",
+    description="Streams every outbound scan record, open and closed, newest first, as a timestamped CSV file.",
     response_class=StreamingResponse,
     responses={200: {"content": {"text/csv": {}}}, 403: {"description": "Admin scope required"}},
 )
