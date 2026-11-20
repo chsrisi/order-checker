@@ -296,6 +296,33 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
 
 ---
 
+## Data Retention
+
+Recipient data is used only for quick order matching by workers. Shopee's Data Protection
+Policy allows keeping it for at most **90 days**; this deployment keeps it for **30 days**.
+
+| Variable | Default | Rule |
+|---|---|---|
+| `RECIPIENT_RETENTION_DAYS` | `30` | Must be 1–90 under production rules (startup refuses otherwise) |
+| `RECIPIENT_RETENTION_INTERVAL_SECONDS` | `86400` | How often the purge runs; it also runs once at startup |
+
+The purge task:
+
+- **deletes** `shopee.order_recipient_address` rows and **clears** `shopee.order_info.note`
+- covers orders completed (`done_at`) more than N days ago, and orders never completed whose
+  `ship_by` is more than N days ago
+- **keeps** order numbers, items, status and tracking numbers (outbound matching and history
+  still work)
+- logs **counts only**, never names, cities or notes
+
+Related rules:
+
+- **Backups:** keep database backups no longer than 90 days, ideally 30, so purged data does
+  not live on in old backups. Restoring an old backup brings purged data back; the next purge
+  run removes it again.
+- **Logs:** recipient data must never be written to logs. Do not add request/response body
+  logging for Shopee order endpoints.
+
 ## Dormant Hardening Switches
 
 Some hardening rules are already written but commented out, so they can be enabled later

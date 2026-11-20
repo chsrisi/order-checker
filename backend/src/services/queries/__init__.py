@@ -28,6 +28,7 @@ from .orders import (
     acquire_order,
     sync_shopee_orders_to_db,
     active_orders_query,
+    purge_recipient_data,
 )
 from .stocks import (
     update_or_move_stock,
@@ -90,6 +91,7 @@ __all__ = [
     "acquire_order",
     "sync_shopee_orders_to_db",
     "active_orders_query",
+    "purge_recipient_data",
     "update_or_move_stock",
     "get_stocks_data",
     "get_all_stocks_data",

@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from datetime import datetime, UTC
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from ...models import (
@@ -238,3 +238,32 @@ def sync_shopee_orders_to_db(chunk_results) -> None:
                             info.note = order_detail.note
 
         db.commit()
+
+
+def purge_recipient_data(cutoff: datetime) -> tuple[int, int]:
+    """Delete recipient addresses and clear buyer notes of orders past retention (A-10b).
+
+    An order is past retention when it was completed before ``cutoff``, or, if it was
+    never completed, when its ship-by date is before ``cutoff``. Order numbers, items and
+    tracking numbers are kept. Returns ``(addresses_deleted, notes_cleared)``.
+    """
+    expired = select(ShopeeOrder.order_sn).where(
+        or_(
+            ShopeeOrder.done_at < cutoff,
+            and_(ShopeeOrder.done == False, ShopeeOrder.ship_by < cutoff),  # noqa: E712
+        )
+    )
+    with get_db() as db:
+        addresses = db.execute(
+            delete(ShopeeOrderRecipientAddress)
+            .where(ShopeeOrderRecipientAddress.order_sn.in_(expired))
+            .returning(ShopeeOrderRecipientAddress.id)
+        ).all()
+        notes = db.execute(
+            update(ShopeeOrderInfo)
+            .where(ShopeeOrderInfo.order_sn.in_(expired), ShopeeOrderInfo.note.isnot(None))
+            .values(note=None)
+            .returning(ShopeeOrderInfo.id)
+        ).all()
+        db.commit()
+        return len(addresses), len(notes)
