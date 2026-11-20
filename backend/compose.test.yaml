@@ -17,6 +17,7 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
+      APP_ENV: development
       DATABASE_URL: "sqlite:///:memory:"
       TEST_DATABASE_URL: "postgresql+psycopg://postgres:test@test-postgres:5432/bakingholic_test"
       REDIS_URL: "redis://redis:6379/15"

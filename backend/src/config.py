@@ -129,3 +129,29 @@ JWT_LEEWAY_SECONDS: float = get_config_float("JWT_LEEWAY_SECONDS", 30.0)
 REFRESH_TTL_SECONDS: int = get_config_int("REFRESH_TTL_SECONDS", 86400)
 REFRESH_CLEANUP_INTERVAL_SECONDS: int = get_config_int("REFRESH_CLEANUP_INTERVAL_SECONDS", 3600)
 
+
+# ------------------------------------------------------------------------------
+# Environment profile (docs/OPERATIONS.md "Environment profiles")
+# ------------------------------------------------------------------------------
+# Fail closed: an unset or unknown APP_ENV applies production rules. Local setups set
+# APP_ENV=development explicitly (.env.example, compose.test.yaml).
+APP_ENV_VALUES = ("development", "staging", "production")
+
+
+def resolve_app_env(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in APP_ENV_VALUES:
+        return value
+    if value:
+        logger.warning(f"Unknown APP_ENV {value!r}; applying production rules")
+    return "production"
+
+
+APP_ENV: str = resolve_app_env(get_config_value("APP_ENV"))
+# Staging is production-like: same startup rules, but sandbox Shopee only.
+PRODUCTION_RULES: bool = APP_ENV != "development"
+
+ALLOW_REGISTRATION: bool = get_config_bool("ALLOW_REGISTRATION", not PRODUCTION_RULES)
+EXPOSE_API_DOCS: bool = get_config_bool("EXPOSE_API_DOCS", not PRODUCTION_RULES)
+RECIPIENT_RETENTION_DAYS: int = get_config_int("RECIPIENT_RETENTION_DAYS", 30)
+RECIPIENT_RETENTION_MAX_DAYS: int = 90  # Shopee DPP maximum

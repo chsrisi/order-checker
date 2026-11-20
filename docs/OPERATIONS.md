@@ -14,6 +14,35 @@ Configuration lookup order:
 
 ---
 
+## Environment Profiles
+
+`APP_ENV` selects the startup rules. Allowed values are `development`, `staging` and `production`.
+
+| Profile | Startup rules | Shopee host | Registration default | API docs default |
+|---|---|---|---|---|
+| `development` | local defaults allowed | sandbox (live needs an explicit override) | on | on |
+| `staging` | production rules | sandbox (live needs an explicit override) | off | off |
+| `production` | production rules | live allowed | off | off |
+
+**Fail closed.** If `APP_ENV` is unset or unknown, production rules apply. Local setups set
+`APP_ENV=development` explicitly (`.env.example`, `compose.test.yaml`). The base
+`compose.yaml` does not set it, so production deployments use the
+`compose.prod.yaml` override (see Deployment).
+
+Under production rules the server **refuses to start**, listing every problem at once, if any of these hold:
+
+- `ADMIN_PASSWORD` is empty, `admin`, or the `.env.example` placeholder
+- `CORS_ORIGINS` contains `*`, or `CORS_ORIGIN_REGEX` is set. Leave CORS empty: the admin
+  web app is served same-origin through nginx and the operator client is native, so neither
+  needs CORS. If you must allow an origin, list it exactly.
+- `MOCK_ORDER_BYPASS` is on
+- `DATABASE_URL` is missing or SQLite (no silent SQLite fallback)
+- `REDIS_URL` has no password
+- `ALLOW_REGISTRATION` is on
+- `RECIPIENT_RETENTION_DAYS` is above 90 (Shopee DPP maximum)
+
+`STOCK_LOCATION_MODE` is deliberately **not** checked: both modes are valid in production.
+
 ## Secret Management: File-Backed vs. Environment-Backed
 
 Docker Compose supports supplying secrets either as **Environment-Backed Secrets** (`environment: <VAR>`) or **File-Backed Secrets** (`file: <PATH>`). 

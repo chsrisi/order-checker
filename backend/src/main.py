@@ -14,6 +14,7 @@ from .exceptions import DomainException, domain_exception_handler
 from .logging_config import configure_logging, request_id_context
 
 from .config import get_config_value, API_VERSION
+from .settings_guard import enforce_startup_rules
 from .services.redis_service import redis_mgr
 from .services import auth_service, managers, queries
 from .services.shopee_service import shopee_client_session
@@ -55,6 +56,7 @@ OPENAPI_TAGS = [
 async def lifespan(_app: FastAPI):
     # Startup logic
     logger.info("application_starting", extra={"event": "application.start"})
+    enforce_startup_rules()  # before any background task or seeding
 
     # Start background rotation and token cleanup tasks
     bg_tasks: list[asyncio.Task[Any]] = []
