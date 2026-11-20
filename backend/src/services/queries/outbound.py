@@ -1,7 +1,7 @@
 import logging
-from typing import List
+from typing import List, Optional
 from datetime import datetime, UTC
-from sqlalchemy import select, update, or_, delete
+from sqlalchemy import delete, func, or_, select, update
 
 from ...models import OutboundItem, ShopeeOrder, ShopeeOrderInfo
 from .engine import get_db
@@ -29,14 +29,23 @@ def get_all_outbound_data() -> List[OutboundItem]:
         return list(db.execute(query).scalars().unique().all())
 
 
-def get_outbound_history() -> List[OutboundItem]:
+def get_outbound_history(
+    limit: Optional[int] = None, offset: int = 0
+) -> tuple[List[OutboundItem], int]:
+    """Closed scans, newest first, one page at a time (T5.2). Returns ``(page, total)``."""
+    closed = OutboundItem.closed == True  # noqa: E712
     with get_db() as db:
+        total = db.execute(
+            select(func.count()).select_from(OutboundItem).filter(closed)
+        ).scalar_one()
         query = (
             select(OutboundItem)
-            .filter(OutboundItem.closed == True)  # noqa: E712
-            .order_by(OutboundItem.created_at.desc())
+            .filter(closed)
+            .order_by(OutboundItem.created_at.desc(), OutboundItem.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
-        return list(db.execute(query).scalars().unique().all())
+        return list(db.execute(query).scalars().unique().all()), total
 
 
 def create_outbound_item(content: str, owner_username: str, tags_in: List[str]) -> OutboundItem:

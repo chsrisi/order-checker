@@ -32,8 +32,8 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET/DELETE | `/admin/users` | Admin | List/delete client users (delete also closes the user's WebSocket sessions) |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
-| GET | `/admin/history/outbound` | Admin | Closed scan history |
-| GET | `/admin/history/shopee/orders` | Admin | Completed order history |
+| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
+| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
 | GET | `/admin/export/scans` | Admin | Open scans CSV |
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |

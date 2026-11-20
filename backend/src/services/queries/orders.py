@@ -1,7 +1,7 @@
 import logging
 from typing import Iterable, List, Optional
 from datetime import datetime, timedelta, UTC
-from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from ...models import (
@@ -77,19 +77,30 @@ def get_all_shopee_order_data() -> List[ShopeeOrder]:
         return list(db.execute(query).scalars().all())
 
 
-def get_shopee_orders_history() -> List[ShopeeOrder]:
+def get_shopee_orders_history(
+    limit: Optional[int] = None, offset: int = 0
+) -> tuple[List[ShopeeOrder], int]:
+    """Completed orders, most recently completed first, one page at a time (T5.2)."""
+    done = ShopeeOrder.done == True  # noqa: E712
     with get_db() as db:
+        total = db.execute(select(func.count()).select_from(ShopeeOrder).filter(done)).scalar_one()
         query = (
             select(ShopeeOrder)
-            .filter(ShopeeOrder.done == True)  # noqa: E712
-            .order_by(ShopeeOrder.ship_by.desc())
+            .filter(done)
+            .order_by(
+                ShopeeOrder.done_at.desc().nulls_last(),
+                ShopeeOrder.ship_by.desc(),
+                ShopeeOrder.order_sn,
+            )
+            .offset(offset)
+            .limit(limit)
             .options(
                 selectinload(ShopeeOrder.info),
                 selectinload(ShopeeOrder.item_list),
                 selectinload(ShopeeOrder.recipient_address),
             )
         )
-        return list(db.execute(query).scalars().all())
+        return list(db.execute(query).scalars().all()), total
 
 
 def acquire_order(order_sn: str, username: str) -> bool:

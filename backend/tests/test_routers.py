@@ -89,8 +89,8 @@ async def test_admin_user_and_clear_operations(monkeypatch):
 
 def test_admin_history_and_exports(monkeypatch):
     admin_user = actor("admin", "admin")
-    monkeypatch.setattr(admin.queries, "get_outbound_history", lambda: ["scan"])
-    monkeypatch.setattr(admin.queries, "get_shopee_orders_history", lambda: ["order"])
+    monkeypatch.setattr(admin.queries, "get_outbound_history", lambda **_: (["scan"], 7))
+    monkeypatch.setattr(admin.queries, "get_shopee_orders_history", lambda **_: (["order"], 1))
     monkeypatch.setattr(
         admin.shopee_service,
         "build_shopee_order_responses",
@@ -98,8 +98,12 @@ def test_admin_history_and_exports(monkeypatch):
     )
     monkeypatch.setattr(admin.queries, "get_export_scans_csv", lambda: "a,b\n1,2\n")
     monkeypatch.setattr(admin.queries, "get_export_stocks_csv", lambda: "sku,qty\nA,1\n")
-    assert admin.get_outbound_history(admin_user) == ["scan"]
-    assert admin.get_shopee_orders_history(admin_user) == ["built-order"]
+    from fastapi import Response
+
+    response = Response()
+    assert admin.get_outbound_history(response, 500, 0, admin_user) == ["scan"]
+    assert response.headers["X-Total-Count"] == "7"
+    assert admin.get_shopee_orders_history(Response(), 500, 0, admin_user) == ["built-order"]
     assert admin.export_scanned_items(admin_user).media_type == "text/csv"
     assert admin.export_stocks(admin_user).media_type == "text/csv"
 

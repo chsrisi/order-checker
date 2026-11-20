@@ -1288,8 +1288,22 @@ class _HistoryOrdersTabState extends State<_HistoryOrdersTab> {
           child: RefreshIndicator(
             onRefresh: appState.fetchAdminHistory,
             child: ListView.builder(
-              itemCount: items.length,
+              itemCount: items.length + (appState.historyHasMore ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == items.length) {
+                  return Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Center(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.history),
+                        label: const Text('Load older history'),
+                        onPressed: appState.isLoading
+                            ? null
+                            : () => appState.fetchAdminHistory(loadMore: true),
+                      ),
+                    ),
+                  );
+                }
                 final item = items[index];
                 return switch (item) {
                   _OrderT(order: final o) => () {

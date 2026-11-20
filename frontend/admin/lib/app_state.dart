@@ -694,23 +694,52 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchAdminHistory() async {
+  // History is paged by the backend (newest first, X-Total-Count header).
+  static const int _historyPageSize = 500;
+  int _historyOutboundTotal = 0;
+  int _historyOrdersTotal = 0;
+
+  bool get historyHasMore =>
+      _historyOutboundItems.length < _historyOutboundTotal ||
+      _historyOrders.length < _historyOrdersTotal;
+
+  int _totalCount(http.Response response, int fallback) =>
+      int.tryParse(response.headers['x-total-count'] ?? '') ?? fallback;
+
+  Future<void> fetchAdminHistory({bool loadMore = false}) async {
     _isLoading = true;
     notifyListeners();
     try {
-      final resOutbound = await makeRequest('$_baseUrl/admin/history/outbound');
-      if (resOutbound?.statusCode == 200) {
-        _historyOutboundItems = (jsonDecode(resOutbound!.body) as List)
-            .map((i) => OutboundItem.fromJson(i))
-            .toList();
+      if (!loadMore || _historyOutboundItems.length < _historyOutboundTotal) {
+        final offset = loadMore ? _historyOutboundItems.length : 0;
+        final resOutbound = await makeRequest(
+          '$_baseUrl/admin/history/outbound?limit=$_historyPageSize&offset=$offset',
+        );
+        if (resOutbound?.statusCode == 200) {
+          final page = (jsonDecode(resOutbound!.body) as List)
+              .map((i) => OutboundItem.fromJson(i))
+              .toList();
+          _historyOutboundItems = loadMore
+              ? [..._historyOutboundItems, ...page]
+              : page;
+          _historyOutboundTotal = _totalCount(
+            resOutbound,
+            _historyOutboundItems.length,
+          );
+        }
       }
-      final resOrders = await makeRequest(
-        '$_baseUrl/admin/history/shopee/orders',
-      );
-      if (resOrders?.statusCode == 200) {
-        _historyOrders = (jsonDecode(resOrders!.body) as List)
-            .map((i) => ShopeeOrder.fromJson(i))
-            .toList();
+      if (!loadMore || _historyOrders.length < _historyOrdersTotal) {
+        final offset = loadMore ? _historyOrders.length : 0;
+        final resOrders = await makeRequest(
+          '$_baseUrl/admin/history/shopee/orders?limit=$_historyPageSize&offset=$offset',
+        );
+        if (resOrders?.statusCode == 200) {
+          final page = (jsonDecode(resOrders!.body) as List)
+              .map((i) => ShopeeOrder.fromJson(i))
+              .toList();
+          _historyOrders = loadMore ? [..._historyOrders, ...page] : page;
+          _historyOrdersTotal = _totalCount(resOrders, _historyOrders.length);
+        }
       }
     } catch (e) {
       log("Fetch Admin History Error: $e");

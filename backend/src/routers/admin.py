@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.responses import StreamingResponse
 
 from .bom import bom_router
@@ -100,6 +100,11 @@ async def delete_user(
     return {"message": "User and associated data deleted successfully"}
 
 
+# T5.2: history pages, newest first; X-Total-Count carries the full size.
+HISTORY_LIMIT = Query(500, ge=1, le=2000, description="Page size (newest first).")
+HISTORY_OFFSET = Query(0, ge=0, description="Rows to skip.")
+
+
 @router.get(
     "/history/outbound",
     response_model=List[OutboundResponse],
@@ -107,8 +112,15 @@ async def delete_user(
     description="Returns only scans that have been closed by an administrator.",
     responses={403: {"description": "Admin scope required"}},
 )
-def get_outbound_history(current_user: User = Depends(require_admin)):
-    return queries.get_outbound_history()
+def get_outbound_history(
+    response: Response,
+    limit: int = HISTORY_LIMIT,
+    offset: int = HISTORY_OFFSET,
+    current_user: User = Depends(require_admin),
+):
+    items, total = queries.get_outbound_history(limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -118,8 +130,14 @@ def get_outbound_history(current_user: User = Depends(require_admin)):
     description="Returns only orders marked complete by outbound period closure.",
     responses={403: {"description": "Admin scope required"}},
 )
-def get_shopee_orders_history(current_user: User = Depends(require_admin)):
-    orders = queries.get_shopee_orders_history()
+def get_shopee_orders_history(
+    response: Response,
+    limit: int = HISTORY_LIMIT,
+    offset: int = HISTORY_OFFSET,
+    current_user: User = Depends(require_admin),
+):
+    orders, total = queries.get_shopee_orders_history(limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
     return shopee_service.build_shopee_order_responses(orders)
 
 
