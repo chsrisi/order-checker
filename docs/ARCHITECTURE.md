@@ -75,7 +75,8 @@ verification to tolerate key rotation.
 
 1. A request checks the two-minute process-local cache and obtains an async lock.
 2. The service requests order numbers per Shopee status with bounded concurrency.
-3. Order details are fetched in chunks of at most 50 orders; package tracking numbers are fetched in package-list chunks of 10.
+3. Order details are fetched in chunks of at most `SHOPEE_ORDER_CHUNK_SIZE` (50) orders. Package
+   tracking numbers are fetched in chunks of `SHOPEE_PACKAGE_CHUNK_SIZE` (50) packages.
 4. Orders that are still open locally but older than the list window are fetched too, so
    cancellations and shipments reach the database.
 5. A transaction inserts or updates orders, packages, addresses and items. Existing orders get

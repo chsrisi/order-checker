@@ -104,8 +104,9 @@ This document tracks known architectural, library, and system limitations within
   - Active `.env` files are strictly reserved for production use and manual local deployment.
 - **Code References**:
   - Backend configuration template: `backend/.env.example`
-  - Frontend admin configuration template: `frontend/admin/.env.example`
-  - Agent instructions: `AGENTS.md`, `GEMINI.md`
+  - Frontend configuration templates: `frontend/admin/.env.example`, `frontend/client/.env.example`
+  - Agent instruction files are local and untracked (for example `CLAUDE.md`); this file is the
+    tracked source of the rule.
 
 ---
 
