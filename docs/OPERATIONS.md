@@ -49,20 +49,20 @@ Docker Compose supports supplying secrets either as **Environment-Backed Secrets
 
 ### Secret Classification & Sensitivity Tiers
 
-| Secret / Config Key | Sensitivity | Recommended Source | Current Setup in `compose.yaml` | Rationale |
-| :--- | :--- | :--- | :--- | :--- |
-| `postgres_password` | **Super Sensitive** | **File-backed** (`.secrets/postgres_password`) | `file: ./.secrets/postgres_password` | Master superuser password for the PostgreSQL container. |
-| `app_password` | **Super Sensitive** | **File-backed** (`.secrets/app_password`) | `file: ./.secrets/app_password` | Application role (`bh_backend`) database password used by `init.sql`. |
-| `database_url` | **Super Sensitive** | **File-backed** (`.secrets/database_url`) | `environment: DATABASE_URL` *(upgradeable)* | Full connection URI containing credentials, database name, and port. |
-| `partner_key` | **Super Sensitive** | **File-backed** (`.secrets/partner_key`) | `environment: PARTNER_KEY` *(upgradeable)* | Shopee OpenAPI HMAC cryptographic signing secret key. |
-| `admin_password` | **Super Sensitive** | **File-backed** (`.secrets/admin_password`) | `environment: ADMIN_PASSWORD` *(upgradeable)* | Initial admin password seeded into the database on first startup. |
-| RSA Key Pairs (`.key`) | **Super Sensitive** | **Volume Mount** (`KEYS_VOLUME`) | Mounted `./data/keys` -> `/app/data/keys` | Asymmetric RS256 private keys generated/rotated by `KeyManager`. |
-| `partner_id` | Medium | Env-backed / Secret | `environment: PARTNER_ID` | Shopee partner account identifier. |
-| `shop_id` | Medium | Env-backed / Secret | `environment: SHOP_ID` | Shopee shop identifier. |
-| `shopee_url` | Low | Env-backed (`.env`) | `environment: SHOPEE_URL` | Shopee Open Platform endpoint URL. |
-| `admin_username` | Low | Env-backed (`.env`) | `environment: ADMIN_USERNAME` | Initial seeded administrator username. |
-| `redis_url` | Low | Env-backed (`.env`) | `environment: REDIS_URL` | Internal container network address for Redis cache. |
-| Operational Knobs (`PORT`, `LOG_*`, TTLs, CORS) | Non-sensitive | Env-backed (`.env`) | `env_file: .env` / `environment:` | Operational tuning, port mapping, and log levels. |
+| Secret / Config Key | Sensitivity | Recommended Source | `compose.yaml` (dev) | `compose.prod.yaml` | Rationale |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `postgres_password` | **Super Sensitive** | **File-backed** (`.secrets/postgres_password`) | `file: ./.secrets/postgres_password` | same | Master superuser password for the PostgreSQL container. |
+| `app_password` | **Super Sensitive** | **File-backed** (`.secrets/app_password`) | `file: ./.secrets/app_password` | same | Application role (`bh_backend`) database password used by `init.sql`. |
+| `database_url` | **Super Sensitive** | **File-backed** (`.secrets/database_url`) | `environment: DATABASE_URL` | `file: ./.secrets/database_url` | Full connection URI containing credentials, database name, and port. |
+| `partner_key` | **Super Sensitive** | **File-backed** (`.secrets/partner_key`) | `environment: PARTNER_KEY` | `file: ./.secrets/partner_key` | Shopee OpenAPI HMAC cryptographic signing secret key. |
+| `admin_password` | **Super Sensitive** | **File-backed** (`.secrets/admin_password`) | `environment: ADMIN_PASSWORD` | `file: ./.secrets/admin_password` | Initial admin password seeded into the database on first startup. |
+| RSA Key Pairs (`.key`) | **Super Sensitive** | **Volume Mount** (`KEYS_VOLUME`) | Mounted `./data/keys` -> `/app/data/keys` | same | Asymmetric RS256 private keys generated/rotated by `KeyManager`. |
+| `partner_id` | Medium | Env-backed / Secret | `environment: PARTNER_ID` | same | Shopee partner account identifier. |
+| `shop_id` | Medium | Env-backed / Secret | `environment: SHOP_ID` | same | Shopee shop identifier. |
+| `shopee_url` | Low | Env-backed (`.env`) | `environment: SHOPEE_URL` | same | Shopee Open Platform endpoint URL. |
+| `admin_username` | Low | Env-backed (`.env`) | `environment: ADMIN_USERNAME` | same | Initial seeded administrator username. |
+| `redis_url` | **Sensitive** (contains the Redis password in production) | Env-backed (dev) / **File-backed** (prod) | `environment: REDIS_URL` (no password) | `file: ./.secrets/redis_url` (with password) | Internal container network address for Redis cache. |
+| Operational Knobs (`PORT`, `LOG_*`, TTLs, CORS) | Non-sensitive | Env-backed (`.env`) | `env_file: .env` / `environment:` | same; `APP_ENV=production`, `CORS_ORIGINS=` forced | Operational tuning, port mapping, and log levels. |
 
 ---
 
@@ -331,6 +331,31 @@ docker compose logs -f server
 
 The server container applies Alembic migrations on startup before serving the API on `${PORT:-8000}`.
 Keys and logs are persisted to host directories via configurable volume binds (`KEYS_VOLUME` and `LOGS_VOLUME`).
+
+### Production Deployment
+
+Production uses the base file plus the production override:
+
+```bash
+cd backend
+cp .env.production.example .env        # non-sensitive settings only
+# create the files listed at the top of compose.prod.yaml in backend/.secrets/ (chmod 600)
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
+
+The override:
+
+- sets `APP_ENV=production`, so startup refuses unsafe configuration (see Environment Profiles)
+- forces `CORS_ORIGINS` empty
+- publishes **no** ports for PostgreSQL or Redis
+- starts Redis with `requirepass` taken from `.secrets/redis_password`, with an authenticated healthcheck
+- reads `DATABASE_URL`, `ADMIN_PASSWORD`, `PARTNER_KEY` and `REDIS_URL` from `.secrets/` files instead of the environment
+- uses `restart: unless-stopped` for every service
+
+It needs Docker Compose v2.24.4 or later.
+
+To reach the database for maintenance, use `docker compose exec db psql -U postgres bakingholic`
+instead of publishing the port.
 
 ### Running with Docker CLI (Standalone)
 

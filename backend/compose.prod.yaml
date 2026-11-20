@@ -1,0 +1,66 @@
+# Production override (docs/OPERATIONS.md "Production deployment").
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+#
+# - APP_ENV=production: startup refuses unsafe configuration (see "Environment profiles").
+# - PostgreSQL and Redis are reachable only on the internal compose network.
+# - Redis requires a password; the backend reads its URL from a file secret.
+# - Super-sensitive values come from files in ./.secrets/ (never from .env).
+#
+# Required files (one value per file, chmod 600, never committed):
+#   .secrets/database_url     postgresql+psycopg://bh_backend:<app_password>@db:5432/bakingholic
+#   .secrets/admin_password   long random admin password
+#   .secrets/partner_key      Shopee partner key
+#   .secrets/redis_password   long random Redis password
+#   .secrets/redis_url        redis://:<redis_password>@redis:6379/0
+#   .secrets/postgres_password, .secrets/app_password   (as for compose.yaml)
+# Requires Docker Compose v2.24.4+ (!reset / !override).
+
+services:
+  server:
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - CORS_ORIGINS=
+    depends_on:
+      redis:
+        condition: service_healthy
+    secrets:
+      - source: redis_url
+        mode: 0444
+
+  db:
+    restart: unless-stopped
+    ports: !reset []
+
+  redis:
+    restart: unless-stopped
+    ports: !reset []
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"
+    secrets:
+      - redis_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  admin-web:
+    restart: unless-stopped
+
+secrets:
+  database_url: !override
+    file: ./.secrets/database_url
+  admin_password: !override
+    file: ./.secrets/admin_password
+  partner_key: !override
+    file: ./.secrets/partner_key
+  redis_password:
+    file: ./.secrets/redis_password
+  redis_url:
+    file: ./.secrets/redis_url
