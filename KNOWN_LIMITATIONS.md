@@ -44,6 +44,10 @@ This document tracks known architectural, library, and system limitations within
 - **Countermeasure / Impact**:
   - Frontends operate under default architectural assumptions and cannot dynamically reflect backend bypass modes (e.g. automatically adjusting single-location vs. multi-location stock UX or displaying active bypass banners).
   - Developers and operators testing the system must ensure frontend workflows align with the server's configured `.env` flags.
+- **Partly resolved (v0.5, T4.7)**: the backend now publishes `GET /meta`: API version,
+  supported client contract range, `app_env`, `stock_location_mode` and feature flags. The
+  frozen v1 client does not read it. The admin app and the next client major (contract v2)
+  can. Pushing changes in real time and OTA updates remain open.
 - **Future High-Level Plan & Context**:
   - Resolving this synchronization gap is scheduled as a primary objective of the upcoming **Sync Milestone**.
   - In the Sync Milestone, the architecture will introduce:

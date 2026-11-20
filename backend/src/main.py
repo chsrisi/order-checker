@@ -27,6 +27,7 @@ from .routers import (
     shopee,
     pick_items,
     websocket,
+    meta,
 )
 
 load_dotenv(find_dotenv())
@@ -228,3 +229,4 @@ app.include_router(stocks.router)
 app.include_router(shopee.router)
 app.include_router(pick_items.router)
 app.include_router(websocket.router)
+app.include_router(meta.router)

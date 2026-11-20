@@ -28,6 +28,7 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | POST | `/auth/logout` | Public | Delete refresh-token record |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
+| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users (delete also closes the user's WebSocket sessions) |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
