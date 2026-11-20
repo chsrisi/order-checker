@@ -8,6 +8,9 @@ from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigIntege
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from pydantic import (
+    AfterValidator,
+    PlainSerializer,
+    WithJsonSchema,
     BaseModel,
     ConfigDict,
     Discriminator,
@@ -16,6 +19,26 @@ from pydantic import (
     model_validator,
     Field,
 )
+
+
+def _assume_utc(value: datetime) -> datetime:
+    """Stored timestamps are naive UTC (``DateTime`` columns); make that explicit."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _iso_utc_z(value: datetime) -> str:
+    return _assume_utc(value).isoformat().replace("+00:00", "Z")
+
+
+# F-M6 / T4.6: every API and WS datetime is UTC with a ``Z`` suffix, e.g.
+# ``2026-11-20T21:05:00.123456Z``, which Dart's DateTime.parse reads as UTC.
+UTCDateTime = Annotated[
+    datetime,
+    AfterValidator(_assume_utc),
+    PlainSerializer(_iso_utc_z, return_type=str, when_used="json"),
+    # keep the documented contract shape (string, date-time) for the serialized form
+    WithJsonSchema({"type": "string", "format": "date-time"}, mode="serialization"),
+]
 
 
 class Base(DeclarativeBase):
@@ -441,10 +464,10 @@ class OutboundResponse(BaseModel):
     id: int
     content: str
     tags: List[str] = Field(default_factory=list)
-    created_at: datetime
+    created_at: UTCDateTime
     owner_user: str
     closed: bool = False
-    closed_at: Optional[datetime] = None
+    closed_at: Optional[UTCDateTime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -560,11 +583,11 @@ class ShopeeOrderResponse(BaseModel):
     order_sn: str
     split_up: Optional[bool] = None
     status: str
-    ship_by: datetime
+    ship_by: UTCDateTime
     owner_user: Optional[str] = None
     shipping_carrier: Optional[str] = None
     done: bool = False
-    done_at: Optional[datetime] = None
+    done_at: Optional[UTCDateTime] = None
     item_list: List[ShopeeOrderItemBOMResponse] = Field(default_factory=list)
     recipient_address: Optional[ShopeeOrderRecipientResponse] = None
     info: List[ShopeeOrderInfoResponse] = Field(default_factory=list)
@@ -610,7 +633,7 @@ class PickItemEntryResponse(BaseModel):
     sku: str
     qty: int
     order_sn: Optional[str] = None
-    timestamp: datetime
+    timestamp: UTCDateTime
     owner_user: str
     item_name: Optional[str] = None
 

@@ -57,6 +57,14 @@ it does not blacklist the short-lived access token. Public signing keys are at
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.
 
+## Datetimes
+
+Every datetime in HTTP responses and WebSocket frames is a UTC instant with a `Z` suffix, for
+example `2026-11-20T21:05:00.123456Z`. Dart's `DateTime.parse` reads it as UTC, and `.toLocal()`
+then shows the device's local time. Before v0.5 the values were naive and implicitly UTC. Both
+forms parse, so the change is client-safe. In practice, the operator's outbound scan times and
+the admin's order times now show in local time instead of UTC.
+
 ## Order payload
 
 `GET /shopee/orders`, `/admin/history/shopee/orders` and the `shopee_orders_update` frame

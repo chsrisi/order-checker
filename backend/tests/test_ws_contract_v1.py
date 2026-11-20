@@ -110,3 +110,16 @@ def test_users_payload_never_contains_password_hash(monkeypatch):
     )
     data = ConnectionManager()._get_data(WSMessageType.USERS, "operator")
     assert data == [{"username": "operator", "scope": "client"}]
+
+
+@pytest.mark.parametrize(
+    "message_type, field",
+    [(WSMessageType.OUTBOUNDS, "created_at"), (WSMessageType.PICK_ITEM_ENTRIES, "timestamp")],
+)
+def test_ws_datetimes_are_utc_z(monkeypatch, message_type, field):
+    """T4.6: frames carry Dart-parsable UTC instants (``...Z``)."""
+    import re
+
+    _fake_queries(monkeypatch, "client")
+    (item,) = ConnectionManager()._get_data(message_type, "operator")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$", item[field])
