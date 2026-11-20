@@ -13,3 +13,4 @@ data/
 
 # ext
 .ruff_cache/
+.coverage
