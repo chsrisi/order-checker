@@ -43,6 +43,11 @@ Under production rules the server **refuses to start**, listing every problem at
 
 `STOCK_LOCATION_MODE` is deliberately **not** checked: both modes are valid in production.
 
+**Live Shopee outside production.** In `development` and `staging`, startup refuses a live
+Shopee host (any Shopee host other than the sandbox) unless `ALLOW_LIVE_SHOPEE_IN_NONPROD=1`
+is set. Non-production work uses the sandbox and synthetic data (delta A-10: Shopee ToS and
+DPP). Set the override only deliberately and temporarily.
+
 ## Secret Management: File-Backed vs. Environment-Backed
 
 Docker Compose supports supplying secrets either as **Environment-Backed Secrets** (`environment: <VAR>`) or **File-Backed Secrets** (`file: <PATH>`). 

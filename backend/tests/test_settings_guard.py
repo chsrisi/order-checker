@@ -91,3 +91,21 @@ def test_known_app_env_values_are_normalised(raw):
     from src.config import resolve_app_env
 
     assert resolve_app_env(raw) == raw.strip().lower()
+
+
+LIVE = "https://partner.shopeemobile.com"
+SANDBOX = "https://openplatform.sandbox.test-stable.shopee.sg"
+
+
+@pytest.mark.parametrize("app_env", ["development", "staging"])
+def test_live_shopee_refused_outside_production(app_env):
+    cfg = replace(SAFE_PROD, app_env=app_env, shopee_url=LIVE)
+    with pytest.raises(StartupConfigError, match="live Shopee"):
+        enforce_startup_rules(cfg)
+    enforce_startup_rules(replace(cfg, allow_live_shopee_in_nonprod=True))
+    enforce_startup_rules(replace(cfg, shopee_url=SANDBOX))
+    enforce_startup_rules(replace(cfg, shopee_url=None))
+
+
+def test_live_shopee_allowed_in_production():
+    enforce_startup_rules(replace(SAFE_PROD, shopee_url=LIVE))

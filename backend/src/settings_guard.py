@@ -31,6 +31,8 @@ class GuardInputs:
     redis_url: Optional[str]
     allow_registration: bool
     retention_days: int
+    shopee_url: Optional[str] = None
+    allow_live_shopee_in_nonprod: bool = False
 
     @property
     def production_rules(self) -> bool:
@@ -48,6 +50,8 @@ def load_inputs() -> GuardInputs:
         redis_url=get_config_value("REDIS_URL"),
         allow_registration=config.ALLOW_REGISTRATION,
         retention_days=config.RECIPIENT_RETENTION_DAYS,
+        shopee_url=get_config_value("SHOPEE_URL"),
+        allow_live_shopee_in_nonprod=get_config_bool("ALLOW_LIVE_SHOPEE_IN_NONPROD", False),
     )
 
 
@@ -56,10 +60,26 @@ def _redis_has_credentials(url: str) -> bool:
     return bool(parsed.password)
 
 
+def is_live_shopee_host(url: Optional[str]) -> bool:
+    """Any Shopee host that is not the sandbox counts as live (A-10: ToS and DPP)."""
+    host = (urlparse(url).hostname or "").lower() if url else ""
+    return "shopee" in host and "sandbox" not in host and "test-stable" not in host
+
+
 def collect_violations(cfg: GuardInputs) -> list[str]:
     problems: list[str] = []
     if cfg.retention_days < 1:
         problems.append("RECIPIENT_RETENTION_DAYS must be at least 1")
+
+    if (
+        cfg.app_env != "production"
+        and is_live_shopee_host(cfg.shopee_url)
+        and not cfg.allow_live_shopee_in_nonprod
+    ):
+        problems.append(
+            "SHOPEE_URL points at live Shopee outside production; use the sandbox, or set "
+            "ALLOW_LIVE_SHOPEE_IN_NONPROD=1 deliberately"
+        )
 
     if not cfg.production_rules:
         return problems
