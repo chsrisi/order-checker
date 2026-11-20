@@ -93,3 +93,13 @@ updates. Responses and server broadcasts have this envelope:
 Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
+
+**Frame rule (client contract v1):** `data` is always a JSON array of objects, for every
+type and every audience, because the v1 apps parse `data` before they read `type`. Error
+frames follow the rule too:
+
+```json
+{"type": "error", "data": [{"detail": "Unknown command: foo"}]}
+```
+
+`users_update` items contain only `username` and `scope`.

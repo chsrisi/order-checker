@@ -79,7 +79,6 @@ def _client_with_ticket(monkeypatch, scope="client"):
     return TestClient(app)
 
 
-@pytest.mark.xfail(strict=True, reason="string error frames; fixed by IMPLEMENTATION_PLAN T1.9")
 @pytest.mark.parametrize("command", [{"command": "nope"}, {"command": "get_users"}])
 def test_ws_error_frames_carry_list_data(monkeypatch, command):
     client = _client_with_ticket(monkeypatch, scope="client")
@@ -100,3 +99,14 @@ def test_ws_bad_ticket_is_rejected_with_http_403(monkeypatch, url):
         with TestClient(app).websocket_connect(url):
             pass
     assert exc.value.status_code == 403
+
+
+def test_users_payload_never_contains_password_hash(monkeypatch):
+    _fake_queries(monkeypatch, "admin")
+    monkeypatch.setattr(
+        connection_manager.queries,
+        "get_all_user_data",
+        lambda: [SimpleNamespace(username="operator", scope="client", password_hash="SECRET")],
+    )
+    data = ConnectionManager()._get_data(WSMessageType.USERS, "operator")
+    assert data == [{"username": "operator", "scope": "client"}]

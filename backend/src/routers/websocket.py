@@ -57,7 +57,7 @@ async def websocket_endpoint(
                         WSMessageType.ERROR,
                         websocket=websocket,
                         username=user.username,
-                        data="Forbidden",
+                        data=conn_mgr.error_payload("Forbidden"),
                     )
                 else:
                     await conn_mgr.send_to_session(
@@ -98,7 +98,7 @@ async def websocket_endpoint(
                     WSMessageType.ERROR,
                     websocket=websocket,
                     username=user.username,
-                    data=f"Unknown command: {command}",
+                    data=conn_mgr.error_payload(f"Unknown command: {str(command)[:64]}"),
                 )
 
     except WebSocketDisconnect:

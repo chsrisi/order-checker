@@ -6,7 +6,13 @@ from fastapi import WebSocket
 from fastapi.encoders import jsonable_encoder
 
 from .. import queries
-from ...models import WSMessageType, OutboundResponse, StockResponse, PickItemEntryResponse
+from ...models import (
+    OutboundResponse,
+    PickItemEntryResponse,
+    StockResponse,
+    UserResponse,
+    WSMessageType,
+)
 
 logger = logging.getLogger("backend.services.managers.connection_manager")
 
@@ -56,7 +62,8 @@ class ConnectionManager:
         data = None
 
         if message_type == WSMessageType.USERS:
-            data = queries.get_all_user_data()
+            # Explicit response model: the ORM row also carries password_hash.
+            data = [UserResponse.model_validate(u) for u in queries.get_all_user_data()]
         elif message_type == WSMessageType.OUTBOUNDS:
             outbounds = (
                 queries.get_all_outbound_data()
@@ -111,6 +118,11 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"Error sending message to {username}: {str(e)}")
             self.disconnect(websocket, username)
+
+    @staticmethod
+    def error_payload(detail: str) -> list[dict[str, str]]:
+        """Error frames follow the frame rule too: ``data`` is a list of objects."""
+        return [{"detail": detail}]
 
     async def send_to_session(
         self,
