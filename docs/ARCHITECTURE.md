@@ -72,8 +72,13 @@ verification to tolerate key rotation.
 1. A request checks the two-minute process-local cache and obtains an async lock.
 2. The service requests order numbers per Shopee status with bounded concurrency.
 3. Order details are fetched in chunks of at most 50 orders; package tracking numbers are fetched in package-list chunks of 10.
-4. A transaction inserts/updates orders, packages, addresses, and items.
-5. WebSocket updates are sent to administrators and the requesting operator.
+4. Orders that are still open locally but older than the list window are fetched too, so
+   cancellations and shipments reach the database.
+5. A transaction inserts or updates orders, packages, addresses and items. Existing orders get
+   their ship-by, items and carrier refreshed. Buyer data past retention is never written
+   back. If any chunk failed, the rest is stored, the sync is not marked complete, and the
+   request answers 502.
+6. WebSocket updates are sent to administrators and the requesting operator.
 
 The cache and lock are per API process. Multiple workers can therefore perform
 parallel upstream synchronizations; distributed locking is a future scaling task.

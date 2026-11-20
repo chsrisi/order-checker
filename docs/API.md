@@ -97,7 +97,12 @@ They sit far above real scanner payloads.
 
 Validation failures use FastAPI's `422` response. Authentication failures use
 `401`; insufficient scope uses `403`; missing resources use `404`; ownership or
-duplicate conflicts use `409`. Domain errors have one stable envelope:
+duplicate conflicts use `409`. Shopee synchronization (`GET /shopee/orders`) uses
+`502` when Shopee fails or returns an incomplete answer, and `503` while the Shopee
+token circuit is open (re-authorization needed). Before v0.5 these were `400`/`500`. The
+operator client only checks for `200`, so the change is client-safe. A failed sync is never
+marked complete: the next request retries, and order details that did arrive are kept.
+Domain errors have one stable envelope:
 
 ```json
 {"detail": "Human-readable explanation"}

@@ -133,8 +133,8 @@ async def shopee_request(
         logger.critical(
             f"[CIRCUIT BREAKER] Aborting request to {path}. Token infrastructure is flagged as completely dead."
         )
-        raise HTTPException(
-            status_code=500,
+        raise HTTPException(  # circuit open (F-M4): unavailable until re-authorized
+            status_code=503,
             detail="Shopee API authentication infrastructure is broken. Re-authorization required.",
         )
 
@@ -269,7 +269,7 @@ async def shopee_request(
                                     f"[FAIL FAST] Worker on {path} woke up and detected fatal token state. Aborting."
                                 )
                                 raise HTTPException(
-                                    status_code=500,
+                                    status_code=503,
                                     detail="Shopee authentication token refresh failed globally.",
                                 )
 
@@ -287,7 +287,7 @@ async def shopee_request(
                                     )
                                     cache_mgr.set_token_fatal()
                                     raise HTTPException(
-                                        status_code=500,
+                                        status_code=503,
                                         detail="Shopee Refresh Token has expired or is invalid. Manual merchant re-auth required.",
                                     )
                             else:
@@ -362,8 +362,8 @@ async def fetch_sns_for_status(status: str, time_from: int, now: int) -> list[st
             or shopee_resp.error
             or not isinstance(shopee_resp.response, ShpOrderList)
         ):
-            raise HTTPException(
-                status_code=400,
+            raise HTTPException(  # upstream failure (F-M4)
+                status_code=502,
                 detail=f"Failed to fetch {status} orders from Shopee",
             )
 
@@ -392,16 +392,21 @@ async def fetch_chunk_details(
             },
         )
 
-    if not detail_resp or detail_resp.error or not isinstance(detail_resp.response, OrderListT):
+    if (
+        not detail_resp
+        or detail_resp.error
+        or not isinstance(detail_resp.response, OrderListT)
+        or not isinstance(detail_resp.response.order_list, list)
+    ):
         logger.error(
             "shopee_order_chunk_failed",
             extra={"event": "shopee.order_chunk.failed", "order_count": len(chunk)},
         )
-        return [], {}, set()
+        # F-M3: a failed chunk must not count as synced; sync_shopee_orders stores the other
+        # chunks, skips mark_synced and reports 502.
+        raise HTTPException(status_code=502, detail="Failed to fetch order details from Shopee")
 
     order_details_list = detail_resp.response.order_list
-    if not isinstance(order_details_list, list):
-        return [], {}, set()
 
     # Prepare batch tracking payload
     processed_packages = [
@@ -425,15 +430,21 @@ async def fetch_chunk_details(
                     body={"package_list": package_chunk},
                 )
 
-            if tracking_resp and not tracking_resp.error and tracking_resp.response:
-                if isinstance(tracking_resp.response, ShpMassTrackingNumber):
-                    for success_item in tracking_resp.response.success_list:
-                        tracking_map[success_item.package_number] = (
-                            success_item.tracking_number,
-                            success_item.pickup_code,
-                        )
-                    for fail_item in tracking_resp.response.fail_list:
-                        fail_pkgs.add(fail_item.package_number)
+            if not (
+                tracking_resp
+                and not tracking_resp.error
+                and isinstance(tracking_resp.response, ShpMassTrackingNumber)
+            ):
+                # Keep the stored tracking numbers of these packages rather than nulling them.
+                fail_pkgs.update(p["package_number"] for p in package_chunk)
+                continue
+            for success_item in tracking_resp.response.success_list:
+                tracking_map[success_item.package_number] = (
+                    success_item.tracking_number,
+                    success_item.pickup_code,
+                )
+            for fail_item in tracking_resp.response.fail_list:
+                fail_pkgs.add(fail_item.package_number)
 
     return order_details_list, tracking_map, fail_pkgs
 
@@ -510,6 +521,9 @@ async def sync_shopee_orders(
                 all_order_sns.extend(res_list)
 
             order_sns = list(dict.fromkeys(all_order_sns))
+            # F-M2: also refresh orders still open locally but older than the list window,
+            # so a cancellation or shipment upstream reaches the database.
+            order_sns += await asyncio.to_thread(queries.local_active_order_sns, order_sns)
 
             if order_sns:
                 chunk_size = SHOPEE_ORDER_CHUNK_SIZE
@@ -518,9 +532,22 @@ async def sync_shopee_orders(
                 ]
 
                 chunk_tasks = [fetch_chunk_details(chunk) for chunk in chunks]
-                chunk_results = await asyncio.gather(*chunk_tasks)
+                outcomes = await asyncio.gather(*chunk_tasks, return_exceptions=True)
+                chunk_results = [o for o in outcomes if not isinstance(o, BaseException)]
+                failures = [o for o in outcomes if isinstance(o, BaseException)]
 
-                await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                if chunk_results:
+                    await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                if failures:  # partial sync: keep what arrived, never mark it complete
+                    logger.warning(
+                        "shopee_sync_partial",
+                        extra={
+                            "event": "shopee.sync.partial",
+                            "failed_chunks": len(failures),
+                            "total_chunks": len(chunks),
+                        },
+                    )
+                    raise failures[0]
 
             cache_mgr.mark_synced()
         except Exception as exc:

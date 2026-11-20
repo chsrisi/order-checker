@@ -1,6 +1,6 @@
 import logging
-from typing import List, Optional
-from datetime import datetime, UTC
+from typing import Iterable, List, Optional
+from datetime import datetime, timedelta, UTC
 from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from ...models import (
     ShopeeOrderItemList,
     BOMHeader,
 )
+from ... import config
 from .engine import get_db
 from .bom import get_marketplace_bom_node, get_standard_bom_node_internal
 
@@ -125,118 +126,158 @@ def acquire_order(order_sn: str, username: str) -> bool:
         raise ValueError("Order is already assigned to another operator")
 
 
-def sync_shopee_orders_to_db(chunk_results) -> None:
-    order_sns = []
-    for details, _, _ in chunk_results:
-        for detail in details:
-            order_sns.append(detail.order_sn)
+def _item_rows(order_detail) -> list[ShopeeOrderItemList]:
+    rows = []
+    for item in order_detail.item_list:
+        if item.model_id == 0:
+            item.model_id = item.model_name = item.model_sku = None
+        rows.append(
+            ShopeeOrderItemList(
+                order_sn=order_detail.order_sn,
+                item_id=item.item_id,
+                item_name=item.item_name,
+                item_sku=item.item_sku,
+                model_id=item.model_id,
+                model_name=item.model_name,
+                model_sku=item.model_sku,
+                model_quantity_purchased=item.model_quantity_purchased,
+                image_url=item.image_info.image_url if item.image_info else None,
+            )
+        )
+    return rows
 
+
+def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _past_retention(order: ShopeeOrder, cutoff: datetime) -> bool:
+    """Same rule as purge_recipient_data: never re-store buyer data the purge removed."""
+    if order.done_at is not None:
+        return _naive_utc(order.done_at) < cutoff
+    return not order.done and order.ship_by is not None and _naive_utc(order.ship_by) < cutoff
+
+
+def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> None:
+    """Upsert order details from Shopee (T4.8 / F-M3).
+
+    New orders are inserted with items, recipient and packages. Existing orders get their
+    status, ship-by, split flag, carrier and items refreshed; their recipient row and buyer
+    note are updated only while the order is inside the retention window (A-10b), and a
+    purged recipient row is never recreated. Packages whose tracking lookup failed are
+    skipped and keep their previous values.
+    """
+    cutoff = (now or datetime.now(UTC)).replace(tzinfo=None) - timedelta(
+        days=config.RECIPIENT_RETENTION_DAYS
+    )
+    details = [d for chunk, _, _ in chunk_results for d in chunk]
+    order_sns = [d.order_sn for d in details]
     all_package_nums = [
-        pkg.package_number
-        for details, _, _ in chunk_results
-        for detail in details
-        if detail.package_list
-        for pkg in detail.package_list
+        pkg.package_number for d in details if d.package_list for pkg in d.package_list
     ]
 
     with get_db() as db:
         existing_orders = {
             o.order_sn: o
-            for o in db.execute(select(ShopeeOrder).filter(ShopeeOrder.order_sn.in_(order_sns)))
-            .scalars()
-            .all()
+            for o in db.execute(
+                select(ShopeeOrder)
+                .filter(ShopeeOrder.order_sn.in_(order_sns))
+                .options(selectinload(ShopeeOrder.recipient_address))
+            ).scalars()
         }
-
         existing_infos = {
             info.package_number: info
             for info in db.execute(
                 select(ShopeeOrderInfo).filter(ShopeeOrderInfo.package_number.in_(all_package_nums))
-            )
-            .scalars()
-            .all()
+            ).scalars()
         }
 
-        for chunk_idx, (order_details_list, tracking_map, fail_pkgs) in enumerate(
-            chunk_results, start=1
-        ):
+        for order_details_list, tracking_map, fail_pkgs in chunk_results:
             for order_detail in order_details_list:
                 db_order = existing_orders.get(order_detail.order_sn)
+                carrier = (
+                    order_detail.package_list[0].shipping_carrier
+                    if order_detail.package_list
+                    else None
+                )
+                keep_buyer_data = True
 
                 if not db_order:
                     db_order = ShopeeOrder(order_sn=order_detail.order_sn, owner_user=None)
-                    db_order.split_up = order_detail.split_up
-                    db_order.status = order_detail.order_status
-                    db_order.ship_by = order_detail.ship_by_date
-                    db_order.shipping_carrier = (
-                        order_detail.package_list[0].shipping_carrier
-                        if order_detail.package_list
-                        else None
-                    )
                     db.add(db_order)
-
                     if order_detail.recipient_address:
-                        addr = ShopeeOrderRecipientAddress(
-                            order_sn=order_detail.order_sn,
-                            name=order_detail.recipient_address.name,
-                            city=order_detail.recipient_address.city,
+                        db.add(
+                            ShopeeOrderRecipientAddress(
+                                order_sn=order_detail.order_sn,
+                                name=order_detail.recipient_address.name,
+                                city=order_detail.recipient_address.city,
+                            )
                         )
-                        db.add(addr)
-
-                    for item in order_detail.item_list:
-                        if item.model_id == 0:
-                            item.model_id = item.model_name = item.model_sku = None
-                        db_item = ShopeeOrderItemList(
-                            order_sn=order_detail.order_sn,
-                            item_id=item.item_id,
-                            item_name=item.item_name,
-                            item_sku=item.item_sku,
-                            model_id=item.model_id,
-                            model_name=item.model_name,
-                            model_sku=item.model_sku,
-                            model_quantity_purchased=item.model_quantity_purchased,
-                            image_url=item.image_info.image_url if item.image_info else None,
-                        )
-                        db.add(db_item)
                 else:
-                    db_order.status = order_detail.order_status
-                    db_order.shipping_carrier = (
-                        order_detail.package_list[0].shipping_carrier
-                        if order_detail.package_list
-                        else None
+                    keep_buyer_data = not _past_retention(db_order, cutoff)
+                    db.execute(
+                        delete(ShopeeOrderItemList).where(
+                            ShopeeOrderItemList.order_sn == order_detail.order_sn
+                        )
                     )
+                    recipient = db_order.recipient_address
+                    if recipient and keep_buyer_data and order_detail.recipient_address:
+                        recipient.name = order_detail.recipient_address.name
+                        recipient.city = order_detail.recipient_address.city
 
-                if order_detail.package_list:
-                    for pkg in order_detail.package_list:
-                        if pkg.package_number in fail_pkgs:
-                            continue
+                db_order.split_up = order_detail.split_up
+                db_order.status = order_detail.order_status
+                db_order.ship_by = order_detail.ship_by_date
+                db_order.shipping_carrier = carrier
+                db.add_all(_item_rows(order_detail))
+                note = order_detail.note if keep_buyer_data else None
 
-                        info = existing_infos.get(pkg.package_number)
-                        tracking_number = pickup_code = None
+                for pkg in order_detail.package_list or []:
+                    if pkg.package_number in fail_pkgs:
+                        continue
+                    info = existing_infos.get(pkg.package_number)
+                    tracking_number = pickup_code = None
+                    if (
+                        order_detail.order_status != "READY_TO_SHIP"
+                        and pkg.package_number in tracking_map
+                    ):
+                        tracking_number, pickup_code = tracking_map[pkg.package_number]
 
-                        if (
-                            order_detail.order_status != "READY_TO_SHIP"
-                            and pkg.package_number in tracking_map
-                        ):
-                            tracking_number, pickup_code = tracking_map[pkg.package_number]
-
-                        if not info:
-                            info = ShopeeOrderInfo(
+                    if not info:
+                        db.add(
+                            ShopeeOrderInfo(
                                 order_sn=order_detail.order_sn,
                                 package_number=pkg.package_number,
                                 logistics_status=pkg.logistics_status,
                                 tracking_number=tracking_number,
                                 pickup_code=pickup_code,
-                                note=order_detail.note,
+                                note=note,
                             )
-                            db.add(info)
-                        else:
-                            info.logistics_status = pkg.logistics_status
-                            if order_detail.order_status != "READY_TO_SHIP":
-                                info.tracking_number = tracking_number
-                                info.pickup_code = pickup_code
-                            info.note = order_detail.note
+                        )
+                    else:
+                        info.logistics_status = pkg.logistics_status
+                        if order_detail.order_status != "READY_TO_SHIP":
+                            info.tracking_number = tracking_number
+                            info.pickup_code = pickup_code
+                        info.note = note
 
         db.commit()
+
+
+def local_active_order_sns(exclude: Iterable[str] = ()) -> list[str]:
+    """Orders the database still treats as open, whatever their age (T4.8 / F-M2), so a
+    sync can refresh them even when they fall outside the Shopee list window."""
+    excluded = set(exclude)
+    with get_db() as db:
+        sns = db.execute(
+            select(ShopeeOrder.order_sn).filter(
+                ShopeeOrder.done == False,  # noqa: E712
+                ShopeeOrder.status.in_(ACTIVE_ORDER_STATUSES),
+            )
+        ).scalars()
+        return [sn for sn in sns if sn not in excluded]
 
 
 def purge_recipient_data(cutoff: datetime) -> tuple[int, int]:
