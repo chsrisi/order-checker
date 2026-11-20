@@ -187,44 +187,28 @@ async def test_shopee_token_seeds_from_shopee_prefix(monkeypatch):
 
 
 def test_versioning_and_jwt_config_defaults():
-    assert config.API_VERSION == "0.3.0-alpha"
-    assert config.JWT_VERSION == "v0.3a"
-    assert config.DEFAULT_JWT_AUDIENCE == f"api.bakingholic:{config.JWT_VERSION}"
-    assert config.DEFAULT_JWT_ISSUER == f"auth.bakingholic:{config.JWT_VERSION}"
-    assert config.JWT_AUDIENCE == "api.bakingholic:v0.3a"
-    assert config.JWT_ISSUER == "auth.bakingholic:v0.3a"
+    """T3.1: one version from pyproject; token identity per environment."""
+    assert config.API_VERSION == config.PROJECT_VERSION == config.read_project_version()
+    assert config.CLIENT_CONTRACT == 1
+    assert config.DEFAULT_JWT_AUDIENCE == f"api.bakingholic:{config.APP_ENV}"
+    assert config.DEFAULT_JWT_ISSUER == f"auth.bakingholic:{config.APP_ENV}"
     assert config.JWT_ALGORITHM == "RS256"
     assert config.JWT_LEEWAY_SECONDS == 30.0
     assert config.REFRESH_TTL_SECONDS == 86400
     assert config.REFRESH_CLEANUP_INTERVAL_SECONDS == 3600
 
 
-def test_jwt_version_dynamic_audience_and_issuer_derivation(monkeypatch):
-    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
-    monkeypatch.setenv("JWT_VERSION", "v0.4.0")
-    monkeypatch.delenv("JWT_AUDIENCE", raising=False)
-    monkeypatch.delenv("JWT_ISSUER", raising=False)
-
-    jwt_version = config.get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
-    default_aud = f"api.bakingholic:{jwt_version}"
-    default_iss = f"auth.bakingholic:{jwt_version}"
-
-    assert config.get_config_value("JWT_AUDIENCE", default_aud) == "api.bakingholic:v0.4.0"
-    assert config.get_config_value("JWT_ISSUER", default_iss) == "auth.bakingholic:v0.4.0"
+def test_project_version_reader(tmp_path):
+    good = tmp_path / "pyproject.toml"
+    good.write_text('[project]\nname = "x"\nversion = "9.8.7"\n')
+    assert config.read_project_version(good) == "9.8.7"
+    assert config.read_project_version(tmp_path / "missing.toml") == "0.0.0+unknown"
 
 
-def test_explicit_jwt_audience_and_issuer_override(monkeypatch):
-    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
-    monkeypatch.setenv("JWT_VERSION", "v0.4.0")
-    monkeypatch.setenv("JWT_AUDIENCE", "custom.aud")
-    monkeypatch.setenv("JWT_ISSUER", "custom.iss")
+def test_pyproject_version_is_semver():
+    import re
 
-    jwt_version = config.get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
-    default_aud = f"api.bakingholic:{jwt_version}"
-    default_iss = f"auth.bakingholic:{jwt_version}"
-
-    assert config.get_config_value("JWT_AUDIENCE", default_aud) == "custom.aud"
-    assert config.get_config_value("JWT_ISSUER", default_iss) == "custom.iss"
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", config.PROJECT_VERSION)
 
 
 @pytest.mark.asyncio

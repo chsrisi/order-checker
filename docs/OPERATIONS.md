@@ -175,8 +175,8 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 
 | Name | Type | Default | Required | Notes |
 | --- | --- | --- | --- | --- |
-| `API_VERSION` | string | `0.3.0-alpha` | No | Application/API version exposed via FastAPI OpenAPI metadata (`schema["info"]["version"]`). |
-| `JWT_VERSION` | string | `v0.3a` | No | Version tag embedded in default JWT audience and issuer claims (`api.bakingholic:<version>` and `auth.bakingholic:<version>`). |
+| `API_VERSION` | string | `[project].version` in `backend/pyproject.toml` | No | The backend version (OpenAPI `info.version`, later `GET /meta`) is read from `pyproject.toml`. This variable overrides it **in development only**; it is ignored with a warning elsewhere. |
+| `JWT_VERSION` | string | — | No | **Deprecated and ignored** (logs a warning). Token identity now derives from `APP_ENV`. |
 | `KEYS_DIR` | string | `data/keys` | No | Directory where RSA key pairs (`.key` and `.pub`) are stored and rotated. Mounted as a persistent host volume in Docker. |
 | `KEY_CACHE_TTL_SECONDS` | int | `300` | No | In-memory cache duration for public JWKS keys before re-scanning disk (default: 5 minutes). |
 | `KEY_RETENTION_SECONDS` | int | `REFRESH_TTL_SECONDS + ACCESS_TTL_SECONDS + JWT_LEEWAY_SECONDS` | No | How long a retired signing key stays published after its successor appears. It must cover the refresh-token lifetime, because refresh tokens are signed with the same keys. Lower values log idle devices out after a rotation. |
@@ -186,8 +186,8 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |
 | `JWT_ALGORITHM` | string | `RS256` | No | Signing algorithm for JWT access and refresh tokens. |
-| `JWT_AUDIENCE` | string | `api.bakingholic:<JWT_VERSION>` (`api.bakingholic:v0.3a`) | No | Required JWT `aud` claim during token creation and verification. Defaults to `api.bakingholic:${JWT_VERSION}`. |
-| `JWT_ISSUER` | string | `auth.bakingholic:<JWT_VERSION>` (`auth.bakingholic:v0.3a`) | No | Required JWT `iss` claim during token creation and verification. Defaults to `auth.bakingholic:${JWT_VERSION}`. |
+| `JWT_AUDIENCE` | string | `api.bakingholic:<APP_ENV>` | No | Required JWT `aud` claim. Per environment, so development tokens are never accepted by production. **Changing it logs every device out**, so do it only in a planned relogin window (`docs/RELEASE.md`). |
+| `JWT_ISSUER` | string | `auth.bakingholic:<APP_ENV>` | No | Required JWT `iss` claim; same rules as `JWT_AUDIENCE`. |
 | `JWT_LEEWAY_SECONDS` | float | `30.0` | No | Clock-skew leeway in seconds for JWT verification (`nbf`/`exp`). |
 | `WS_TICKET_TTL_SECONDS` | int | `30` | No | Validity duration in seconds for one-time WebSocket connection tickets generated via `/auth/ws-token`. |
 | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` | int | `120` | No | Validity duration in seconds for temporary admin configuration unlock tokens (`cfg_token:*`). |

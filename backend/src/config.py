@@ -1,6 +1,8 @@
 import os
 import re
 import logging
+import tomllib
+from pathlib import Path
 from typing import overload
 from dotenv import load_dotenv, find_dotenv
 
@@ -111,20 +113,9 @@ def get_config_bool(key: str, default: bool) -> bool:
 
 
 # ------------------------------------------------------------------------------
-# Global Application & API Versioning
+# Security, JWT & Token Configuration (token identity: see "Versions" below)
 # ------------------------------------------------------------------------------
-API_VERSION: str = get_config_value("API_VERSION", "0.3.0-alpha") or "0.3.0-alpha"
-
-# ------------------------------------------------------------------------------
-# Security, JWT & Token Configuration
-# ------------------------------------------------------------------------------
-JWT_VERSION: str = get_config_value("JWT_VERSION", "v0.3a") or "v0.3a"
-DEFAULT_JWT_AUDIENCE: str = f"api.bakingholic:{JWT_VERSION}"
-DEFAULT_JWT_ISSUER: str = f"auth.bakingholic:{JWT_VERSION}"
-
 JWT_ALGORITHM: str = get_config_value("JWT_ALGORITHM", "RS256") or "RS256"
-JWT_AUDIENCE: str = get_config_value("JWT_AUDIENCE", DEFAULT_JWT_AUDIENCE) or DEFAULT_JWT_AUDIENCE
-JWT_ISSUER: str = get_config_value("JWT_ISSUER", DEFAULT_JWT_ISSUER) or DEFAULT_JWT_ISSUER
 JWT_LEEWAY_SECONDS: float = get_config_float("JWT_LEEWAY_SECONDS", 30.0)
 REFRESH_TTL_SECONDS: int = get_config_int("REFRESH_TTL_SECONDS", 86400)
 REFRESH_CLEANUP_INTERVAL_SECONDS: int = get_config_int("REFRESH_CLEANUP_INTERVAL_SECONDS", 3600)
@@ -185,3 +176,45 @@ def stock_location_mode() -> str:
             logger.warning(f"{flag} is deprecated; set STOCK_LOCATION_MODE=single|multi instead")
         return "single" if get_config_bool(flag, False) else "multi"
     return "multi"
+
+
+# ------------------------------------------------------------------------------
+# Versions (IMPLEMENTATION_PLAN T3.1, delta A-7)
+# ------------------------------------------------------------------------------
+# One SemVer for the backend: [project].version in backend/pyproject.toml.
+# CLIENT_CONTRACT is the operator-client API major the backend serves (KNOWN_LIMITATIONS #8);
+# it changes only with a client major and side-by-side /v2 routes.
+CLIENT_CONTRACT = 1
+CLIENT_CONTRACT_MIN = 1
+CLIENT_CONTRACT_MAX = 1
+
+
+def read_project_version(pyproject: Path | None = None) -> str:
+    path = pyproject or Path(__file__).resolve().parents[1] / "pyproject.toml"
+    try:
+        with open(path, "rb") as f:
+            return str(tomllib.load(f)["project"]["version"])
+    except Exception as e:
+        logger.warning(f"Could not read version from {path}: {e}")
+        return "0.0.0+unknown"
+
+
+PROJECT_VERSION: str = read_project_version()
+_api_version_override = get_config_value("API_VERSION")
+if _api_version_override and APP_ENV != "development":
+    logger.warning("API_VERSION is ignored outside development; the version comes from pyproject")
+    _api_version_override = None
+API_VERSION: str = _api_version_override or PROJECT_VERSION
+
+# Token identity is per environment, not per release: a dev token is never accepted by
+# production, and upgrading the backend no longer logs everyone out. Explicit
+# JWT_AUDIENCE / JWT_ISSUER still win. JWT_VERSION is deprecated and ignored.
+if get_config_value("JWT_VERSION"):
+    logger.warning(
+        "JWT_VERSION is deprecated and ignored; iss/aud derive from APP_ENV "
+        "(set JWT_AUDIENCE/JWT_ISSUER to override)"
+    )
+DEFAULT_JWT_AUDIENCE: str = f"api.bakingholic:{APP_ENV}"
+DEFAULT_JWT_ISSUER: str = f"auth.bakingholic:{APP_ENV}"
+JWT_AUDIENCE: str = get_config_value("JWT_AUDIENCE", DEFAULT_JWT_AUDIENCE) or DEFAULT_JWT_AUDIENCE
+JWT_ISSUER: str = get_config_value("JWT_ISSUER", DEFAULT_JWT_ISSUER) or DEFAULT_JWT_ISSUER
