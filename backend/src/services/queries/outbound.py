@@ -108,10 +108,13 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
                 OutboundItem.closed == False,  # noqa: E712
             )
             .values(closed=True, closed_at=now)
-            .returning(OutboundItem.id)
+            .returning(OutboundItem.content)
         )
-        outbound_count = len(result_outbound.all())
-        unknown_count = len(clean_contents) - outbound_count
+        closed_contents = [row.content for row in result_outbound.all()]
+        outbound_count = len(closed_contents)
+        # Several scans (e.g. two operators) can share one label: count *inputs* that
+        # matched nothing, not rows, so the number never goes negative (F-M1).
+        unknown_count = len(set(clean_contents) - set(closed_contents))
 
         matched_order_sns: set[str] = set(
             db.execute(
