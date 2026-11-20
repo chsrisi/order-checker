@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .exceptions import DomainException, domain_exception_handler
 from .logging_config import configure_logging, request_id_context
 
-from .config import get_config_value, API_VERSION
+from .config import API_VERSION, EXPOSE_API_DOCS, PRODUCTION_RULES, get_config_value
 from .settings_guard import enforce_startup_rules
 from .services.redis_service import redis_mgr
 from .services import auth_service, managers, queries
@@ -111,6 +111,11 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
     license_info={"name": "Proprietary"},
+    # Interactive docs and the schema are off under production rules unless
+    # EXPOSE_API_DOCS=1. Contract tests call app.openapi() directly, so they are unaffected.
+    docs_url="/docs" if EXPOSE_API_DOCS else None,
+    redoc_url="/redoc" if EXPOSE_API_DOCS else None,
+    openapi_url="/openapi.json" if EXPOSE_API_DOCS else None,
 )
 
 
@@ -164,27 +169,51 @@ async def log_requests(request: Request, call_next: Any):
         request_id_context.reset(context_token)
 
 
-cors_origins_raw = get_config_value("CORS_ORIGINS", "*") or "*"
-cors_origins = [
-    origin.strip()
-    for origin in cors_origins_raw.split(",")
-    if origin.strip()
-]
-is_wildcard = cors_origins == ["*"] or cors_origins_raw == "*"
+def cors_options(
+    production_rules: bool, origins_raw: str | None, origin_regex: str | None
+) -> dict[str, Any] | None:
+    """CORS middleware settings, or ``None`` for no CORS at all.
 
-# Custom regex for allowed origins, or default to allowing localhost/127.0.0.1 on any port for dev
-cors_origin_regex = get_config_value("CORS_ORIGIN_REGEX", None)
-if not cors_origin_regex and not is_wildcard:
-    cors_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    Production rules: only an explicit origin list (wildcards and regexes are refused at
+    startup). With no origins there is no CORS middleware: the admin web app is same-origin
+    behind nginx and the operator client is native (F-M14). Development keeps the permissive
+    defaults, including any localhost port for ``flutter run -d chrome``.
+    """
+    origins = [o.strip() for o in (origins_raw or "").split(",") if o.strip()]
+    if production_rules:
+        explicit = [o for o in origins if o != "*"]
+        if not explicit:
+            return None
+        return {
+            "allow_origins": explicit,
+            "allow_credentials": True,
+            "allow_methods": ["*"],
+            "allow_headers": ["*"],
+        }
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if is_wildcard else cors_origins,
-    allow_origin_regex=None if is_wildcard else cors_origin_regex,
-    allow_credentials=not is_wildcard,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    if not origins or origins == ["*"]:
+        return {
+            "allow_origins": ["*"],
+            "allow_credentials": False,
+            "allow_methods": ["*"],
+            "allow_headers": ["*"],
+        }
+    return {
+        "allow_origins": origins,
+        "allow_origin_regex": origin_regex or r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        "allow_credentials": True,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+
+
+_cors = cors_options(
+    PRODUCTION_RULES,
+    get_config_value("CORS_ORIGINS"),
+    get_config_value("CORS_ORIGIN_REGEX"),
 )
+if _cors is not None:
+    app.add_middleware(CORSMiddleware, **_cors)
 
 app.add_exception_handler(DomainException, domain_exception_handler)
 
