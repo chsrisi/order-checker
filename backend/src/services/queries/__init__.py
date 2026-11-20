@@ -8,6 +8,7 @@ from .users import (
     get_refresh_token,
     create_refresh_token,
     delete_refresh_token,
+    consume_refresh_token,
     delete_outdated_refresh_tokens,
 )
 from .outbound import (
@@ -72,6 +73,7 @@ __all__ = [
     "get_refresh_token",
     "create_refresh_token",
     "delete_refresh_token",
+    "consume_refresh_token",
     "delete_outdated_refresh_tokens",
     "get_outbounds_data",
     "get_all_outbound_data",

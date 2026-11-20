@@ -67,14 +67,17 @@ def test_refresh_rotates_persisted_token(monkeypatch):
         revoked_at=None,
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    deleted: list[str] = []
+    consumed: list[str] = []
     monkeypatch.setattr(auth_service, "verify_refresh_token", lambda _: {"jti": "old"})
-    monkeypatch.setattr(auth_service.queries, "get_refresh_token", lambda _: db_token)
+    monkeypatch.setattr(
+        auth_service.queries,
+        "consume_refresh_token",
+        lambda jti: consumed.append(jti) or db_token,
+    )
     monkeypatch.setattr(auth_service.queries, "get_user_data", lambda _: user())
-    monkeypatch.setattr(auth_service.queries, "delete_refresh_token", deleted.append)
     monkeypatch.setattr(auth_service, "get_tokens", lambda _: {"token_type": "bearer"})
     assert auth_service.refresh_tokens("token") == {"token_type": "bearer"}
-    assert deleted == ["old"]
+    assert consumed == ["old"]
 
 
 def test_refresh_rejects_expired_database_record(monkeypatch):
@@ -83,14 +86,25 @@ def test_refresh_rejects_expired_database_record(monkeypatch):
         revoked_at=None,
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
     )
-    deleted: list[str] = []
+    consumed: list[str] = []
     monkeypatch.setattr(auth_service, "verify_refresh_token", lambda _: {"jti": "old"})
-    monkeypatch.setattr(auth_service.queries, "get_refresh_token", lambda _: db_token)
-    monkeypatch.setattr(auth_service.queries, "delete_refresh_token", deleted.append)
+    monkeypatch.setattr(
+        auth_service.queries,
+        "consume_refresh_token",
+        lambda jti: consumed.append(jti) or db_token,
+    )
     with pytest.raises(HTTPException) as exc:
         auth_service.refresh_tokens("token")
     assert exc.value.status_code == 401
-    assert deleted == ["old"]
+    assert consumed == ["old"]  # the expired row is gone after the call
+
+
+def test_refresh_rejects_already_used_token(monkeypatch):
+    monkeypatch.setattr(auth_service, "verify_refresh_token", lambda _: {"jti": "old"})
+    monkeypatch.setattr(auth_service.queries, "consume_refresh_token", lambda _: None)
+    with pytest.raises(HTTPException) as exc:
+        auth_service.refresh_tokens("token")
+    assert exc.value.status_code == 401
 
 
 def test_get_tokens_persists_refresh_jti(monkeypatch):
@@ -155,4 +169,3 @@ async def test_require_admin_forbidden():
     with pytest.raises(HTTPException) as exc:
         await auth_service.require_admin(client_user)
     assert exc.value.status_code == 403
-

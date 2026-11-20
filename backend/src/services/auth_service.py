@@ -26,7 +26,6 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 ALGORITHM = JWT_ALGORITHM
 
 
-
 def verify_access_token(token: str) -> dict:
     kid = jwt.get_unverified_header(token).get("kid")
     if kid is None:
@@ -73,7 +72,6 @@ def verify_refresh_token(token: str) -> dict:
     if not jti:
         raise jwt_exc.InvalidTokenError("Token must include jti")
     return payload
-
 
 
 async def get_current_user(
@@ -264,19 +262,19 @@ def refresh_tokens(refresh_token: str) -> dict:
         logger.error(str(exc))
         raise credentials_exception from exc
 
-    db_token = queries.get_refresh_token(jti)
+    # Single gate: the row is deleted and read in one statement, so a token can be
+    # used at most once even under concurrent refreshes (F-H5).
+    db_token = queries.consume_refresh_token(jti)
     if not db_token:
-        logger.error("Token nonexistent")
+        logger.error("Token nonexistent or already used")
         raise credentials_exception
 
     if db_token.revoked_at is not None:
         logger.error("Token revoked")
-        queries.delete_refresh_token(jti)
         raise credentials_exception
 
     if db_token.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
         logger.error("Token expired in DB")
-        queries.delete_refresh_token(jti)
         raise credentials_exception
 
     user = queries.get_user_data(db_token.username)
@@ -285,8 +283,6 @@ def refresh_tokens(refresh_token: str) -> dict:
         raise credentials_exception
 
     logger.info(f"Rotating refresh token for user: {user.username}")
-    queries.delete_refresh_token(jti)
-
     return get_tokens(user)
 
 

@@ -84,6 +84,22 @@ def delete_refresh_token(jti: str) -> None:
             db.commit()
 
 
+def consume_refresh_token(jti: str):
+    """Delete the token row and return what it held, in one statement (F-H5).
+
+    This is the single gate of refresh rotation: of two concurrent refreshes with the same
+    token, only one gets a row back. Returns ``None`` when the token is unknown or already used.
+    """
+    with get_db() as db:
+        row = db.execute(
+            delete(RefreshToken)
+            .where(RefreshToken.jti == jti)
+            .returning(RefreshToken.username, RefreshToken.expires_at, RefreshToken.revoked_at)
+        ).first()
+        db.commit()
+        return row
+
+
 def delete_outdated_refresh_tokens() -> int:
     with get_db() as db:
         result = db.execute(
