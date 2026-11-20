@@ -36,9 +36,9 @@ class TicketManager:
     async def consume_ticket(self, ticket: str) -> Optional[str]:
         key = f"ws_token:{ticket}"
         try:
-            username = await redis_mgr.get(key)
+            # GETDEL: read and delete in one step so a ticket can open one socket only (F-M11).
+            username = await redis_mgr.getdel(key)
             if username:
-                await redis_mgr.delete(key)
                 return username
         except Exception:
             logger.exception(

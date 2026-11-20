@@ -24,6 +24,9 @@ class FakeRedisClient:
     async def delete(self, key):
         return int(self.values.pop(key, None) is not None)
 
+    async def getdel(self, key):
+        return self.values.pop(key, None)
+
     async def close(self):
         self.closed = True
 
@@ -37,6 +40,9 @@ async def test_redis_manager_lazy_lifecycle(monkeypatch):
     assert await manager.set("key", "value", ex=10)
     assert await manager.get("key") == "value"
     assert await manager.delete("key") == 1
+    await manager.set("once", "v")
+    assert await manager.getdel("once") == "v"
+    assert await manager.getdel("once") is None
     await manager.close()
     assert client.closed
 
@@ -109,12 +115,13 @@ def test_config_database_url_docker_resolves_to_backend_postgres_1(monkeypatch):
         == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
     )
 
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@postgres_container:5432/dbname")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+psycopg://user:pass@postgres_container:5432/dbname"
+    )
     assert (
         config.get_config_value("DATABASE_URL")
         == "postgresql+psycopg://user:pass@backend-postgres-1:5432/dbname"
     )
-
 
 
 def test_config_database_url_docker_custom_db_host(monkeypatch):
@@ -218,6 +225,3 @@ def test_explicit_jwt_audience_and_issuer_override(monkeypatch):
 
     assert config.get_config_value("JWT_AUDIENCE", default_aud) == "custom.aud"
     assert config.get_config_value("JWT_ISSUER", default_iss) == "custom.iss"
-
-
-

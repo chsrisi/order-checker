@@ -39,6 +39,13 @@ class RedisManager:
             raise RuntimeError("Redis client is not initialized")
         return await self._client.delete(key)
 
+    async def getdel(self, key: str):
+        """Atomically read and delete a key (Redis >= 6.2)."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.getdel(key)
+
     async def close(self):
         if self._client:
             await self._client.close()

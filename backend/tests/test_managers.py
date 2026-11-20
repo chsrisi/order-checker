@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -54,14 +55,34 @@ async def test_ticket_generation_fails_closed(monkeypatch):
 
 
 class SimpleRedis:
+    """Each call yields once, like a network round trip, so interleavings are realistic."""
+
     def __init__(self):
         self.values: dict[str, str] = {}
 
     async def set(self, key, value, ex=None):
+        await asyncio.sleep(0)
         self.values[key] = value
 
     async def get(self, key):
+        await asyncio.sleep(0)
         return self.values.get(key)
 
     async def delete(self, key):
+        await asyncio.sleep(0)
         self.values.pop(key, None)
+
+    async def getdel(self, key):
+        await asyncio.sleep(0)
+        return self.values.pop(key, None)  # executes atomically server-side
+
+
+@pytest.mark.asyncio
+async def test_concurrent_ticket_consumers_have_one_winner(monkeypatch):
+    """T1.8 / F-M11: racing consumers of one ticket; only one may open a socket."""
+    redis = SimpleRedis()
+    monkeypatch.setattr(ticket_manager, "redis_mgr", redis)
+    manager = TicketManager()
+    ticket = await manager.generate_ticket("operator")
+    results = await asyncio.gather(*(manager.consume_ticket(ticket) for _ in range(5)))
+    assert results.count("operator") == 1
