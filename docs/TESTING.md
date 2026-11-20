@@ -106,3 +106,23 @@ Tests and local development use invented data only (delta A-10: Shopee ToS and D
 tracked seed `backend/scripts/seed_dev/` (see `docs/OPERATIONS.md`) is covered by
 `tests/integration/test_seed_dev_pg.py`, so it stays in step with the schema. Never copy
 production rows into fixtures.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pull requests and pushes to `dev` and `master`:
+
+| Job | What it checks |
+|---|---|
+| `backend` | Ruff, `requirements.txt` in sync with `uv.lock` (`--no-dev`), the full pytest suite (unit + contract v1 + PostgreSQL integration) |
+| `migrations` | `backend/scripts/ci_migration_gate.sh`: empty → head, and previous `v*` tag → head |
+| `flutter (client/admin)` | `flutter analyze` and `flutter test` (with `.env` copied from `.env.example`) |
+
+Run the migration gate locally against a disposable database:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://postgres:test@127.0.0.1:55432/bakingholic_test \
+  backend/scripts/ci_migration_gate.sh          # PREV_TAG=<ref> to test another base
+```
+
+Making these checks *required* and protecting `dev`/`master` are GitHub repository settings
+(maintainer task).

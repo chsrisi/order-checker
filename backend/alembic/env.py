@@ -24,10 +24,15 @@ if config.config_file_name is not None and config.attributes.get("configure_logg
 def _database_url() -> str | None:
     """An explicit URL from the caller wins over configuration lookup.
 
-    ``config.attributes["url"]`` is set by the integration tests so a test run can never fall
-    back to a secret file or environment ``DATABASE_URL`` pointing at a real database.
+    ``config.attributes["url"]`` (integration tests) or ``alembic -x url=...`` (CI migration
+    gate) make sure a test run can never fall back to a secret file or environment
+    ``DATABASE_URL`` pointing at a real database.
     """
-    return config.attributes.get("url") or get_config_value("DATABASE_URL")
+    return (
+        config.attributes.get("url")
+        or context.get_x_argument(as_dictionary=True).get("url")
+        or get_config_value("DATABASE_URL")
+    )
 
 
 # add your model's MetaData object here
