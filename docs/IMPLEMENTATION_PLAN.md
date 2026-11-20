@@ -600,12 +600,32 @@ same change as the task.
 
 | Task | Status | Notes |
 |---|---|---|
-| T0.1 | todo | needs go-ahead to commit |
-| T0.2 | todo | |
-| T0.3 | todo | |
-| T0.4 | todo | baseline: — |
-| T1.1–T1.9 | todo | |
-| T2.1–T2.15 | todo | veto window for P-1…P-5, P-8 |
+| T0.1 | done | `.coverage` added to `backend/.gitignore` |
+| T0.2 | done | snapshot `tests/contracts/client_v1.json`; WS frame + 403 handshake tests |
+| T0.3 | done | `tests/integration/` (alembic from empty, full down/up round trip, model drift check); `compose.test.yaml` gains `test-postgres` |
+| T0.4 | done | baseline (2026-11-20, Python 3.14.10): 138 passed, coverage 66.4 %, Ruff lint clean, 19 files not Ruff-formatted (left as is); `flutter analyze` clean in both apps. Docker socket unavailable to the agent; PostgreSQL tests ran against a rootless Podman `postgres:18.4-alpine` |
+| T1.1 | done | renamed to `active_orders_query()` |
+| T1.2 | done | `KEY_RETENTION_SECONDS`; hourly prune; cancel never prunes |
+| T1.3 | done | exact matches use `lower() =`; substring search escapes `\ % _` |
+| T1.4 | done | P-2 applied: done orders → 409 "Order already completed" |
+| T1.5 | done | `queries.get_refresh_token` now unused (T5.3) |
+| T1.6 | done | |
+| T1.7 | done | |
+| T1.8 | done | |
+| T1.9 | done | **New finding fixed:** `users_update` WS frames sent every user's `password_hash` to admin sessions (ORM rows passed through `jsonable_encoder`). Now `UserResponse` only |
+| T2.1 | done | P-1 applied (unset = production). **Deviation:** `compose.yaml` does not set `APP_ENV` (it is read from the env file), because hard-coding `development` there would defeat fail-closed for deployments still on the base file. `compose.test.yaml` and `.env.example` set `development`. Staging uses production rules. API docs are switched off (T2.4) instead of refusing startup |
+| T2.2 | done | `compose.prod.yaml` uses Compose `!reset`/`!override` (needs v2.24.4+). Prod image built and checked with Podman: alembic + uvicorn present; no dev or `fastapi-cloud` packages. P-8 applied; `httpx` added to the dev deps (the TestClient needed it via `fastapi[standard]`) |
+| T2.3 | done | |
+| T2.4 | done | |
+| T2.5–T2.7 | done | Create returns 200 (matches the admin app's `== 200` convention). Reset and delete are client accounts only. Dormant switch verified by enabling it temporarily (9/9 tests pass), then restored |
+| T2.8 | done | |
+| T2.9 | done | merge command still T4.3 |
+| T2.10 | done | live = any Shopee host without `sandbox`/`test-stable` |
+| T2.11 | done | daily, plus once at startup |
+| T2.12 | done | also removed `exc_info=True` there (the traceback repr carried the URL) |
+| T2.13 | done | P-4 applied; the login routes are now async, and Argon2 runs in a thread |
+| T2.14 | done | **Deviation from P-5 numbers** (no access to real payloads to check): `content`/`sku` 1024 (raw scans may be multi-line QR), `order_sn` 64, `location`/`move_to` 128, tags 16×64, close list 10,000. Contract snapshot updated deliberately (+11 constraint lines only). **Please check against real label/QR lengths** |
+| T2.15 | done | |
 | T3.1–T3.4 | todo | P-6 |
 | T3.5–T3.6 | todo | maintainer-run |
 | T4.1–T4.8 | todo | T4.4 runs only in the production window |
