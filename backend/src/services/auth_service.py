@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
+from .managers.login_throttle import login_throttle
 from sqlalchemy.exc import IntegrityError
 
 from . import queries
@@ -225,6 +226,34 @@ async def register_client(username: str, password: str) -> dict:
     return get_tokens(new_user)
 
 
+_DUMMY_HASH: str | None = None
+
+
+def _dummy_hash() -> str:
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = get_password_hash(secrets.token_urlsafe(16))
+    return _DUMMY_HASH
+
+
+async def login_throttled(username: str, password: str, required_scope: str | None = None) -> dict:
+    """Login with per-username failure throttling; Argon2 runs off the event loop."""
+    if await login_throttle.is_locked(username):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Try again later.",
+            headers={"Retry-After": str(login_throttle.window)},
+        )
+    try:
+        tokens = await asyncio.to_thread(login_user, username, password, required_scope)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            await login_throttle.record_failure(username)
+        raise
+    await login_throttle.reset(username)
+    return tokens
+
+
 def login_user(
     username: str,
     password: str,
@@ -234,6 +263,9 @@ def login_user(
     user = queries.get_user_data(username)
     if not user:
         logger.warning(f"Login failed: User {username} not found")
+        # Same Argon2 cost as a real check, so response time does not reveal which
+        # usernames exist (F-M17).
+        verify_password(password, _dummy_hash())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

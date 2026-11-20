@@ -225,3 +225,27 @@ def test_explicit_jwt_audience_and_issuer_override(monkeypatch):
 
     assert config.get_config_value("JWT_AUDIENCE", default_aud) == "custom.aud"
     assert config.get_config_value("JWT_ISSUER", default_iss) == "custom.iss"
+
+
+@pytest.mark.asyncio
+async def test_redis_manager_counter_with_ttl(monkeypatch):
+    class Counter(FakeRedisClient):
+        def __init__(self):
+            super().__init__()
+            self.expiries = {}
+
+        async def incr(self, key):
+            self.values[key] = int(self.values.get(key, 0)) + 1
+            return self.values[key]
+
+        async def expire(self, key, ttl):
+            self.expiries[key] = ttl
+            return True
+
+    client = Counter()
+    monkeypatch.setattr(redis_service, "get_config_value", lambda *_: "redis://example/0")
+    monkeypatch.setattr(redis_service.redis, "from_url", lambda *_, **__: client)
+    manager = RedisManager()
+    assert await manager.incr_with_ttl("k", 60) == 1
+    assert await manager.incr_with_ttl("k", 60) == 2
+    assert client.expiries == {"k": 60}

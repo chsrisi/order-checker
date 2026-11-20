@@ -46,6 +46,22 @@ class RedisManager:
             raise RuntimeError("Redis client is not initialized")
         return await self._client.getdel(key)
 
+    async def incr_with_ttl(self, key: str, ttl: int) -> int:
+        """Increment a counter; the first increment starts its expiry window."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        value = await self._client.incr(key)
+        if value == 1:
+            await self._client.expire(key, ttl)
+        return value
+
+    async def expire(self, key: str, ttl: int):
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.expire(key, ttl)
+
     async def close(self):
         if self._client:
             await self._client.close()

@@ -180,6 +180,8 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `KEYS_DIR` | string | `data/keys` | No | Directory where RSA key pairs (`.key` and `.pub`) are stored and rotated. Mounted as a persistent host volume in Docker. |
 | `KEY_CACHE_TTL_SECONDS` | int | `300` | No | In-memory cache duration for public JWKS keys before re-scanning disk (default: 5 minutes). |
 | `KEY_RETENTION_SECONDS` | int | `REFRESH_TTL_SECONDS + ACCESS_TTL_SECONDS + JWT_LEEWAY_SECONDS` | No | How long a retired signing key stays published after its successor appears. It must cover the refresh-token lifetime, because refresh tokens are signed with the same keys. Lower values log idle devices out after a rotation. |
+| `LOGIN_MAX_FAILURES` | int | `10` | No | Failed logins per username (case-insensitive) before `/auth/login` and `/auth/admin` return 429. Counted in Redis; if Redis is down, logins are allowed (fail open). |
+| `LOGIN_LOCKOUT_SECONDS` | int | `900` | No | Failure-counting window and lockout duration. A successful login resets the counter. To unlock an operator early: `redis-cli DEL login_fail:<username>`. |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |

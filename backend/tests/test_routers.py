@@ -23,17 +23,18 @@ def actor(username="operator", scope="client", password_hash="hash"):
     return SimpleNamespace(username=username, scope=scope, password_hash=password_hash)
 
 
-def test_auth_router_delegates_login_variants(monkeypatch):
+@pytest.mark.asyncio
+async def test_auth_router_delegates_login_variants(monkeypatch):
     calls = []
 
-    def login(username, password, required_scope=None):
+    async def login(username, password, required_scope=None):
         calls.append((username, password, required_scope))
         return {"access_token": "a", "refresh_token": "r", "token_type": "bearer"}
 
-    monkeypatch.setattr(auth.auth_service, "login_user", login)
+    monkeypatch.setattr(auth.auth_service, "login_throttled", login)
     payload = UserAuth(username="operator", password="password")
-    auth.login_client(payload)
-    auth.login_admin(payload)
+    await auth.login_client(payload)
+    await auth.login_admin(payload)
     assert calls == [
         ("operator", "password", None),
         ("operator", "password", "admin"),

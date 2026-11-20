@@ -43,10 +43,13 @@ async def register_client(auth: UserAuth):
     response_model=Token,
     summary="Log in an operator",
     description="Authenticates any existing account for the operator application.",
-    responses={401: {"description": "Invalid credentials"}},
+    responses={
+        401: {"description": "Invalid credentials"},
+        429: {"description": "Too many failed attempts for this username; retry later"},
+    },
 )
-def login_client(auth: UserAuth):
-    return auth_service.login_user(auth.username, auth.password)
+async def login_client(auth: UserAuth):
+    return await auth_service.login_throttled(auth.username, auth.password)
 
 
 @router.post(
@@ -54,10 +57,13 @@ def login_client(auth: UserAuth):
     response_model=Token,
     summary="Log in an administrator",
     description="Authenticates credentials only when the account has the admin scope.",
-    responses={401: {"description": "Invalid credentials or non-admin account"}},
+    responses={
+        401: {"description": "Invalid credentials or non-admin account"},
+        429: {"description": "Too many failed attempts for this username; retry later"},
+    },
 )
-def login_admin(auth: UserAuth):
-    return auth_service.login_user(auth.username, auth.password, required_scope="admin")
+async def login_admin(auth: UserAuth):
+    return await auth_service.login_throttled(auth.username, auth.password, required_scope="admin")
 
 
 @router.post(

@@ -22,8 +22,8 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- |
 | POST | `/auth/register` | Public | Create client account and tokens. **403** "Registration is disabled" unless `ALLOW_REGISTRATION` is on (off under production rules) |
-| POST | `/auth/login` | Public | Operator login |
-| POST | `/auth/admin` | Public | Admin-only login |
+| POST | `/auth/login` | Public | Operator login. **429** after 10 failed attempts for a username within 15 minutes |
+| POST | `/auth/admin` | Public | Admin-only login (same 429 throttle) |
 | POST | `/auth/refresh` | Public | Rotate refresh token pair |
 | POST | `/auth/logout` | Public | Delete refresh-token record |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
