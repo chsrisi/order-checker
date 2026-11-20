@@ -178,7 +178,9 @@ def test_marketplace_bom_quantity_multiplication():
     from unittest.mock import MagicMock
 
     mock_hdr = BOMHeaderMarketplace(shopee_id=123, item_name="Test Bundle", quantity_standard=1)
-    mock_dtl = BOMDetailMarketplace(shopee_id=123, component_sku="SKU-A", quantity_standard=2, is_not_primary_child=False)
+    mock_dtl = BOMDetailMarketplace(
+        shopee_id=123, component_sku="SKU-A", quantity_standard=2, is_not_primary_child=False
+    )
     mock_item = WarehouseItem(sku="SKU-A", item_name="Item A")
 
     mock_db = MagicMock()
@@ -199,9 +201,10 @@ def test_marketplace_bom_quantity_multiplication():
     mock_db.execute.side_effect = mock_execute
 
     from unittest.mock import patch
+
     with patch("src.services.queries.bom.get_db") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = mock_db
-        
+
         # Test with order quantity 10
         node = get_marketplace_bom_node(123, qty=10)
         assert node is not None
@@ -259,6 +262,18 @@ async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
     shopee_service.conn_mgr.send_to_user.assert_awaited_once()
 
 
+def test_active_orders_query_cutoff_is_built_per_call():
+    """T1.1 / F-C1: two calls at different times carry different ship-by cutoffs."""
+    from datetime import UTC, datetime, timedelta
 
+    from src.services.queries.orders import active_orders_query
 
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    late = early + timedelta(days=1)
 
+    def cutoff(query):
+        params = query.compile().params
+        return next(v for v in params.values() if isinstance(v, datetime))
+
+    assert cutoff(active_orders_query(early)) == early
+    assert cutoff(active_orders_query(late)) == late

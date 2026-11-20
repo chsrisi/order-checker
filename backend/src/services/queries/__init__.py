@@ -25,7 +25,7 @@ from .orders import (
     get_shopee_orders_history,
     acquire_order,
     sync_shopee_orders_to_db,
-    lection_query,
+    active_orders_query,
 )
 from .stocks import (
     update_or_move_stock,
@@ -85,7 +85,7 @@ __all__ = [
     "get_shopee_orders_history",
     "acquire_order",
     "sync_shopee_orders_to_db",
-    "lection_query",
+    "active_orders_query",
     "update_or_move_stock",
     "get_stocks_data",
     "get_all_stocks_data",

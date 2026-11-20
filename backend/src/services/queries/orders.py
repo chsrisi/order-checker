@@ -16,16 +16,26 @@ from .bom import get_marketplace_bom_node, get_standard_bom_node_internal
 
 logger = logging.getLogger("backend.services.queries.orders")
 
-lection_query = (
-    select(ShopeeOrder)
-    .outerjoin(ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
-    .filter(
-        ShopeeOrder.done == False,  # noqa: E712
-        ShopeeOrder.status.in_(["READY_TO_SHIP", "PROCESSED", "RETRY_SHIP"]),
-        ShopeeOrder.ship_by >= datetime.now(UTC),
+ACTIVE_ORDER_STATUSES = ("READY_TO_SHIP", "PROCESSED", "RETRY_SHIP")
+
+
+def active_orders_query(now: Optional[datetime] = None):
+    """Orders operators can still work on.
+
+    Built per call: the ship-by cutoff must be evaluated at query time, not at import time
+    (it used to be a module-level query, which froze "now" at server start).
+    """
+    cutoff = now or datetime.now(UTC)
+    return (
+        select(ShopeeOrder)
+        .outerjoin(ShopeeOrderInfo, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
+        .filter(
+            ShopeeOrder.done == False,  # noqa: E712
+            ShopeeOrder.status.in_(ACTIVE_ORDER_STATUSES),
+            ShopeeOrder.ship_by >= cutoff,
+        )
+        .order_by(ShopeeOrder.ship_by.desc())
     )
-    .order_by(ShopeeOrder.ship_by.desc())
-)
 
 
 def resolve_shopee_order_bom_tree(
@@ -45,17 +55,21 @@ def resolve_shopee_order_bom_tree(
 
 def get_shopee_order_data(username: str) -> List[ShopeeOrder]:
     with get_db() as db:
-        query = lection_query.filter(ShopeeOrder.owner_user == username).options(
-            selectinload(ShopeeOrder.info),
-            selectinload(ShopeeOrder.item_list),
-            selectinload(ShopeeOrder.recipient_address),
+        query = (
+            active_orders_query()
+            .filter(ShopeeOrder.owner_user == username)
+            .options(
+                selectinload(ShopeeOrder.info),
+                selectinload(ShopeeOrder.item_list),
+                selectinload(ShopeeOrder.recipient_address),
+            )
         )
         return list(db.execute(query).scalars().all())
 
 
 def get_all_shopee_order_data() -> List[ShopeeOrder]:
     with get_db() as db:
-        query = lection_query.options(
+        query = active_orders_query().options(
             selectinload(ShopeeOrder.info),
             selectinload(ShopeeOrder.item_list),
             selectinload(ShopeeOrder.recipient_address),
