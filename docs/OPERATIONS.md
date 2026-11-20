@@ -145,6 +145,7 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `JWT_VERSION` | string | `v0.3a` | No | Version tag embedded in default JWT audience and issuer claims (`api.bakingholic:<version>` and `auth.bakingholic:<version>`). |
 | `KEYS_DIR` | string | `data/keys` | No | Directory where RSA key pairs (`.key` and `.pub`) are stored and rotated. Mounted as a persistent host volume in Docker. |
 | `KEY_CACHE_TTL_SECONDS` | int | `300` | No | In-memory cache duration for public JWKS keys before re-scanning disk (default: 5 minutes). |
+| `KEY_RETENTION_SECONDS` | int | `REFRESH_TTL_SECONDS + ACCESS_TTL_SECONDS + JWT_LEEWAY_SECONDS` | No | How long a retired signing key stays published after its successor appears. It must cover the refresh-token lifetime, because refresh tokens are signed with the same keys. Lower values log idle devices out after a rotation. |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |
@@ -154,6 +155,15 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `JWT_LEEWAY_SECONDS` | float | `30.0` | No | Clock-skew leeway in seconds for JWT verification (`nbf`/`exp`). |
 | `WS_TICKET_TTL_SECONDS` | int | `30` | No | Validity duration in seconds for one-time WebSocket connection tickets generated via `/auth/ws-token`. |
 | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` | int | `120` | No | Validity duration in seconds for temporary admin configuration unlock tokens (`cfg_token:*`). |
+
+**Key rotation lifecycle.** Every 24 hours the rotation task works in two stages:
+
+1. It publishes the new `.pub` in the JWKS.
+2. After `KEY_CACHE_TTL_SECONDS + 30` seconds it writes the new `.key`, and the new pair starts signing.
+
+The previous pair stays on disk and in the JWKS until `KEY_RETENTION_SECONDS` (plus the cache window) has passed, so the JWKS normally lists 2–3 keys. An hourly check removes only expired pairs. It never removes the newest complete pair, and never a pending rotation.
+
+If the server stops mid-rotation, it completes the half-written pair and removes nothing. Deploying during a rotation is therefore safe.
 
 ---
 
