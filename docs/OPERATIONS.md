@@ -425,7 +425,10 @@ The override:
 It needs Docker Compose v2.24.4 or later.
 
 To reach the database for maintenance, use `docker compose exec db psql -U postgres bakingholic`
-instead of publishing the port.
+instead of publishing the port. For releases and maintenance windows, see `docs/RELEASE.md`.
+After changing `.secrets/admin_password` for an **existing** admin account, run
+`docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.set_admin_password`
+(the startup seed only creates a missing admin).
 
 ### Running with Docker CLI (Standalone)
 

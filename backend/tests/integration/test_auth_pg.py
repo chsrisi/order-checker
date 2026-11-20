@@ -51,3 +51,27 @@ def test_password_reset_revokes_all_refresh_tokens(pg_session_factory):
     assert queries.consume_refresh_token("a2") is None
     assert queries.set_password_and_revoke_sessions("boss", "x") is False  # admin-side only
     assert queries.set_password_and_revoke_sessions("ghost", "x") is False
+
+
+def test_set_admin_password_updates_existing_admin(pg_session_factory, monkeypatch):
+    import pytest
+
+    from scripts import set_admin_password as cmd
+    from src.services.auth_service import verify_password
+
+    with pg_session_factory() as db:
+        add_user(db, "admin", scope="admin")
+        db.commit()
+    queries.create_refresh_token("adm-1", "admin", datetime.now(UTC) + timedelta(hours=1))
+
+    values = {"ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": "admin"}
+    monkeypatch.setattr(cmd, "get_config_value", lambda k, d=None: values.get(k, d))
+    with pytest.raises(SystemExit):
+        cmd.set_admin_password()  # placeholder refused
+
+    values["ADMIN_PASSWORD"] = "a-new-long-admin-password"
+    assert cmd.set_admin_password() == "admin"
+    assert verify_password(
+        "a-new-long-admin-password", queries.get_user_data("admin").password_hash
+    )
+    assert queries.consume_refresh_token("adm-1") is None

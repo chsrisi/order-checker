@@ -13,6 +13,7 @@ This directory is the maintained technical reference for the project.
 | [Branch-split delta](BRANCH_SPLIT_DELTA.md) | Maintainers | Decisions taken after the review, superseded items, open questions |
 | [Stock model discussion](STOCK_MODEL_DISCUSSION.md) | Engineers | Pick deduction/restore design, location-mode policy |
 | [Implementation plan](IMPLEMENTATION_PLAN.md) | Engineers / agents | Task breakdown, guardrails, definition of done, progress tracker |
+| [Release runbook](RELEASE.md) | Maintainers | Release PR checklist, maintenance window, rollback, release-specific steps |
 
 The live HTTP contract is generated from code at `/docs`, `/redoc`, and
 `/openapi.json`. When documentation and behavior disagree, the OpenAPI document

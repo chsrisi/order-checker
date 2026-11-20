@@ -1,0 +1,118 @@
+# Release runbook
+
+How a backend + admin release reaches production. Branch model: feature branches →
+`dev` → release PR → `master` + tag `vX.Y.Z` (docs/BRANCH_SPLIT_REVIEW.md §4.1).
+Production is not strictly uptime-sensitive, so short maintenance windows are fine
+(KNOWN_LIMITATIONS #8). The operator client is **not** part of a release: it keeps
+working as long as contract v1 holds.
+
+## 1. Release PR checklist (`dev` → `master`)
+
+- [ ] CI green: backend (incl. contract v1 + PostgreSQL), migration gate, both Flutter apps.
+- [ ] **Contract v1 sign-off.** `backend/tests/contracts/client_v1.json` is unchanged, or
+      every change is additive and explained in the PR (e.g. T2.14 length limits). WS frames
+      still carry `data` as a list of objects, and the WS handshake still rejects with 403.
+- [ ] `backend/pyproject.toml` version bumped (SemVer); `uv lock` and
+      `uv export --no-dev --no-hashes -o requirements.txt` run.
+- [ ] New migrations reviewed by hand: schema-qualified, with a working `downgrade()`.
+- [ ] Docs updated: API.md, OPERATIONS.md, KNOWN_LIMITATIONS.md, this file (if the window
+      needs special steps).
+- [ ] Release notes list anything operators notice (relogin, new admin features).
+
+After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z` (maintainer).
+
+## 2. Maintenance window (every release)
+
+1. **Announce** the window to operators. Ask them to finish open picks and scans.
+2. **Back up** (keep for at most 90 days, ideally 30; see OPERATIONS "Data Retention"):
+   ```bash
+   cd backend
+   docker compose exec -T db pg_dump -U postgres -Fc bakingholic > backup-$(date +%F).dump
+   docker compose exec -T redis sh -c 'REDISCLI_AUTH="$(cat /run/secrets/redis_password 2>/dev/null)" redis-cli SAVE'
+   tar czf keys-$(date +%F).tgz data/keys
+   ```
+   (Before v0.4.0, Redis has no password, so the `REDISCLI_AUTH` part is empty and still works.)
+3. **Deploy:**
+   ```bash
+   git fetch --tags && git checkout vX.Y.Z
+   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+   docker compose -f compose.yaml -f compose.prod.yaml logs -f server   # migrations + "startup_config_accepted"
+   ```
+   If startup is refused, the log lists every configuration problem (OPERATIONS
+   "Environment Profiles"). Fix them and run `up -d` again.
+4. **Smoke test:**
+   - admin web: log in, see users, orders, and stock
+   - a test operator on the client: log in, sync orders, claim one, add a pick, scan a label
+   - admin: close the test label (or use a synthetic one)
+5. **Tell operators** to tap *retry* on the connection banner, or to log in again if the release
+   notes say so.
+
+## 3. Rollback
+
+1. `git checkout <previous tag>`
+2. If the new release added migrations, run `docker compose exec server alembic downgrade <previous head revision>` **before** switching code. Each release note names the revision.
+3. `docker compose ... up -d --build`
+4. If the token identity (`APP_ENV`, `JWT_AUDIENCE`, `JWT_ISSUER`) or the keys differ between the two versions, operators log in again.
+5. If data must be restored: `pg_restore -U postgres -d bakingholic --clean backup-<date>.dump`, then restore `data/keys` (a database restore without the keys forces a relogin) and the Redis volume (it holds the Shopee tokens).
+
+## 4. Release-specific windows
+
+### v0.4.0: first production-rules release (IMPLEMENTATION_PLAN T3.6)
+
+This window **logs every device out once**. The token identity changes from
+`*:v0.3a` to `*:production` (T3.1), and production moves to the override file with Redis
+auth. No schema migrations are added. Do the steps in this order.
+
+**Before the window** (prepare on the server, nothing restarts yet):
+
+1. Create the secret files in `backend/.secrets/` (`chmod 600`), as listed at the top of
+   `compose.prod.yaml`:
+   - `redis_password`: a new long random value
+   - `redis_url`: `redis://:<redis_password>@redis:6379/0`
+   - `admin_password`: a long random value. **It must not be `admin`** or startup refuses.
+     For an existing admin account it is applied with `scripts.set_admin_password` (see below).
+   - `database_url` and `partner_key`: move them out of `.env`
+2. Edit `backend/.env`, using `.env.production.example` as the reference:
+   - add `APP_ENV=production`
+   - **remove** `JWT_VERSION`, `JWT_AUDIENCE`, `JWT_ISSUER` and `API_VERSION`. Left in place,
+     they pin the old identity or are ignored with a warning.
+   - set `CORS_ORIGINS=` (empty) and remove `CORS_ORIGIN_REGEX`
+   - replace `SINGLE_LOCATION_STOCK_BYPASS=…` with `STOCK_LOCATION_MODE=multi|single`
+   - make sure `MOCK_ORDER_BYPASS=0`, and that `ALLOW_REGISTRATION` is unset or `0`
+   - remove `DATABASE_URL`, `PARTNER_KEY` and `ADMIN_PASSWORD` (now file secrets)
+3. Check that `docker compose version` reports v2.24.4 or later.
+
+**In the window:** follow §2. The deploy command is
+`docker compose -f compose.yaml -f compose.prod.yaml up -d --build`. Redis restarts with
+a password on the same data volume, so the Shopee tokens survive. Then:
+
+- Every operator logs in again (this is expected).
+- New operator accounts are created in the admin app (**Users → New operator**). Self-registration
+  now returns 403.
+- PostgreSQL and Redis ports are no longer published. Use `docker compose exec db psql …`
+  for maintenance.
+
+**Admin password.** `seed_admin_user` creates the admin only if it is missing, and the
+startup guard checks only the *configured* value. An admin created long ago therefore keeps
+its old password until you apply the new one. **Run this once in the window, right after
+deploy:**
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.set_admin_password
+```
+
+It writes `.secrets/admin_password` to the existing admin, refuses placeholder values,
+and revokes the admin's sessions.
+
+### Step 4 release (inventory integrity, T4.3/T4.4)
+
+This window ships the allocation table and the structured stock log. Per delta D5 / Q4:
+
+1. Operators finish their open picks before the window.
+2. Deploy as in §2. The migration adds the new table and columns and merges duplicate
+   `(sku, location)` rows.
+3. Run the cutover command, which deletes the remaining open pick entries **without restoring
+   stock** and writes one `cutover_clear` log row:
+   `docker compose exec server python -m scripts.clear_open_pick_entries --confirm`
+4. If production runs `STOCK_LOCATION_MODE=single`, also run the merge command
+   (`scripts.stock_merge_single`) per OPERATIONS "Stock Location Mode".
