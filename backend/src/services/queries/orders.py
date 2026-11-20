@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from datetime import datetime, UTC
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import selectinload
 
 from ...models import (
@@ -93,21 +93,37 @@ def get_shopee_orders_history() -> List[ShopeeOrder]:
 
 
 def acquire_order(order_sn: str, username: str) -> bool:
+    """Claim an order for ``username`` atomically (F-H4).
+
+    A single conditional ``UPDATE`` decides the winner, so two operators claiming at the same
+    time can never both succeed. Returns ``False`` when the order does not exist; raises
+    ``ValueError`` (mapped to 409) when another operator owns it or it is already completed.
+    """
     with get_db() as db:
-        db_order = (
-            db.execute(select(ShopeeOrder).filter(ShopeeOrder.order_sn == order_sn))
-            .scalars()
-            .first()
-        )
-        if not db_order:
-            return False
-
-        if db_order.owner_user not in (None, username):
-            raise ValueError("Order is already assigned to another operator")
-
-        db_order.owner_user = username
+        claimed = db.execute(
+            update(ShopeeOrder)
+            .where(
+                ShopeeOrder.order_sn == order_sn,
+                or_(ShopeeOrder.owner_user.is_(None), ShopeeOrder.owner_user == username),
+                ShopeeOrder.done == False,  # noqa: E712
+            )
+            .values(owner_user=username)
+            .returning(ShopeeOrder.order_sn)
+        ).first()
         db.commit()
-        return True
+        if claimed:
+            return True
+
+        current = db.execute(
+            select(ShopeeOrder.owner_user, ShopeeOrder.done).filter(
+                ShopeeOrder.order_sn == order_sn
+            )
+        ).first()
+        if current is None:
+            return False
+        if current.done:
+            raise ValueError("Order already completed")
+        raise ValueError("Order is already assigned to another operator")
 
 
 def sync_shopee_orders_to_db(chunk_results) -> None:
