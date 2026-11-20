@@ -626,8 +626,12 @@ same change as the task.
 | T2.13 | done | P-4 applied; the login routes are now async, and Argon2 runs in a thread |
 | T2.14 | done | **Deviation from P-5 numbers** (no access to real payloads to check): `content`/`sku` 1024 (raw scans may be multi-line QR), `order_sn` 64, `location`/`move_to` 128, tags 16×64, close list 10,000. Contract snapshot updated deliberately (+11 constraint lines only). **Please check against real label/QR lengths** |
 | T2.15 | done | |
-| T3.1–T3.4 | todo | P-6 |
-| T3.5–T3.6 | todo | maintainer-run |
+| T3.1 | done | backend version 0.4.0 from `pyproject.toml`; `API_VERSION` override only in development; `JWT_VERSION` deprecated and ignored; iss/aud = `*:<APP_ENV>` unless set explicitly |
+| T3.2 | done | `python -m scripts.seed_dev`. **New finding (fix in T4.5):** split orders have several `order_info` rows, but `ShopeeOrder.info` is a scalar relationship, so the API's `info` list shows one arbitrary package (SQLAlchemy "Multiple rows … uselist=False"). Outbound close is unaffected |
+| T3.3 | done | P-6 applied. Gate verified locally for both paths (`PREV_TAG=187122c`). `alembic -x url=` added so the gate can never fall back to `.secrets/database_url`. Action versions: checkout@v4, setup-uv@v5, flutter-action@v2 (Flutter 3.47.5) |
+| T3.4 | done | `docs/RELEASE.md`, including the v0.4.0 window. **Gap found and fixed:** the startup guard checks only the configured `ADMIN_PASSWORD`, while an existing admin kept its old hash, so `scripts.set_admin_password` was added |
+| T3.5 | todo | **maintainer:** after merging to `master`: `git tag -a v0.4.0 -m v0.4.0 && git branch dev v0.4.0 && git push origin master dev v0.4.0`; then set the default branch to `dev`, protect `dev`/`master`, and require the CI checks |
+| T3.6 | todo | **maintainer:** run the v0.4.0 window in `docs/RELEASE.md` §4 (forced relogin, secrets, `.env` edits, `set_admin_password`) |
 | T4.1–T4.8 | todo | T4.4 runs only in the production window |
 | T5.1–T5.4 | todo | |
 | TH.1–TH.2 | todo | |
