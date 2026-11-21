@@ -254,14 +254,6 @@ class PickStockAllocation(Base):
     entry: Mapped["PickItemEntry"] = relationship("PickItemEntry", back_populates="allocations")
 
 
-class PickItemEntryLog(Base):
-    __tablename__ = "pick_item_entries_log"
-    __table_args__ = {"schema": "orders"}
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    message: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-
-
 # warehouse
 class WarehouseItem(Base):
     __tablename__ = "items"

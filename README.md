@@ -83,6 +83,6 @@ cd frontend/admin && flutter analyze && flutter test
 ```
 
 Start with the [documentation index](docs/PROJECT.md), or jump to the
-[architecture](docs/ARCHITECTURE.md), [API](docs/API.md),
-[operations](docs/OPERATIONS.md), [testing](docs/TESTING.md), and
-[code-review report](docs/CODE_REVIEW.md).
+[system reference](docs/SYSTEM_REFERENCE.md), [architecture](docs/ARCHITECTURE.md),
+[API](docs/API.md), [operations](docs/OPERATIONS.md) and [testing](docs/TESTING.md).
+Past reviews and decision logs are in [docs/archive](docs/archive/README.md).

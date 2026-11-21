@@ -895,7 +895,7 @@ class _OngoingOrdersTabState extends State<_OngoingOrdersTab> {
     if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Export failed or not supported on this platform'),
+          content: Text('Export failed'),
         ),
       );
     }

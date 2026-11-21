@@ -38,5 +38,8 @@ Thumbs.db
 
 # Temporary files
 **/temp/
-# Added by code-review-graph
+# code-review-graph: graph.db is local (absolute paths, rebuilt by its hooks)
 .code-review-graph/
+# Claude Code: shared agent setup is tracked (CLAUDE.md, .mcp.json, .claude/settings.json,
+# .claude/skills/); personal overrides are not
+.claude/settings.local.json

@@ -1,5 +1,8 @@
 # Branch-split review: decision delta
 
+> **Archived 2026-11-21 (at commit `2081206`).** Historical record, not maintained, and
+> not authoritative for current behaviour. Decision log (rounds D1–D5, 2026-11-20). All decisions are implemented or tracked in [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md); current behaviour is described in [SYSTEM_REFERENCE.md](../SYSTEM_REFERENCE.md).
+
 This file records decisions made after [BRANCH_SPLIT_REVIEW.md](BRANCH_SPLIT_REVIEW.md)
 (the "base review"). The base review is left untouched so it stays a snapshot of commit
 `187122c`. Where the two disagree, **this file wins**, and later rounds win over earlier ones.
@@ -352,7 +355,7 @@ file.
 | Ref | Decision | Status |
 |---|---|---|
 | Stock Q4 | **Clear open pick entries at cutover.** The cutover is the maintenance window in which the inventory-integrity release (step 4) is deployed to production. Operators finish their open picks first, then a maintenance command removes the remaining open entries **without** restoring stock. After the cutover, every entry has allocation data. | ✅ |
-| Next | Write a full implementation plan and task guideline before any implementation starts: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Implementation starts only on your explicit go-ahead. | ✅ |
+| Next | Write a full implementation plan and task guideline before any implementation starts: [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md). Implementation starts only on your explicit go-ahead. | ✅ |
 
 ---
 

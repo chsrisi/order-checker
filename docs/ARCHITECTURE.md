@@ -69,7 +69,8 @@ verification to tolerate key rotation.
 3. Only the refresh-token JTI is persisted.
 4. Refresh deletes the old JTI before issuing a replacement pair.
 5. Signing keys rotate daily: publish new public key, switch signer after the JWKS
-   cache interval, retain the old key for the access-token lifetime, then prune it.
+   cache interval, retain the old key until every token it signed has expired (refresh TTL +
+   access TTL + leeway by default), then prune it.
 
 ### Shopee synchronization
 
@@ -93,9 +94,12 @@ parallel upstream synchronizations; distributed locking is a future scaling task
 Marketplace or standard BOM mappings expand sold items into warehouse components, supporting quantity scaling (`qty`) across root and child nodes.
 Item lookups utilize a barcode resolution pipeline (`resolve_barcode_to_item`):
 1. Extract the first line/token from the scanned barcode string.
-2. Check if the token matches a standard SKU candidate regex pattern (`[a-zA-Z]\d{2}_\d{3}`, e.g., `A01_001`).
-3. Normalize supplier barcodes (stripping prefix patterns like `BATCH-`).
+2. Check if the part before any `*` matches a standard SKU candidate (`[a-zA-Z]\d{2}_\d{3}`, e.g., `A01_001`).
+3. Normalize supplier barcodes (`prefix:value:suffix` → `value`; dashed forms reduced to their
+   trailing groups) and match `supplier_barcode`.
 4. Fall back to exact SKU matching in the warehouse items database.
+
+All matches are case-insensitive and exact. Exact normalization rules: SYSTEM_REFERENCE §7.4.
 
 An operator atomically claims an unassigned order, builds pick entries, assigns
 quantities, and scans the outbound label. Period closure deduplicates submitted
@@ -142,6 +146,7 @@ Redis keys use these namespaces:
 - `shopee:access_token`, `shopee:refresh_token`, `shopee:current_ip`
 - `ws_token:<random>` for one-use 30-second WebSocket tickets
 - `cfg_token:<random>` for two-minute admin configuration sessions
+- `login_fail:<username>` failed-login counters (15-minute window)
 
 ## Scaling and failure model
 

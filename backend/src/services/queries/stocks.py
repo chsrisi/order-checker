@@ -404,15 +404,11 @@ def merge_all_to_single(db: Session, actor: str = "maintenance") -> dict[str, in
 
 
 def get_stocks_data(join_warehouse: bool = False):
+    """Rows with ``_mapping`` (id, sku, stock, location[, item_name]) in both modes."""
     with get_db() as db:
-        query = select(Stock)
+        query = select(Stock.id, Stock.sku, Stock.stock, Stock.location)
         if join_warehouse:
-            query = select(
-                Stock.id,
-                Stock.sku,
-                Stock.stock,
-                Stock.location,
-                WarehouseItem.item_name,
-            ).join(WarehouseItem, Stock.sku == WarehouseItem.sku)
-        results = db.execute(query)
-        return list(results.all() if join_warehouse else results.scalars().all())
+            query = query.add_columns(WarehouseItem.item_name).join(
+                WarehouseItem, Stock.sku == WarehouseItem.sku
+            )
+        return list(db.execute(query).all())

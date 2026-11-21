@@ -85,7 +85,10 @@ async def reset_user_password(
     "/users",
     response_model=MessageResponse,
     summary="Delete an operator account",
-    description="Deletes a client account and its refresh tokens, pick entries, and outbound scans.",
+    description=(
+        "Deletes a client account and its refresh tokens and outbound scans. Its pick "
+        "entries are deleted with their stock restored, and its claimed orders are released."
+    ),
     responses={
         403: {"description": "Admin scope required"},
         404: {"description": "Client account not found"},
@@ -95,7 +98,7 @@ async def delete_user(
     username: str = Query(...),
     current_user: User = Depends(require_admin),
 ):
-    await auth_service.delete_user(username)
+    await auth_service.delete_user(username, actor=current_user.username)
     logger.info(f"Admin {current_user.username} deleted user {username}")
     return {"message": "User and associated data deleted successfully"}
 

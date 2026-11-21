@@ -1,5 +1,10 @@
 # Code review report
 
+> **Archived 2026-11-21 (at commit `2081206`).** Historical record, not maintained, and
+> not authoritative for current behaviour. Review of commit `82a9801` (2026-07-19). Unit of work, PostgreSQL integration tests and
+> production startup rules were done since; the risks still open are carried in
+> [SYSTEM_REFERENCE.md §14](../SYSTEM_REFERENCE.md#14-open-gaps-observed-in-code).
+
 Reviewed against commit `82a9801` on 2026-07-19, including the router/service
 refactor present at that revision.
 

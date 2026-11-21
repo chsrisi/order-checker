@@ -69,8 +69,10 @@ The Windows desktop build was dropped (delta D2.1); the admin app is web-only.
 ## Web Hosting with Docker
 
 The admin web application is containerized using a multi-stage Docker build:
-1. **Builder stage**: Uses `ghcr.io/cirruslabs/flutter:stable` to compile a release web bundle (`flutter build web --release`).
-2. **Runner stage**: Uses `nginx:alpine` to host static web assets with gzip compression, SPA fallback routing (`try_files $uri $uri/ /index.html;`), and static caching headers.
+1. **Builder stage**: Uses `ghcr.io/cirruslabs/flutter:3.44.0` (pinned; see `docs/OPERATIONS.md`) to compile a release web bundle (`flutter build web --release`).
+2. **Runner stage**: Uses `nginx:alpine` to host static web assets with gzip compression, SPA fallback routing (`try_files $uri $uri/ /index.html;`), and revalidated caching (`Cache-Control: no-cache`, because Flutter web file names are not content-hashed).
+
+Every code change needs a new image: `docker compose ... build admin-web && docker compose ... up -d admin-web`. See "Rebuilding the Admin Web After a Code Change" in `docs/OPERATIONS.md`.
 
 ### Dynamic Runtime Configuration Injection
 

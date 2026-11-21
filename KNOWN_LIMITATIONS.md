@@ -105,8 +105,7 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**:
   - Backend configuration template: `backend/.env.example`
   - Frontend configuration templates: `frontend/admin/.env.example`, `frontend/client/.env.example`
-  - Agent instruction files are local and untracked (for example `CLAUDE.md`); this file is the
-    tracked source of the rule.
+  - Agent instruction files (`CLAUDE.md`) point here; this file is the source of the rule.
 
 ---
 
@@ -125,17 +124,17 @@ This document tracks known architectural, library, and system limitations within
 ### 8. Operator Client API Is Frozen (Manual Client Updates)
 - **Issue**: The operator client (`frontend/client`, Android/Windows scanners) is distributed and updated manually. It cannot be updated over the air, and its `BASE_URL`/`WS_URL` are baked into each build. Every backend version must keep working with every client build still in the field.
 - **Policy**:
-  - The client-facing API is **contract v1**. The exact surface is listed in `docs/BRANCH_SPLIT_REVIEW.md` §2.
+  - The client-facing API is **contract v1**. The exact surface is listed in `docs/SYSTEM_REFERENCE.md` §10 (originally `docs/archive/BRANCH_SPLIT_REVIEW.md` §2).
   - Keep client API changes to a minimum. Only **additive** changes are allowed: new optional response fields, new endpoints, timezone offsets on datetimes, and new WebSocket event types whose `data` is a JSON **array of objects**.
   - **Breaking changes require a major version bump** and a manual client rollout. Examples: renaming or removing a path, field, or WS command; success codes other than `200`; making a field nullable; sending non-list WS `data` to client sockets; changing `acquire` 404 semantics. During the rollout the backend must serve the old and new contracts side by side, using path-versioned `/v2/...` routes for the changed operations only.
   - Supported targets: operator client on **Android and Windows** only (the client web build is dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
   - **Production is not strictly uptime-sensitive.** Short outages and maintenance windows are acceptable. After a backend restart longer than about 10 s, the client WebSocket stops retrying, and operators must tap *retry* on the connection banner. This is an operational note, not a deploy constraint.
   - Deploy constraints that still apply: keep the WS handshake rejection as HTTP 403. Do not change `JWT_ISSUER`/`JWT_AUDIENCE` (or `APP_ENV`, which sets their defaults) and do not replace `data/keys` outside a planned forced-relogin window (`docs/RELEASE.md`). Backend version bumps no longer change token identity (T3.1).
-  - Decisions after the initial review are tracked in `docs/BRANCH_SPLIT_DELTA.md`.
+  - Decisions after the initial review are recorded in `docs/archive/BRANCH_SPLIT_DELTA.md` (archived 2026-11-21).
 - **Future Path**: The Sync Milestone (#3) adds version and settings discovery (`GET /meta`) and OTA prompts, so future client majors can negotiate. v1 clients will never call it.
 - **Code References**:
   - Client API calls and WS parser: `frontend/client/lib/app_state.dart`, `frontend/client/lib/models.dart`
-  - Contract inventory and plan: `docs/BRANCH_SPLIT_REVIEW.md`
+  - Contract inventory: `docs/SYSTEM_REFERENCE.md` §10; original review: `docs/archive/BRANCH_SPLIT_REVIEW.md`
   - Contract tests: `backend/tests/test_client_contract_v1.py` (HTTP snapshot `tests/contracts/client_v1.json`) and `backend/tests/test_ws_contract_v1.py` (WS frame rules, 403 handshake)
 
 ### 9. Dormant Password Minimum Length (Admin-Created Accounts)

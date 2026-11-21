@@ -1,15 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:open_file/open_file.dart';
 import 'package:jose/jose.dart';
+import 'csv_download.dart';
 import 'models.dart';
 import 'safe_storage.dart';
 
@@ -878,35 +876,31 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> exportScans() async {
+  /// Downloads `GET /admin/export/<path>` and hands it to the browser as a CSV file.
+  Future<bool> _exportCsv(
+    String path,
+    String filePrefix,
+    String logLabel,
+  ) async {
     _isLoading = true;
     notifyListeners();
     try {
-      final response = await makeRequest('$_baseUrl/admin/export/scans');
-      if (response?.statusCode == 200) {
-        final bytes = response!.bodyBytes;
-        final fileName =
-            "outbound_items_${DateTime.now().millisecondsSinceEpoch}.csv";
-
-        if (kIsWeb) {
-          return false;
-        } else {
-          final directory = await getApplicationDocumentsDirectory();
-          final file = File('${directory.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          await OpenFile.open(file.path);
-          return true;
-        }
-      }
-      return false;
+      final response = await makeRequest('$_baseUrl/admin/export/$path');
+      if (response?.statusCode != 200) return false;
+      final fileName =
+          "${filePrefix}_${DateTime.now().millisecondsSinceEpoch}.csv";
+      return saveCsv(fileName, response!.bodyBytes);
     } catch (e) {
-      log("Export Error: $e");
+      log("$logLabel: $e");
       return false;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
+
+  Future<bool> exportScans() =>
+      _exportCsv('scans', 'outbound_items', 'Export Error');
 
   Future<bool> closePeriod(List<String> contents) async {
     if (contents.isEmpty) return false;
@@ -945,35 +939,8 @@ class AppState extends ChangeNotifier {
     _channel?.sink.add(jsonEncode({'command': 'get_stocks'}));
   }
 
-  Future<bool> exportStocks() async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final response = await makeRequest('$_baseUrl/admin/export/stocks');
-      if (response?.statusCode == 200) {
-        final bytes = response!.bodyBytes;
-        final fileName =
-            "inventory_stocks_${DateTime.now().millisecondsSinceEpoch}.csv";
-
-        if (kIsWeb) {
-          return false;
-        } else {
-          final directory = await getApplicationDocumentsDirectory();
-          final file = File('${directory.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          await OpenFile.open(file.path);
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      log("Export Stocks Error: $e");
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
+  Future<bool> exportStocks() =>
+      _exportCsv('stocks', 'inventory_stocks', 'Export Stocks Error');
 
   // Shopee configuration secure lock, unlock, fetch, and save actions
   bool _isConfigUnlocked = false;
