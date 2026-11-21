@@ -29,7 +29,7 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
 | GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
-| GET/DELETE | `/admin/users` | Admin | List/delete client users (delete also closes the user's WebSocket sessions) |
+| GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
@@ -45,7 +45,7 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | GET/POST | `/outbound` | User | List/create open scans |
 | POST | `/outbound/close` | Admin | Close scans and complete orders |
 | GET | `/items/find` | User | Search SKU, name, or barcode (uses barcode resolution pipeline) |
-| GET | `/stocks` | User | List inventory |
+| GET | `/stocks` | User | List inventory; `?join_warehouse=true` adds `item_name` |
 | POST | `/stocks/update` | User | Set/add/transfer inventory |
 | GET | `/shopee/orders` | User | Synchronize active orders; returns all for admins, only the caller's claimed orders for operators |
 | POST | `/shopee/orders/acquire` | User | Atomically claim an order. 404 if unknown; 409 if another operator owns it or it is already completed |

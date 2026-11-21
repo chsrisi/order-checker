@@ -1,7 +1,7 @@
 # System reference
 
-State as of **2026-11-21**, commit `2081206` on `master`: backend `0.4.0`
-(`backend/pyproject.toml`), operator client contract **v1**, Alembic head `b7c4e1a9d2f3`.
+State as of **2026-11-21**, branch `fix/pre-v0.5.0` (on top of `v0.4.0` = `2081206`): backend
+`0.5.0` (`backend/pyproject.toml`), operator client contract **v1**, Alembic head `c3f8a2d5e6b1`.
 
 This file describes what the code does now, precisely enough to reason about behaviour
 without reading the source. It complements the other guides and does not repeat them:
@@ -172,9 +172,6 @@ Exposed as `OutboundItem.tags: list[str]` (association proxy, eager-joined).
 **`orders.pick_stock_allocations`**: `id` PK; `pick_entry_id` FK → pick_item_entries
 `ON DELETE CASCADE` (indexed); `sku`; `location` nullable; `qty`; `created_at`.
 
-**`orders.pick_item_entries_log`**: `id`, `message`, `timestamp`. **Unused** (kept pending a
-decision; T5.3).
-
 **`warehouse.items`**: `sku` PK plus ~60 descriptive columns imported from the ERP (names,
 prices, dimensions, packing, flags). Columns the code reads: `sku`, `item_name`,
 `supplier_barcode` (barcode pipeline), `note` (BOM headers). `location` is **not** a column:
@@ -222,6 +219,7 @@ BOM, item and ERP tables are populated outside this application (no API writes t
 | `4e6ef916e20d` | BOM tables, `shopee_items`, ERP columns on `warehouse.items` |
 | `d862d86e8707` | `bom_details.quantity_standard` NOT NULL; `items.barcode_supplier` → `supplier_barcode` |
 | `b7c4e1a9d2f3` | `pick_stock_allocations`, structured `stocks_log` columns, duplicate-bin merge (`migration_merge`), unique `uq_stocks_sku_location` |
+| `c3f8a2d5e6b1` | drops the never-used `orders.pick_item_entries_log` (downgrade recreates it empty) |
 
 Integration tests build the schema from empty with `alembic upgrade head`, check the full
 down/up round trip and assert no autogenerate drift. CI's migration gate upgrades from the
@@ -487,9 +485,11 @@ admins get `outbound_update`. `/admin/history/outbound` lists closed scans; expo
 - `POST /admin/users/{username}/password` (client accounts only, else 404): new hash, all
   refresh tokens deleted, sockets closed (code 1008).
 - `DELETE /admin/users?username=` (client accounts only, else 404), in one transaction:
-  delete the user's outbound scans, **pick entries (allocations cascade; stock is not
-  restored and nothing is logged)**, refresh tokens; unassign its orders; delete the user.
-  Then its sockets are closed.
+  delete the user's pick entries exactly like `DELETE /pick-items/{id}` (allocated stock
+  restored, `pick_restore` rows with the deleting admin as actor), its outbound scans and
+  refresh tokens; unassign its orders; delete the user. Then its sockets are closed and
+  `pick_item_entries`, `outbound_items` and `shopee_orders` go to admins, `stocks_update`
+  to everyone.
 - All three broadcast `users_update` (`[{username, scope}]`) to admins.
 - Admin accounts cannot be created, reset or deleted through the API.
 - Password minimum length is a dormant switch (KNOWN_LIMITATIONS #9).
@@ -545,7 +545,8 @@ user deletion/reset uses code 1008. A failed send drops that socket.
 
 - `GET /admin/export/scans`: CSV of every scan (open and closed), newest first.
 - `GET /admin/export/stocks`: inventory CSV. Both are `StreamingResponse` text/csv built in
-  `queries/csv_export.py`.
+  `queries/csv_export.py`. The admin web app saves them through a Blob URL and a hidden
+  `<a download>` (`frontend/admin/lib/csv_download_web.dart`).
 - `GET /admin/history/outbound`, `/admin/history/shopee/orders`: `limit` 1–2000 (default
   500), `offset`; total in `X-Total-Count`; the body stays a list. Order history is sorted
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
@@ -652,8 +653,9 @@ on). The client does not read `GET /meta`.
 - Uses `WebSocketChannel.connect` (works in the browser; KNOWN_LIMITATIONS #7).
 - `SafeStorage` falls back to `localStorage`/memory when secure storage is unavailable (plain
   HTTP, non-secure context).
-- Served by nginx (`nginx.conf.template`): static app; `/.env` and `/assets/.env` handled
-  specially; `/auth /admin /outbound /items /stocks /shopee /pick-items /meta /.well-known`
+- Served by nginx (`nginx.conf.template`): static app. Flutter web file names are not
+  content-hashed, so static files are sent `Cache-Control: no-cache` (revalidated by ETag)
+  and `index.html`, `/.env`, `/assets/.env` `no-store`; `/auth /admin /outbound /items /stocks /shopee /pick-items /meta /.well-known`
   and `/ws` (with upgrade headers) are proxied to `BACKEND_HOST:BACKEND_PORT`, so the app is
   same-origin and needs no CORS.
 - `docker-entrypoint.sh` writes `assets/.env` at container start from a mounted `/app/.env`
@@ -680,24 +682,15 @@ on). The client does not read `GET /meta`.
 Facts verified against the source on 2026-11-21. Fixing them is not scheduled unless the
 plan says so.
 
-1. **Admin CSV export does nothing on the web.** `exportScans` / `exportStocks` in
-   `frontend/admin/lib/app_state.dart` return `false` when `kIsWeb`; the only supported
-   admin target is web. The backend endpoints work (KNOWN_LIMITATIONS #10).
-2. **`GET /stocks` without `?join_warehouse=true` answers 500.** `routers/stocks.py` calls
-   `dict(i._mapping)` on ORM `Stock` objects, which have no `_mapping`. Neither app calls
-   this route (both use WS `get_stocks`); no test covers it (KNOWN_LIMITATIONS #11).
-3. **Deleting a user drops its pick entries without restoring stock** and without a
-   `stocks_log` row (`queries/users.delete_user_by_username`), unlike `DELETE /pick-items`
-   (KNOWN_LIMITATIONS #12).
-4. Process-local state (sockets, sync cache/lock, Shopee circuit): one worker only.
-5. Access tokens stay valid until expiry after logout (15 min).
-6. `orders.pick_item_entries_log` and `warehouse.shopee_items` are unused; `refresh_tokens.
-   revoked_at/ip_address/agent` are never written.
-7. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
+1. Process-local state (sockets, sync cache/lock, Shopee circuit): one worker only.
+2. Access tokens stay valid until expiry after logout (15 min).
+3. `warehouse.shopee_items` is unused; `refresh_tokens.revoked_at/ip_address/agent` are
+   never written.
+4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
-8. Period closure pushes updates to admins only; operators see closed scans disappear on
+5. Period closure pushes updates to admins only; operators see closed scans disappear on
    their next `get_items`.
-9. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
+6. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
 
 ---
 

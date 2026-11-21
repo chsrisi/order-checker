@@ -105,8 +105,7 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**:
   - Backend configuration template: `backend/.env.example`
   - Frontend configuration templates: `frontend/admin/.env.example`, `frontend/client/.env.example`
-  - Agent instruction files are local and untracked (for example `CLAUDE.md`); this file is the
-    tracked source of the rule.
+  - Agent instruction files (`CLAUDE.md`) point here; this file is the source of the rule.
 
 ---
 
@@ -143,18 +142,3 @@ This document tracks known architectural, library, and system limitations within
 - **Countermeasure**: The rule is a dormant hardening switch tagged `HARDENING(password-min-length)` in `backend/src/models.py` (`AdminUserCreate`, `AdminPasswordReset`), with a matching commented-out test in `backend/tests/test_admin_users.py`. Enable it by following `docs/OPERATIONS.md` → "Dormant Hardening Switches". Enabling it is a normal backend release with no client impact.
 - **Scope**: It applies only to **new or reset** passwords. Existing passwords keep working at login, and the operator client's login/register requests (`UserAuth`, contract v1) are unaffected.
 - **Code References**: `backend/src/models.py`, `backend/tests/test_admin_users.py`
-
-### 10. Admin CSV Exports Do Nothing on the Web
-- **Issue**: `exportScans` and `exportStocks` in `frontend/admin/lib/app_state.dart` download the CSV and then return `false` when `kIsWeb`; only the removed desktop path saved the file. The admin app now ships for the web only (delta D2.1), so the export buttons have no effect. Found 2026-11-21.
-- **Countermeasure**: Until the admin app triggers a browser download (for example an `<a download>` on a Blob URL), fetch the CSV directly with an admin bearer token from `GET /admin/export/scans` or `GET /admin/export/stocks`. The backend endpoints work.
-- **Code References**: `frontend/admin/lib/app_state.dart` (`exportScans`, `exportStocks`), `backend/src/services/queries/csv_export.py`
-
-### 11. `GET /stocks` Fails Without `join_warehouse=true`
-- **Issue**: `backend/src/routers/stocks.py` builds each response with `dict(i._mapping)`. With the default `join_warehouse=false`, `queries.get_stocks_data` returns ORM `Stock` objects, which have no `_mapping`, so the route answers 500. Neither app calls this route (both use the WebSocket `get_stocks` command, which uses the joined query), and no test covers it. Found 2026-11-21.
-- **Countermeasure**: Call `GET /stocks?join_warehouse=true`. A fix only needs to touch the admin-side behaviour, because the route is not part of client contract v1.
-- **Code References**: `backend/src/routers/stocks.py` (`get_stocks`), `backend/src/services/queries/stocks.py` (`get_stocks_data`)
-
-### 12. Deleting a User Does Not Restore Its Picked Stock
-- **Issue**: `queries.delete_user_by_username` bulk-deletes the user's pick entries. Their allocations are removed by `ON DELETE CASCADE`, but the deducted stock is not returned and no `stocks_log` row is written. `DELETE /pick-items/{id}` restores stock (D1.4.2), so the two paths disagree. Found 2026-11-21.
-- **Countermeasure**: Before deleting an operator who still has pick entries, delete those entries through `DELETE /pick-items/{id}` (an admin may delete any entry) so their stock is restored and logged.
-- **Code References**: `backend/src/services/queries/users.py` (`delete_user_by_username`), `backend/src/services/queries/stocks.py` (`restore_for_pick`)

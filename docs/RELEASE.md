@@ -13,7 +13,8 @@ working as long as contract v1 holds.
       every change is additive and explained in the PR (e.g. T2.14 length limits). WS frames
       still carry `data` as a list of objects, and the WS handshake still rejects with 403.
 - [ ] `backend/pyproject.toml` version bumped (SemVer); `uv lock` and
-      `uv export --no-dev --no-hashes -o requirements.txt` run.
+      `uv export --format requirements.txt --no-hashes --no-dev -o requirements.txt` run (the
+      command CI uses; CI ignores `#` lines when comparing).
 - [ ] New migrations reviewed by hand: schema-qualified, with a working `downgrade()`.
 - [ ] Docs updated: API.md, OPERATIONS.md, KNOWN_LIMITATIONS.md, this file (if the window
       needs special steps).
@@ -104,9 +105,10 @@ docker compose -f compose.yaml -f compose.prod.yaml exec server python -m script
 It writes `.secrets/admin_password` to the existing admin, refuses placeholder values,
 and revokes the admin's sessions.
 
-### Step 4 release (inventory integrity, T4.3/T4.4; planned v0.5.0)
+### Step 4 (inventory integrity, T4.3/T4.4): shipped in v0.4.0
 
-This window ships the allocation table and the structured stock log (migration
+Done 2026-11-21: steps 4 and 5 shipped together with v0.4.0 (tag `v0.4.0` = `2081206`), and
+the commands below were run then. Kept as the record of that window. This window shipped the allocation table and the structured stock log (migration
 `b7c4e1a9d2f3`, down revision `d862d86e8707`). Per delta D5 / Q4:
 
 1. Operators finish their open picks before the window.
@@ -124,3 +126,23 @@ This window ships the allocation table and the structured stock log (migration
 4. If production runs `STOCK_LOCATION_MODE=single`, also run
    `python -m scripts.stock_merge_single --confirm` (OPERATIONS "Stock Location Mode").
 5. Smoke test: pick 1 of an item, delete the entry, and check that the stock is back.
+
+### v0.5.0: pre-release fixes (no relogin, no client change)
+
+Migration `c3f8a2d5e6b1` (down revision `b7c4e1a9d2f3`) drops the never-used table
+`orders.pick_item_entries_log`. v0.4.0 code never touches it, so a code rollback works without
+the downgrade; `alembic downgrade b7c4e1a9d2f3` recreates the table empty.
+
+1. Deploy as in §2. `up -d --build` rebuilds **both** the backend and the admin web image.
+   When only the admin changed, see OPERATIONS "Rebuilding the Admin Web After a Code Change".
+2. **Admin browsers, once:** v0.4.0 and earlier served `main.dart.js` and the other `.js`
+   files as `immutable` for a year. Do a hard reload (Ctrl+Shift+R) or clear the site data in
+   every browser that has opened the admin app. Without it, the browser keeps the old bundle.
+3. Smoke test, in addition to §2:
+   - admin → Inventory → *Export CSV* and Orders → scan export download a `.csv` file
+   - delete a test operator that has a pick entry; its stock comes back (`pick_restore` in
+     `warehouse.stocks_log`, actor = the admin)
+   - `GET /stocks` answers 200 (it returned 500 without `?join_warehouse=true` before)
+
+Release notes: admin CSV exports work on the web; deleting an operator restores the stock of
+its open picks; `GET /stocks` fixed; the admin web is no longer stuck on a cached build.

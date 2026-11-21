@@ -1,7 +1,7 @@
 # Implementation plan and task guideline
 
-Status: **steps 0–5 and housekeeping done; maintainer tasks T3.5 and T3.6 open** (§7, as of
-2026-11-21). Work begins only when the maintainer says so, either one step at a time or one
+Status: **all tasks done; v0.4.0 (steps 0–5) is in production, v0.5.0 fixes (TF.*) are on
+`fix/pre-v0.5.0`** (§7, as of 2026-11-21). Work begins only when the maintainer says so, either one step at a time or one
 task at a time.
 
 This plan turns the decisions in these files into tasks:
@@ -634,19 +634,25 @@ same change as the task.
 | T3.2 | done | `python -m scripts.seed_dev`. **New finding (fix in T4.5):** split orders have several `order_info` rows, but `ShopeeOrder.info` is a scalar relationship, so the API's `info` list shows one arbitrary package (SQLAlchemy "Multiple rows … uselist=False"). Outbound close is unaffected |
 | T3.3 | done | P-6 applied. Gate verified locally for both paths (`PREV_TAG=187122c`). `alembic -x url=` added so the gate can never fall back to `.secrets/database_url`. Action versions: checkout@v4, setup-uv@v5, flutter-action@v2 (Flutter 3.47.5) |
 | T3.4 | done | `docs/RELEASE.md`, including the v0.4.0 window. **Gap found and fixed:** the startup guard checks only the configured `ADMIN_PASSWORD`, while an existing admin kept its old hash, so `scripts.set_admin_password` was added |
-| T3.5 | todo | **maintainer:** after merging to `master`: `git tag -a v0.4.0 -m v0.4.0 && git branch dev v0.4.0 && git push origin master dev v0.4.0`; then set the default branch to `dev`, protect `dev`/`master`, and require the CI checks |
-| T3.6 | todo | **maintainer:** run the v0.4.0 window in `docs/RELEASE.md` §4 (forced relogin, secrets, `.env` edits, `set_admin_password`) |
+| T3.5 | done | maintainer, 2026-11-21: `v0.4.0` tagged at `2081206` (steps 0–5), `dev` pushed, branch protection and required checks set |
+| T3.6 | done | maintainer, 2026-11-21: v0.4.0 window run, together with the step 4 window |
 | T4.1 | done | sync routes/dependencies are plain `def`; async paths use `asyncio.to_thread`; guarded by `tests/test_event_loop.py` (fails on the old code) |
 | T4.2 | done | picks and stock: one transaction per operation, WS after commit. Other services already ran one query per operation; nothing else needed |
 | T4.3 | done | migration `b7c4e1a9d2f3`. **Deviation:** there is no per-item default-location column (`WarehouseItem.location` is derived from bins), so the Q3 order is "location ascending, unlocated last". Multi `set`/`add` without a location targets the item's only bin, otherwise the unlocated bin (this fixes a duplicate-row path). Lock tests verified to fail without `FOR UPDATE` |
-| T4.4 | done (command) | `scripts.clear_open_pick_entries --confirm`. **Maintainer:** run it in the window that ships T4.3 (RELEASE.md §4) |
+| T4.4 | done | `scripts.clear_open_pick_entries --confirm`; run in production by the maintainer with v0.4.0 (2026-11-21) |
 | T4.5 | done | **Extra finding:** `active_orders_query` outer-joined `order_info`, which duplicated split orders in every list. Fixed together with the list-shaped `info` |
 | T4.6 | done | the contract snapshot caught the first attempt (`format: date-time` was lost); fixed with `WithJsonSchema` |
 | T4.7 | done | features: `self_registration`, `pick_stock_restore`, `utc_datetimes` |
 | T4.8 | done | **Extra finding:** a resync wrote the buyer note back after the retention purge, and a failed tracking lookup nulled stored tracking numbers. Both fixed. Decision: a partial sync answers 502 after storing the chunks that arrived |
 | T5.1 | done | `X-Config-Token` header; the admin app's `makeRequest` gained `extraHeaders`. The WS `?token=` ticket stays (frozen v1 contract) |
 | T5.2 | done | `limit` (default 500, max 2000) and `offset`; the response stays a list and `X-Total-Count` carries the total; the admin app has a "Load older history" button. Order history is sorted by `done_at` (the admin date filter's `doneAt!` used to crash while `done_at` was always null, which T4.5 fixed) |
-| T5.3 | done | **Open question:** `PickItemEntryLog` and its table `orders.pick_item_entries_log` are unused but kept; dropping them needs a migration, and the plan asks first. Stale imports from T4.5 were removed too |
+| T5.3 | done | Stale imports from T4.5 were removed too. `PickItemEntryLog` was kept at first; the maintainer approved dropping it (TF.4) |
 | T5.4 | done | nginx also proxies `/meta`. The `/bom/tree` response uses `exclude_unset`, so marketplace nodes keep their exact shape |
 | TH.1 | done | removed the git-ignored `frontend/admin/windows/flutter/ephemeral` symlinks too. KL #7 now covers the admin web only: the client's `IOWebSocketChannel` is correct for Android and Windows, so F-H7 no longer applies |
 | TH.2 | done | CODE_REVIEW/BRANCH_SPLIT_REVIEW keep their historical wording |
+| TF.1 | done | v0.5.0 fix (ex KNOWN_LIMITATIONS #10): admin CSV exports download on the web through a Blob URL (`csv_download_web.dart`; `package:web` was already a dependency). `path_provider` and `open_file` removed from the admin app |
+| TF.2 | done | v0.5.0 fix (ex KL #11): `GET /stocks` without `join_warehouse` returned 500; `get_stocks_data` returns column rows in both modes. `tests/integration/test_admin_fixes_pg.py` |
+| TF.3 | done | v0.5.0 fix (ex KL #12): deleting a user restores the stock of its pick entries (`pick_restore`, actor = deleting admin) in the same transaction, and broadcasts picks/outbounds/orders to admins and stocks to all |
+| TF.4 | done | migration `c3f8a2d5e6b1` drops `orders.pick_item_entries_log`; never written, superseded by `stocks_log` (`ref_type='pick_entry'`). Gate passed for empty → head and `v0.4.0` → head |
+| TF.5 | done | admin web stuck on an old build: nginx served unhashed Flutter `.js` as `immutable` for a year. Now `no-cache` (ETag revalidation); security headers repeated per location (nginx drops inherited `add_header`); `.env*` kept out of the image; builder pinned to `cirruslabs/flutter:3.44.0` (no newer image exists; CI runs 3.47.5). One hard reload per admin browser after the v0.5.0 deploy (RELEASE.md) |
+| TF.6 | done | backend version 0.5.0; client toolchain files synced to Flutter 3.47.5 (migrator output, `pubspec.lock`) |
