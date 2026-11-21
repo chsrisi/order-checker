@@ -1,4 +1,4 @@
-# CI for the branch model in docs/BRANCH_SPLIT_REVIEW.md §4.1 / IMPLEMENTATION_PLAN T3.3.
+# CI for the branch model in docs/archive/BRANCH_SPLIT_REVIEW.md §4.1 / IMPLEMENTATION_PLAN T3.3.
 # Required checks and branch protection are repository settings (maintainer task).
 name: ci
 

@@ -1,13 +1,17 @@
 # Implementation plan and task guideline
 
-Status: **planned, not started.** Work begins only when the maintainer says so, either one step
-at a time or one task at a time.
+Status: **steps 0–5 and housekeeping done; maintainer tasks T3.5 and T3.6 open** (§7, as of
+2026-11-21). Work begins only when the maintainer says so, either one step at a time or one
+task at a time.
 
 This plan turns the decisions in these files into tasks:
 
-- [BRANCH_SPLIT_REVIEW.md](BRANCH_SPLIT_REVIEW.md) (the "base review")
-- [BRANCH_SPLIT_DELTA.md](BRANCH_SPLIT_DELTA.md) (decision rounds D1–D5; the latest round wins)
-- [STOCK_MODEL_DISCUSSION.md](STOCK_MODEL_DISCUSSION.md)
+- [archive/BRANCH_SPLIT_REVIEW.md](archive/BRANCH_SPLIT_REVIEW.md) (the "base review")
+- [archive/BRANCH_SPLIT_DELTA.md](archive/BRANCH_SPLIT_DELTA.md) (decision rounds D1–D5; the latest round wins)
+- [archive/STOCK_MODEL_DISCUSSION.md](archive/STOCK_MODEL_DISCUSSION.md)
+
+Those files were archived on 2026-11-21 (see [archive/README.md](archive/README.md)); current
+behaviour is described in [SYSTEM_REFERENCE.md](SYSTEM_REFERENCE.md).
 
 Precedence when they disagree: **delta > this plan > base review**. If this plan conflicts with
 a delta decision, the delta is right and this plan must be fixed.

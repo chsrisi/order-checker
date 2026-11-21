@@ -1,7 +1,7 @@
 # Release runbook
 
 How a backend + admin release reaches production. Branch model: feature branches →
-`dev` → release PR → `master` + tag `vX.Y.Z` (docs/BRANCH_SPLIT_REVIEW.md §4.1).
+`dev` → release PR → `master` + tag `vX.Y.Z` (docs/archive/BRANCH_SPLIT_REVIEW.md §4.1).
 Production is not strictly uptime-sensitive, so short maintenance windows are fine
 (KNOWN_LIMITATIONS #8). The operator client is **not** part of a release: it keeps
 working as long as contract v1 holds.

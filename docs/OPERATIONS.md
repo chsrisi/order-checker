@@ -4,10 +4,15 @@
 
 The backend distinguishes between **non-sensitive operational configurations** (passed via environment files such as `.env` or `--env-file`) and **sensitive secrets** (injected securely as Docker Secrets or secret files).
 
-Configuration lookup order:
-1. Docker Secrets at `/run/secrets/<lowercase_name>`
-2. Environment variables (loaded via `--env-file .env` or system environment)
+Configuration lookup order (`backend/src/config.py: get_config_value`); the first non-empty value wins:
+1. Secret files named `<lowercase_name>`, in this order: `$SECRETS_DIR/` (only if `SECRETS_DIR` is set),
+   `/run/secrets/` (Docker Secrets), `backend/.secrets/`, `./.secrets/` (current directory)
+2. Environment variables (loaded via `--env-file .env`, a `.env` found by `python-dotenv`, or the system environment)
 3. Application default values
+
+`SECRETS_DIR` is optional and only adds a directory in front of the list. Inside Docker, a
+`DATABASE_URL` host of `localhost`, `127.0.0.1`, `db`, `postgres-1` or `postgres_container` is
+rewritten to `DB_HOST` (default `backend-postgres-1`).
 
 > [!CAUTION]
 > Never commit `.env`, `.secrets/`, private RSA keys (`data/keys`), or active Shopee tokens to version control. Both `.env` and `.secrets/` are listed in `.gitignore`.
@@ -494,6 +499,58 @@ docker run -d \
   -v $(pwd)/.secrets/partner_key:/run/secrets/partner_key:ro \
   order-checker-backend:latest
 ```
+
+### Using a Separate PostgreSQL Container
+
+To use a PostgreSQL container that is not managed by `compose.yaml`, put it and the backend on
+the same **user-defined** Docker network. Docker resolves container names only on user-defined
+networks, not on the default `bridge`. If the backend is not on that network, startup fails with
+`failed to resolve host '<name>'`. The names `my-postgres` and `my-pg-net` below are placeholders.
+
+```bash
+docker network create my-pg-net
+
+docker run -d \
+  --name my-postgres \
+  --network my-pg-net \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
+  -e POSTGRES_DB=bakingholic \
+  -v $(pwd)/.secrets/postgres_password:/run/secrets/postgres_password:ro \
+  -v $(pwd)/init-scripts:/docker-entrypoint-initdb.d:ro \
+  -v my-pg-data:/var/lib/postgresql \
+  postgres:18.4-alpine
+```
+
+Put the container name in the URL host, for example
+`postgresql+psycopg://bh_backend:<app_password>@my-postgres:5432/bakingholic`, and attach the
+backend to the same network:
+
+```bash
+docker run -d \
+  --name order-checker-api \
+  --network my-pg-net \
+  -p 8000:8000 \
+  --env-file .env \
+  -v $(pwd)/.secrets/database_url:/run/secrets/database_url:ro \
+  order-checker-backend:latest
+```
+
+With Compose, declare the network as external and list it under the `server` service. Forgetting
+the service-level `networks:` entry is the usual cause of the resolve error:
+
+```yaml
+services:
+  server:
+    networks: [default, my-pg-net]
+
+networks:
+  my-pg-net:
+    external: true
+```
+
+If the URL uses one of the rewritten hosts instead (`localhost`, `127.0.0.1`, `db`, `postgres-1`,
+`postgres_container`), set `DB_HOST=my-postgres` so that the rewrite in `backend/src/config.py`
+points at the container.
 
 ---
 
