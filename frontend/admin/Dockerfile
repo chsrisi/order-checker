@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Build Flutter Web application
-FROM ghcr.io/cirruslabs/flutter:stable AS builder
+# Pinned: cirruslabs stopped publishing after 3.44.0 (its `stable` tag is 3.44.0, May 2026),
+# while CI runs 3.47.5. See docs/OPERATIONS.md "Frontend Admin Web Hosting & Deployment".
+FROM ghcr.io/cirruslabs/flutter:3.44.0 AS builder
 
 WORKDIR /app
 
@@ -12,8 +14,9 @@ RUN flutter pub get
 # Copy the rest of the application code
 COPY . .
 
-# Ensure .env exists so Flutter asset bundling succeeds during build.
-# If .env does not exist, copy .env.example as a fallback.
+# .env is excluded by .dockerignore: the bundled asset is only a placeholder, because
+# docker-entrypoint.sh writes assets/.env at container start.
+# Copy .env.example so Flutter asset bundling succeeds.
 RUN if [ ! -f .env ]; then cp .env.example .env; fi
 
 # Build production web bundle
