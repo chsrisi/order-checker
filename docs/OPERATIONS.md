@@ -4,10 +4,15 @@
 
 The backend distinguishes between **non-sensitive operational configurations** (passed via environment files such as `.env` or `--env-file`) and **sensitive secrets** (injected securely as Docker Secrets or secret files).
 
-Configuration lookup order:
-1. Docker Secrets at `/run/secrets/<lowercase_name>`
-2. Environment variables (loaded via `--env-file .env` or system environment)
+Configuration lookup order (`backend/src/config.py: get_config_value`); the first non-empty value wins:
+1. Secret files named `<lowercase_name>`, in this order: `$SECRETS_DIR/` (only if `SECRETS_DIR` is set),
+   `/run/secrets/` (Docker Secrets), `backend/.secrets/`, `./.secrets/` (current directory)
+2. Environment variables (loaded via `--env-file .env`, a `.env` found by `python-dotenv`, or the system environment)
 3. Application default values
+
+`SECRETS_DIR` is optional and only adds a directory in front of the list. Inside Docker, a
+`DATABASE_URL` host of `localhost`, `127.0.0.1`, `db`, `postgres-1` or `postgres_container` is
+rewritten to `DB_HOST` (default `backend-postgres-1`).
 
 > [!CAUTION]
 > Never commit `.env`, `.secrets/`, private RSA keys (`data/keys`), or active Shopee tokens to version control. Both `.env` and `.secrets/` are listed in `.gitignore`.
@@ -495,6 +500,58 @@ docker run -d \
   order-checker-backend:latest
 ```
 
+### Using a Separate PostgreSQL Container
+
+To use a PostgreSQL container that is not managed by `compose.yaml`, put it and the backend on
+the same **user-defined** Docker network. Docker resolves container names only on user-defined
+networks, not on the default `bridge`. If the backend is not on that network, startup fails with
+`failed to resolve host '<name>'`. The names `my-postgres` and `my-pg-net` below are placeholders.
+
+```bash
+docker network create my-pg-net
+
+docker run -d \
+  --name my-postgres \
+  --network my-pg-net \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
+  -e POSTGRES_DB=bakingholic \
+  -v $(pwd)/.secrets/postgres_password:/run/secrets/postgres_password:ro \
+  -v $(pwd)/init-scripts:/docker-entrypoint-initdb.d:ro \
+  -v my-pg-data:/var/lib/postgresql \
+  postgres:18.4-alpine
+```
+
+Put the container name in the URL host, for example
+`postgresql+psycopg://bh_backend:<app_password>@my-postgres:5432/bakingholic`, and attach the
+backend to the same network:
+
+```bash
+docker run -d \
+  --name order-checker-api \
+  --network my-pg-net \
+  -p 8000:8000 \
+  --env-file .env \
+  -v $(pwd)/.secrets/database_url:/run/secrets/database_url:ro \
+  order-checker-backend:latest
+```
+
+With Compose, declare the network as external and list it under the `server` service. Forgetting
+the service-level `networks:` entry is the usual cause of the resolve error:
+
+```yaml
+services:
+  server:
+    networks: [default, my-pg-net]
+
+networks:
+  my-pg-net:
+    external: true
+```
+
+If the URL uses one of the rewritten hosts instead (`localhost`, `127.0.0.1`, `db`, `postgres-1`,
+`postgres_container`), set `DB_HOST=my-postgres` so that the rewrite in `backend/src/config.py`
+points at the container.
+
 ---
 
 ## Frontend Admin Web Hosting & Deployment
@@ -528,9 +585,39 @@ Flutter Web loads environment variables via an HTTP request to `/assets/.env`. W
 To run the admin web portal alongside the backend API, database, and Redis:
 ```bash
 cd backend
-docker compose --env-file .env up -d admin-web
+docker compose --env-file .env up -d --build admin-web
 ```
 By default, the web interface is exposed on `http://localhost:${WEB_PORT:-3000}`.
+
+### Rebuilding the Admin Web After a Code Change
+
+The admin bundle is compiled **inside the image** (`frontend/admin/Dockerfile`, builder stage).
+A running container never picks up new Dart code by itself, so every admin change needs a new
+image. In production:
+
+```bash
+cd backend
+docker compose -f compose.yaml -f compose.prod.yaml build admin-web    # add --no-cache to rule out stale layers
+docker compose -f compose.yaml -f compose.prod.yaml up -d admin-web    # recreates the container from the new image
+docker compose -f compose.yaml -f compose.prod.yaml images admin-web   # the image's CREATED time must be just now
+```
+
+`up -d` without `--build` (or a prior `build`) reuses the existing image, which is the usual
+reason a redeploy still shows the old admin. A local `frontend/admin/build/` is not used:
+`.dockerignore` excludes it, and so are `frontend/admin/.env*` (the container writes
+`assets/.env` at start).
+
+Browsers revalidate every static file (`Cache-Control: no-cache` in `nginx.conf.template`),
+because Flutter web output such as `main.dart.js` keeps the same name in every build.
+**Releases up to v0.4.0 served `.js` files as `immutable` for one year**, so a browser that
+opened such a build keeps its old copy. After the first deploy of v0.5.0, do one hard reload
+(Ctrl+Shift+R) or clear the site data on every admin browser. Later deploys need only a normal
+reload. To check what a browser runs, compare `/version.json` and the `Last-Modified` header
+of `/main.dart.js` with the image build time.
+
+The builder image is pinned to `ghcr.io/cirruslabs/flutter:3.44.0`. That project stopped
+publishing images after 3.44.0, while CI analyzes and tests the admin app with Flutter 3.47.5.
+Raise the pin when a newer image exists, or switch the builder to another Flutter source.
 
 No CORS setting is needed for the default same-origin proxy. If `BASE_URL` and `WS_URL` point directly at another origin, allow the web origin with `CORS_ORIGINS`.
 

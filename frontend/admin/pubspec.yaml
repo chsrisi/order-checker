@@ -36,8 +36,6 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   flutter_secure_storage: ^10.3.1
-  path_provider: ^2.1.5
-  open_file: ^3.5.11
   web_socket_channel: ^3.0.3
   jose: ^0.3.5+2
   flutter_dotenv: ^6.0.1

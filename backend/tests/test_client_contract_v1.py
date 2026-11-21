@@ -1,4 +1,4 @@
-"""Operator client contract v1 (KNOWN_LIMITATIONS.md #8, docs/BRANCH_SPLIT_REVIEW.md §2).
+"""Operator client contract v1 (KNOWN_LIMITATIONS.md #8, docs/SYSTEM_REFERENCE.md §10).
 
 The operator client is updated manually, so everything it relies on is frozen. This module
 turns that contract into tests:

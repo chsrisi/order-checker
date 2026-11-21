@@ -1,5 +1,8 @@
 # Stock model discussion: pick deduction and restore
 
+> **Archived 2026-11-21 (at commit `2081206`).** Historical record, not maintained, and
+> not authoritative for current behaviour. Design discussion, fully decided and implemented in T4.3 (migration `b7c4e1a9d2f3`). The live engine is described in [SYSTEM_REFERENCE.md §7.6](../SYSTEM_REFERENCE.md#76-inventory-engine) and [OPERATIONS.md](../OPERATIONS.md) "Inventory".
+
 Status: **discussion. Nothing is implemented.** Opened from
 [BRANCH_SPLIT_DELTA.md](BRANCH_SPLIT_DELTA.md) D1.4 / D2.2.
 Decided so far:

@@ -22,25 +22,37 @@ server {
         application/wasm;
     gzip_disable "MSIE [1-6]\.";
 
-    # Cache control for static assets (hashed or immutable)
-    location ~* \.(?:ico|css|js|gif|jpe?g|png|woff2?|eot|ttf|svg|wasm)$ {
-        expires 1y;
-        add_header Cache-Control "public, max-age=31536000, immutable";
+    # Security headers. nginx drops server-level add_header directives in any location that
+    # sets its own, so every location below repeats them explicitly.
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Flutter web output is NOT content-hashed: main.dart.js, flutter_bootstrap.js, assets/*
+    # keep their names in every build. Browsers must revalidate them (cheap 304 via ETag),
+    # otherwise a redeployed admin keeps running the previous build.
+    location ~* \.(?:ico|css|js|mjs|json|gif|jpe?g|png|woff2?|eot|ttf|otf|svg|wasm)$ {
+        add_header Cache-Control "no-cache" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         try_files $uri =404;
     }
 
-    # Ensure index.html and assets/.env are never cached by the browser
-    # so runtime configuration updates take effect immediately on reload
+    # index.html and the runtime .env are never stored, so configuration changes apply on reload
     location = /index.html {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 
-    location = /assets/.env {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
-
-    location = /.env {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    location ~ ^/(assets/)?\.env$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        try_files $uri =404;
     }
 
     # Reverse proxy backend API endpoints (same-origin, eliminates CORS in Docker hosting)
@@ -69,9 +81,4 @@ server {
     location / {
         try_files $uri $uri/ /index.html;
     }
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }

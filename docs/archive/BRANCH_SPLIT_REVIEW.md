@@ -1,5 +1,8 @@
 # Branch-split readiness review
 
+> **Archived 2026-11-21 (at commit `2081206`).** Historical record, not maintained, and
+> not authoritative for current behaviour. Snapshot of commit `187122c` (2026-11-20). The frozen client contract v1 now lives in [SYSTEM_REFERENCE.md §10](../SYSTEM_REFERENCE.md#10-operator-client-contract-v1) and in the contract tests; findings were resolved through [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md).
+
 Reviewed at commit `187122c` (2026-11-20), `master`, with uncommitted tooling changes only
 (`.gitignore`, client `analysis_options.yaml`, Gradle files, `pubspec.lock`).
 **No code was changed by this review.** It covers four things:
