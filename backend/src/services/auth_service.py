@@ -177,13 +177,19 @@ def get_tokens(user: User):
     }
 
 
-async def delete_user(username: str) -> None:
-    success = await asyncio.to_thread(queries.delete_user_by_username, username)
+async def delete_user(username: str, actor: str = "admin") -> None:
+    success = await asyncio.to_thread(queries.delete_user_by_username, username, actor)
     if not success:
         raise DomainException(status_code=404, detail="User not found")
 
     await conn_mgr.disconnect_user(username)
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
+    # The user's pick entries were deleted with their stock restored, its outbound scans
+    # deleted and its claimed orders released.
+    await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.STOCKS)
 
 
 async def admin_create_user(username: str, password: str) -> User:

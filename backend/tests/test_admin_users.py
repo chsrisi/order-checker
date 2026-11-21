@@ -78,7 +78,7 @@ async def test_reset_unknown_or_admin_user_is_404(monkeypatch, no_ws):
 
 @pytest.mark.asyncio
 async def test_delete_user_closes_sockets(monkeypatch, no_ws):
-    monkeypatch.setattr(auth_service.queries, "delete_user_by_username", lambda _u: True)
+    monkeypatch.setattr(auth_service.queries, "delete_user_by_username", lambda *_: True)
     await auth_service.delete_user("op_2")
     auth_service.conn_mgr.disconnect_user.assert_awaited_once_with("op_2")
 

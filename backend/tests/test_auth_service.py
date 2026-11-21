@@ -142,7 +142,7 @@ async def test_register_creates_user_and_broadcasts(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_delete_user_not_found(monkeypatch):
-    monkeypatch.setattr(auth_service.queries, "delete_user_by_username", lambda _: False)
+    monkeypatch.setattr(auth_service.queries, "delete_user_by_username", lambda *_: False)
     with pytest.raises(Exception) as exc:
         await auth_service.delete_user("missing")
     assert exc.value.status_code == 404

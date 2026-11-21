@@ -5,6 +5,7 @@ from sqlalchemy import select, delete, or_, update
 
 from ...models import User, RefreshToken, OutboundItem, PickItemEntry, ShopeeOrder
 from .engine import get_db
+from .stocks import restore_for_pick
 
 logger = logging.getLogger("backend.services.queries.users")
 
@@ -43,15 +44,32 @@ def seed_admin_user(username: str, password_hash: str) -> bool:
             return False
 
 
-def delete_user_by_username(username: str) -> bool:
+def delete_user_by_username(username: str, actor: str = "admin") -> bool:
+    """Delete a client account in one transaction. Its pick entries are deleted like
+    ``DELETE /pick-items/{id}``: their allocated stock is restored and logged (D1.4.2) with
+    ``actor`` (the deleting admin). Outbound scans and refresh tokens are deleted, and
+    claimed orders are released."""
     with get_db() as db:
         user = db.execute(select(User).filter(User.username == username)).scalars().first()
         if not user or user.scope == "admin":
             return False
 
-        # Delete outbounds, pick items, refresh tokens
+        # Lock order as in queries/pick_items.py: entries, then allocations, then stock rows
+        # (by sku, so concurrent picks on several SKUs cannot deadlock against this).
+        entries = (
+            db.execute(
+                select(PickItemEntry)
+                .filter(PickItemEntry.owner_user == username)
+                .order_by(PickItemEntry.sku, PickItemEntry.id)
+                .with_for_update()
+            )
+            .scalars()
+            .all()
+        )
+        for entry in entries:
+            restore_for_pick(db, entry, actor=actor)
+            db.delete(entry)
         db.execute(delete(OutboundItem).where(OutboundItem.owner_user == username))
-        db.execute(delete(PickItemEntry).where(PickItemEntry.owner_user == username))
         db.execute(delete(RefreshToken).where(RefreshToken.username == username))
         db.execute(
             update(ShopeeOrder).where(ShopeeOrder.owner_user == username).values(owner_user=None)
