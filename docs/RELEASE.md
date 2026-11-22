@@ -127,6 +127,16 @@ the commands below were run then. Kept as the record of that window. This window
    `python -m scripts.stock_merge_single --confirm` (OPERATIONS "Stock Location Mode").
 5. Smoke test: pick 1 of an item, delete the entry, and check that the stock is back.
 
+### v0.6.0: dual-contract backend, sessions, OTA (IMPLEMENTATION_PLAN step 6)
+
+Written in full by T6.7. Known so far:
+
+- **One relogin for everyone.** Migration `d4a7e2c9b1f0` adds `auth.sessions` and deletes all
+  existing refresh tokens, and tokens without the `sid` claim are rejected (V2_DELTA Q24). Each
+  v1 device gets 401, fails its refresh and shows the login screen; operators log in once.
+  A downgrade (`alembic downgrade c3f8a2d5e6b1`) drops the sessions again; tokens issued
+  meanwhile keep working on the old code (it ignores `sid`).
+
 ### v0.5.0: pre-release fixes (no relogin, no client change)
 
 Migration `c3f8a2d5e6b1` (down revision `b7c4e1a9d2f3`) drops the never-used table

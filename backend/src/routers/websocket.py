@@ -24,21 +24,22 @@ async def websocket_endpoint(
             detail="Forbidden",
         )
 
-    username = await ticket_mgr.consume_ticket(token)
-    if not username:
+    claims = await ticket_mgr.consume_ticket(token)
+    if not claims or not claims.sid:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden",
         )
 
-    user = await asyncio.to_thread(queries.get_user_data, username)
+    # The ticket's session must still be live (T6.2); rejected before accept (contract v1).
+    user = await asyncio.to_thread(queries.get_user_for_session, claims.username, claims.sid)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden",
         )
 
-    await conn_mgr.connect(websocket, user.username or "", user.scope or "")
+    await conn_mgr.connect(websocket, user.username or "", user.scope or "", sid=claims.sid)
     try:
         while True:
             data = await websocket.receive_json()

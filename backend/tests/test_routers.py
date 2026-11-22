@@ -27,17 +27,20 @@ def actor(username="operator", scope="client", password_hash="hash"):
 async def test_auth_router_delegates_login_variants(monkeypatch):
     calls = []
 
-    async def login(username, password, required_scope=None):
-        calls.append((username, password, required_scope))
+    async def login(username, password, required_scope=None, ip_address=None, agent=None):
+        calls.append((username, password, required_scope, ip_address, agent))
         return {"access_token": "a", "refresh_token": "r", "token_type": "bearer"}
 
     monkeypatch.setattr(auth.auth_service, "login_throttled", login)
     payload = UserAuth(username="operator", password="password")
-    await auth.login_client(payload)
-    await auth.login_admin(payload)
+    request = SimpleNamespace(
+        client=SimpleNamespace(host="10.0.0.7"), headers={"user-agent": "scanner"}
+    )
+    await auth.login_client(payload, request)
+    await auth.login_admin(payload, request)
     assert calls == [
-        ("operator", "password", None),
-        ("operator", "password", "admin"),
+        ("operator", "password", None, "10.0.0.7", "scanner"),
+        ("operator", "password", "admin", "10.0.0.7", "scanner"),
     ]
 
 
@@ -48,7 +51,11 @@ async def test_auth_register_and_ws_ticket(monkeypatch):
     monkeypatch.setattr(auth.ticket_mgr, "generate_ticket", AsyncMock(return_value="ticket"))
     payload = UserAuth(username="operator", password="password")
     assert await auth.register_client(payload) == tokens
-    assert await auth.create_ws_token(actor()) == {"token": "ticket", "expires_in": 30}
+    principal = auth.Principal(user=actor(), sid="sid-1")
+    assert await auth.create_ws_token(principal) == {"token": "ticket", "expires_in": 30}
+    auth.ticket_mgr.generate_ticket.assert_awaited_once_with(
+        "operator", ttl_seconds=30, sid="sid-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -59,16 +66,19 @@ async def test_auth_ws_ticket_maps_manager_failure(monkeypatch):
         AsyncMock(side_effect=RuntimeError("offline")),
     )
     with pytest.raises(HTTPException) as exc:
-        await auth.create_ws_token(actor())
+        await auth.create_ws_token(auth.Principal(user=actor(), sid="sid-1"))
     assert exc.value.status_code == 503
 
 
-def test_auth_logout_refresh_and_jwks(monkeypatch):
-    monkeypatch.setattr(auth.auth_service, "logout_user", lambda token: {"token": token})
+@pytest.mark.asyncio
+async def test_auth_logout_refresh_and_jwks(monkeypatch):
+    monkeypatch.setattr(
+        auth.auth_service, "logout_user", AsyncMock(side_effect=lambda token: {"token": token})
+    )
     monkeypatch.setattr(auth.auth_service, "refresh_tokens", lambda token: {"token": token})
     monkeypatch.setattr(auth.key_mgr, "get_jwks", lambda: [{"kid": "one"}])
     body = RefreshTokenRequest(refresh_token="refresh")
-    assert auth.logout(body) == {"token": "refresh"}
+    assert await auth.logout(body) == {"token": "refresh"}
     assert auth.refresh(body) == {"token": "refresh"}
     assert auth.jwks_endpoint() == {"keys": [{"kid": "one"}]}
 

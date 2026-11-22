@@ -21,9 +21,15 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
         self.user_scopes: Dict[WebSocket, str] = {}
+        # Session (``sid``) each socket was opened with, so one session can be closed (T6.2).
+        self.socket_sessions: Dict[WebSocket, str] = {}
 
-    async def connect(self, websocket: WebSocket, username: str, scope: str):
+    async def connect(
+        self, websocket: WebSocket, username: str, scope: str, sid: Optional[str] = None
+    ):
         await websocket.accept()
+        if sid is not None:
+            self.socket_sessions[websocket] = sid
         if username not in self.active_connections:
             self.active_connections[username] = []
         self.active_connections[username].append(websocket)
@@ -43,6 +49,7 @@ class ConnectionManager:
             if not sessions:
                 del self.active_connections[username]
         self.user_scopes.pop(websocket, None)
+        self.socket_sessions.pop(websocket, None)
         logger.info(f"WebSocket disconnected: {username}")
         if username in self.active_connections:
             logger.debug(
@@ -60,6 +67,7 @@ class ConnectionManager:
         sockets = self.active_connections.pop(username, [])
         for ws in sockets:
             self.user_scopes.pop(ws, None)
+            self.socket_sessions.pop(ws, None)
             try:
                 await ws.close(code=code)
             except Exception as e:  # already gone
@@ -67,6 +75,26 @@ class ConnectionManager:
         if sockets:
             logger.info(f"Closed {len(sockets)} WebSocket session(s) for {username}")
         return len(sockets)
+
+    async def disconnect_session(self, sid: str, code: int = 1008) -> int:
+        """Close every socket opened with session ``sid`` (logout, revoked session); the
+        user's other sessions stay connected."""
+        targets = [ws for ws, s in self.socket_sessions.items() if s == sid]
+        for ws in targets:
+            for username, sockets in list(self.active_connections.items()):
+                if ws in sockets:
+                    self.disconnect(ws, username)
+                    break
+            else:
+                self.user_scopes.pop(ws, None)
+                self.socket_sessions.pop(ws, None)
+            try:
+                await ws.close(code=code)
+            except Exception as e:  # already gone
+                logger.debug(f"Closing socket of session {sid} failed: {e}")
+        if targets:
+            logger.info(f"Closed {len(targets)} WebSocket session(s) of a revoked session")
+        return len(targets)
 
     # Payloads identical for every recipient: built once per broadcast (T4.5).
     SCOPE_INDEPENDENT = frozenset({WSMessageType.USERS, WSMessageType.STOCKS})

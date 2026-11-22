@@ -223,3 +223,38 @@ async def test_broadcast_builds_one_payload_per_audience_without_user_lookups(mo
     calls.clear()
     await manager.broadcast(WSMessageType.SHOPEE_ORDERS)
     assert sorted(calls) == [("admin", "admin"), ("op1", "client"), ("op2", "client")]
+
+
+class ClosableWebSocket(FakeWebSocket):
+    def __init__(self):
+        super().__init__()
+        self.closed_with = None
+
+    async def close(self, code=1000):
+        self.closed_with = code
+
+
+@pytest.mark.asyncio
+async def test_disconnect_session_closes_only_that_sessions_sockets():
+    """T6.2: revoking one session closes its sockets; the user's other session stays."""
+    manager = ConnectionManager()
+    phone, scanner, other_user = ClosableWebSocket(), ClosableWebSocket(), ClosableWebSocket()
+    await manager.connect(phone, "operator", "client", sid="s-phone")
+    await manager.connect(scanner, "operator", "client", sid="s-scanner")
+    await manager.connect(other_user, "bob", "client", sid="s-bob")
+
+    assert await manager.disconnect_session("s-phone") == 1
+    assert phone.closed_with == 1008
+    assert scanner.closed_with is None and other_user.closed_with is None
+    assert manager.active_connections["operator"] == [scanner]
+    assert phone not in manager.socket_sessions and phone not in manager.user_scopes
+    assert await manager.disconnect_session("unknown") == 0
+
+
+@pytest.mark.asyncio
+async def test_disconnect_user_forgets_socket_sessions():
+    manager = ConnectionManager()
+    ws = ClosableWebSocket()
+    await manager.connect(ws, "operator", "client", sid="s1")
+    await manager.disconnect_user("operator")
+    assert manager.socket_sessions == {}

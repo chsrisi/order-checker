@@ -10,6 +10,10 @@ from .users import (
     consume_refresh_token,
     set_password_and_revoke_sessions,
     delete_outdated_refresh_tokens,
+    create_session,
+    get_user_for_session,
+    revoke_session,
+    revoke_user_sessions,
 )
 from .outbound import (
     get_outbounds_data,
@@ -74,6 +78,10 @@ __all__ = [
     "delete_refresh_token",
     "consume_refresh_token",
     "set_password_and_revoke_sessions",
+    "create_session",
+    "get_user_for_session",
+    "revoke_session",
+    "revoke_user_sessions",
     "delete_outdated_refresh_tokens",
     "get_outbounds_data",
     "get_all_outbound_data",

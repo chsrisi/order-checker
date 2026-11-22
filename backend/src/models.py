@@ -96,11 +96,33 @@ class User(Base):
     outbounds: Mapped[List["OutboundItem"]] = relationship("OutboundItem", back_populates="owner")
 
 
+class AuthSession(Base):
+    """One login (V2_DELTA D3.2, IMPLEMENTATION_PLAN T6.2). Its id is the ``sid`` claim of every
+    access and refresh token issued for that login; rotation keeps it. A session is live while
+    ``revoked_at`` is NULL. Revoking (logout, password reset, admin "log out everywhere")
+    sets ``revoked_at`` and deletes its refresh tokens, so the next request with any of its
+    tokens gets 401. Rows are removed by the refresh-cleanup task once ``expires_at`` passed."""
+
+    __tablename__ = "sessions"
+    __table_args__ = {"schema": "auth"}
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(ForeignKey("auth.users.username"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    ip_address: Mapped[Optional[str]] = mapped_column(String)
+    agent: Mapped[Optional[str]] = mapped_column(String)
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     __table_args__ = {"schema": "auth"}
     jti: Mapped[str] = mapped_column(String, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("auth.sessions.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

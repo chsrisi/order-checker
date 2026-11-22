@@ -12,9 +12,12 @@ Send the returned access token on protected routes:
 Authorization: Bearer <access_token>
 ```
 
-Access tokens last 15 minutes. `POST /auth/refresh` consumes a stored refresh
-token and rotates both tokens. `POST /auth/logout` deletes the refresh-token JTI;
-it does not blacklist the short-lived access token. Public signing keys are at
+Access tokens last 15 minutes. Every login starts a **session**; its id is the `sid` claim
+of every access and refresh token of that login (required since v0.6.0). `POST /auth/refresh`
+consumes a stored refresh token and rotates both tokens within the same session. Each request
+checks that the token's session is still live, so ending a session (logout, password reset,
+"log out everywhere", user deletion) makes its access **and** refresh tokens fail with 401 on
+the next request and closes its WebSocket connections (code 1008). Public signing keys are at
 `GET /.well-known/jwks.json`.
 
 ## HTTP endpoints
@@ -25,13 +28,14 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | POST | `/auth/login` | Public | Operator login. **429** after 10 failed attempts for a username within 15 minutes |
 | POST | `/auth/admin` | Public | Admin-only login (same 429 throttle) |
 | POST | `/auth/refresh` | Public | Rotate refresh token pair |
-| POST | `/auth/logout` | Public | Delete refresh-token record |
+| POST | `/auth/logout` | Public | End the refresh token's session (its tokens stop working at once, its sockets close) |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
 | GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
-| POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
+| POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
+| POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
 | GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
