@@ -55,6 +55,15 @@ android {
         versionCode = providers.gradleProperty("oc.versionCode").get().toInt()
         versionName = providers.gradleProperty("oc.versionName").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Stage-1 server (V2_SERVER_ADDRESS §4.2); -Poc.defaultServer=http://10.0.2.2:8000 for
+        // an emulator rehearsal against a local backend.
+        val defaultServer = providers.gradleProperty("oc.defaultServer").orElse("http://192.168.1.50:8000").get()
+        buildConfigField("String", "DEFAULT_SERVER", "\"$defaultServer\"")
+        // Hidden-settings PIN (P-13): from ~/.gradle/gradle.properties, -P or OC_SETTINGS_PIN;
+        // never committed. Empty → the settings cannot be opened.
+        val settingsPin = providers.gradleProperty("oc.settingsPin")
+            .orElse(providers.environmentVariable("OC_SETTINGS_PIN")).orElse("").get()
+        buildConfigField("String", "SETTINGS_PIN", "\"$settingsPin\"")
     }
 
     signingConfigs {

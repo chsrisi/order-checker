@@ -47,10 +47,41 @@ $ANDROID_HOME/build-tools/37.0.0/apksigner verify --print-certs app/build/output
 
 Then publish it with the backend script (`docs/OPERATIONS.md` "Publishing a client release").
 
+## Server profile and hidden settings
+
+The app talks to the backend through a **server profile**: `primary`, optional `fallback`,
+optional Cloudflare Access service token (`docs/V2_SERVER_ADDRESS.md` §4.2). The build default
+is the stage-1 LAN server `http://192.168.1.50:8000`; override it per build with
+`-Poc.defaultServer=...` (for example `http://10.0.2.2:8000` for the emulator and a local
+backend). A connection failure (DNS, TCP, TLS, timeout, Cloudflare 52x, Access block page)
+moves to the other address; any HTTP answer, even 4xx, does not. On the fallback, a "LAN" chip
+shows and the primary is probed every 3 minutes.
+
+**Hidden settings:** hold the version label at the bottom for 5 seconds, then enter the PIN.
+The PIN is build configuration and never committed: put `oc.settingsPin=<digits>` in
+`~/.gradle/gradle.properties`, pass `-Poc.settingsPin=...`, or set `OC_SETTINGS_PIN`. A build
+without a PIN cannot open the settings. There you can edit the profile (no relogin needed), and
+see the app version and the device registration.
+
+## Sessions and live updates
+
+- Every request carries `X-Client-Version: <versionCode>`. A 426 (or WS close 4426) shows the
+  update screen.
+- Tokens are encrypted with an Android Keystore AES-GCM key and kept in DataStore; backups and
+  device transfers exclude them. The app reads only `sub`, `sid` and `exp` from its token (no
+  local verification), and refreshes a minute before expiry.
+- A 401 triggers one refresh, shared by all requests in flight, and one retry; if the refresh
+  is rejected the app logs out (this is how "log out everywhere" reaches a device).
+- `/v2/ws` reconnects forever with backoff (1 s doubling to 30 s, ±20 %) and at once when the
+  network comes back. Close 4401 or 1008 → one fresh ticket, then a session check.
+
 ## Layout
 
 - `core/`: app identity (`AppInfo`: versionCode, contract).
+- `net/`: server profile, address switching, HTTP client.
+- `auth/`: tokens (encrypted store, claims), `SessionManager` (login, refresh, logout).
+- `ws/`: `/v2/ws` client, frame parser, backoff, close-code rules.
+- `settings/`: profile store, PIN gate. `meta/`: `/v2/meta`. `ui/`: Compose screens.
 - `api/model/` (generated, `build/generated/openapi`): models from `backend/openapi/v2.json`.
   Regenerated on every build; never edit or commit them.
-- Feature packages (network, auth, updater, device, ...) are added by IMPLEMENTATION_PLAN
-  T6.11–T6.13.
+- Updater and device identity: IMPLEMENTATION_PLAN T6.12–T6.13.
