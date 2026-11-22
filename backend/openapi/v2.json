@@ -1,0 +1,21 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Backend for the Bakingholic operator and administrator applications. Authenticate with an RS256 bearer token. WebSocket clients first request a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is documented in the project API guide because OpenAPI does not describe it.",
+    "license": {
+      "name": "Proprietary"
+    },
+    "summary": "Order fulfillment, warehouse inventory, and Shopee synchronization API.",
+    "title": "Bakingholic Order Checker API"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}

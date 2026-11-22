@@ -16,6 +16,27 @@ indexes) is covered by the **integration layer** in `backend/tests/integration/`
 SQLite is not an integration substitute because the models use multiple PostgreSQL
 schemas.
 
+### Client contracts and OpenAPI exports
+
+- **Contract v1** (frozen, root routes): `tests/test_client_contract_v1.py`, snapshot
+  `tests/contracts/client_v1.json`, plus `tests/test_ws_contract_v1.py`. Additive changes only;
+  never regenerate the snapshot to make a breaking change pass.
+- **Contract v2** (`/v2`, not frozen): `tests/test_client_contract_v2.py`, snapshot
+  `tests/contracts/client_v2.json`. Changes must be deliberate and coordinated with an app
+  release: a non-additive change fails until the snapshot is regenerated, and the snapshot must
+  list exactly `CLIENT_V2_OPERATIONS`.
+- Both use `tests/contract_harness.py` (`build_contract(app, operations)`, `diff_contract`).
+- **OpenAPI exports** `backend/openapi/v2.json` and `backend/openapi/admin.json` are the sources
+  for the generated Kotlin and TypeScript types. `tests/test_openapi_exports.py` fails when they
+  differ from `app.openapi()`.
+
+Regenerate after a deliberate change (from `backend/`):
+
+```bash
+PYTHONPATH=. uv run python tests/test_client_contract_v2.py --write
+PYTHONPATH=. uv run python tests/test_openapi_exports.py --write
+```
+
 ### PostgreSQL integration layer
 
 - Runs only when `TEST_DATABASE_URL` is set. Otherwise those tests are skipped, so the

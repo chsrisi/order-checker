@@ -1,0 +1,2110 @@
+{
+  "components": {
+    "schemas": {
+      "AdminPasswordReset": {
+        "properties": {
+          "password": {
+            "examples": [
+              "correct-horse-battery-staple"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "AdminPasswordReset",
+        "type": "object"
+      },
+      "AdminUserCreate": {
+        "description": "Admin-side operator creation (A-3). Reuses the ``UserAuth`` username rule.",
+        "properties": {
+          "password": {
+            "examples": [
+              "correct-horse-battery-staple"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "examples": [
+              "operator_1"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "AdminUserCreate",
+        "type": "object"
+      },
+      "BOMHeadersResponse": {
+        "properties": {
+          "marketplace": {
+            "items": {
+              "$ref": "#/components/schemas/BOMMarketplaceHeaderResponse"
+            },
+            "title": "Marketplace",
+            "type": "array"
+          },
+          "standard": {
+            "items": {
+              "$ref": "#/components/schemas/BOMStandardHeaderResponse"
+            },
+            "title": "Standard",
+            "type": "array"
+          }
+        },
+        "required": [
+          "standard",
+          "marketplace"
+        ],
+        "title": "BOMHeadersResponse",
+        "type": "object"
+      },
+      "BOMMarketplaceHeaderResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "quantity_standard": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Standard"
+          },
+          "shopee_id": {
+            "title": "Shopee Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shopee_id"
+        ],
+        "title": "BOMMarketplaceHeaderResponse",
+        "type": "object"
+      },
+      "BOMNodeResponse": {
+        "description": "A resolved BOM node. ``is_not_primary_child`` exists on standard nodes only.",
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/BOMNodeResponse"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "is_not_primary_child": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Not Primary Child"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "standard",
+              "marketplace"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "name",
+          "quantity",
+          "type"
+        ],
+        "title": "BOMNodeResponse",
+        "type": "object"
+      },
+      "BOMStandardHeaderResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sku"
+        ],
+        "title": "BOMStandardHeaderResponse",
+        "type": "object"
+      },
+      "ContractRange": {
+        "properties": {
+          "max": {
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "ContractRange",
+        "type": "object"
+      },
+      "DeleteCountResponse": {
+        "properties": {
+          "deleted": {
+            "minimum": 0.0,
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "deleted"
+        ],
+        "title": "DeleteCountResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "MetaResponse": {
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "app_env": {
+            "title": "App Env",
+            "type": "string"
+          },
+          "client_contract": {
+            "$ref": "#/components/schemas/ContractRange"
+          },
+          "features": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Features",
+            "type": "object"
+          },
+          "stock_location_mode": {
+            "title": "Stock Location Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_version",
+          "client_contract",
+          "app_env",
+          "stock_location_mode",
+          "features"
+        ],
+        "title": "MetaResponse",
+        "type": "object"
+      },
+      "OutboundCloseResponse": {
+        "properties": {
+          "orders_done": {
+            "description": "Orders marked complete.",
+            "minimum": 0.0,
+            "title": "Orders Done",
+            "type": "integer"
+          },
+          "outbound": {
+            "description": "Scans closed.",
+            "minimum": 0.0,
+            "title": "Outbound",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Submitted values without an open scan.",
+            "minimum": 0.0,
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outbound",
+          "unknown",
+          "orders_done"
+        ],
+        "title": "OutboundCloseResponse",
+        "type": "object"
+      },
+      "OutboundResponse": {
+        "properties": {
+          "closed": {
+            "default": false,
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "owner_user": {
+            "title": "Owner User",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "created_at",
+          "owner_user"
+        ],
+        "title": "OutboundResponse",
+        "type": "object"
+      },
+      "RefreshTokenRequest": {
+        "properties": {
+          "refresh_token": {
+            "description": "Refresh token returned by login or registration.",
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshTokenRequest",
+        "type": "object"
+      },
+      "ShopeeConfigResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "current_ip": {
+            "title": "Current Ip",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "current_ip"
+        ],
+        "title": "ShopeeConfigResponse",
+        "type": "object"
+      },
+      "ShopeeConfigUnlockRequest": {
+        "properties": {
+          "password": {
+            "description": "Current administrator password.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "ShopeeConfigUnlockRequest",
+        "type": "object"
+      },
+      "ShopeeConfigUpdateRequest": {
+        "properties": {
+          "access_token": {
+            "description": "Shopee access token; never returned in logs.",
+            "minLength": 1,
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "description": "Shopee refresh token; never returned in logs.",
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "ShopeeConfigUpdateRequest",
+        "type": "object"
+      },
+      "ShopeeOrderInfoResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "logistics_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logistics Status"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "package_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Number"
+          },
+          "pickup_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pickup Code"
+          },
+          "tracking_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracking Number"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ShopeeOrderInfoResponse",
+        "type": "object"
+      },
+      "ShopeeOrderItemBOMResponse": {
+        "properties": {
+          "component_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Name"
+          },
+          "component_sku": {
+            "title": "Component Sku",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "component_sku",
+          "quantity"
+        ],
+        "title": "ShopeeOrderItemBOMResponse",
+        "type": "object"
+      },
+      "ShopeeOrderRecipientResponse": {
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ShopeeOrderRecipientResponse",
+        "type": "object"
+      },
+      "ShopeeOrderResponse": {
+        "properties": {
+          "done": {
+            "default": false,
+            "title": "Done",
+            "type": "boolean"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          },
+          "info": {
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderInfoResponse"
+            },
+            "title": "Info",
+            "type": "array"
+          },
+          "item_list": {
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderItemBOMResponse"
+            },
+            "title": "Item List",
+            "type": "array"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "owner_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User"
+          },
+          "recipient_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShopeeOrderRecipientResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ship_by": {
+            "format": "date-time",
+            "title": "Ship By",
+            "type": "string"
+          },
+          "shipping_carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Carrier"
+          },
+          "split_up": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Up"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "status",
+          "ship_by"
+        ],
+        "title": "ShopeeOrderResponse",
+        "type": "object"
+      },
+      "TemporaryTokenResponse": {
+        "properties": {
+          "expires_in": {
+            "description": "Token lifetime in seconds.",
+            "examples": [
+              120
+            ],
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token": {
+            "description": "Short-lived token for a protected follow-up operation.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_in"
+        ],
+        "title": "TemporaryTokenResponse",
+        "type": "object"
+      },
+      "Token": {
+        "properties": {
+          "access_token": {
+            "description": "Short-lived RS256 bearer token.",
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "description": "Single-use-on-refresh token valid for 24 hours.",
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "Token",
+        "type": "object"
+      },
+      "UserAuth": {
+        "properties": {
+          "password": {
+            "examples": [
+              "correct-horse-battery-staple"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "examples": [
+              "operator_1"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserAuth",
+        "type": "object"
+      },
+      "UserResponse": {
+        "properties": {
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "scope"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WarehouseItemResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku"
+        ],
+        "title": "WarehouseItemResponse",
+        "type": "object"
+      },
+      "WebSocketTicketResponse": {
+        "properties": {
+          "expires_in": {
+            "description": "Ticket lifetime in seconds.",
+            "examples": [
+              30
+            ],
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token": {
+            "description": "One-use WebSocket ticket.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_in"
+        ],
+        "title": "WebSocketTicketResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Backend for the Bakingholic operator and administrator applications. Authenticate with an RS256 bearer token. WebSocket clients first request a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is documented in the project API guide because OpenAPI does not describe it.",
+    "license": {
+      "name": "Proprietary"
+    },
+    "summary": "Order fulfillment, warehouse inventory, and Shopee synchronization API.",
+    "title": "Bakingholic Order Checker API"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/.well-known/jwks.json": {
+      "get": {
+        "description": "Returns public RSA keys used to verify Order Checker access tokens.",
+        "operationId": "jwks_endpoint__well_known_jwks_json_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get JSON Web Key Set",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/admin/bom/headers": {
+      "get": {
+        "description": "Returns standard warehouse BOM headers and Shopee marketplace BOM headers.",
+        "operationId": "get_bom_headers_admin_bom_headers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMHeadersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List BOM roots",
+        "tags": [
+          "admin",
+          "BOM"
+        ]
+      }
+    },
+    "/admin/bom/tree": {
+      "get": {
+        "description": "Provide exactly one of `sku` or `shopee_id` to recursively resolve a standard or marketplace BOM.",
+        "operationId": "get_bom_tree_admin_bom_tree_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sku",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sku"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shopee_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shopee Id"
+            }
+          },
+          {
+            "description": "Quantity to scale the tree by.",
+            "in": "query",
+            "name": "qty",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Quantity to scale the tree by.",
+              "maximum": 100000,
+              "minimum": 1,
+              "title": "Qty",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BOMNodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "No selector supplied"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "BOM not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resolve a BOM tree",
+        "tags": [
+          "admin",
+          "BOM"
+        ]
+      }
+    },
+    "/admin/clear/outbound-items": {
+      "delete": {
+        "description": "Permanently deletes open and closed outbound scan records. Use only after exporting required history.",
+        "operationId": "clear_outbound_items_admin_clear_outbound_items_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteCountResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear every outbound scan",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/export/scans": {
+      "get": {
+        "description": "Streams every outbound scan record, open and closed, newest first, as a timestamped CSV file.",
+        "operationId": "export_scanned_items_admin_export_scans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export all outbound scans as CSV",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/export/stocks": {
+      "get": {
+        "description": "Streams stock quantities, locations, and item names as a timestamped CSV file.",
+        "operationId": "export_stocks_admin_export_stocks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export inventory as CSV",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/history/outbound": {
+      "get": {
+        "description": "Returns only scans that have been closed by an administrator.",
+        "operationId": "get_outbound_history_admin_history_outbound_get",
+        "parameters": [
+          {
+            "description": "Page size (newest first).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "description": "Page size (newest first).",
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OutboundResponse"
+                  },
+                  "title": "Response Get Outbound History Admin History Outbound Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get closed outbound history",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/history/shopee/orders": {
+      "get": {
+        "description": "Returns only orders marked complete by outbound period closure.",
+        "operationId": "get_shopee_orders_history_admin_history_shopee_orders_get",
+        "parameters": [
+          {
+            "description": "Page size (newest first).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "description": "Page size (newest first).",
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShopeeOrderResponse"
+                  },
+                  "title": "Response Get Shopee Orders History Admin History Shopee Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get completed Shopee order history",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/shopee-config": {
+      "get": {
+        "description": "Returns credentials only when the temporary configuration token belongs to the current administrator.",
+        "operationId": "get_shopee_config_admin_shopee_config_get",
+        "parameters": [
+          {
+            "description": "Token returned by POST /admin/shopee-config/unlock.",
+            "in": "header",
+            "name": "X-Config-Token",
+            "required": true,
+            "schema": {
+              "description": "Token returned by POST /admin/shopee-config/unlock.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "X-Config-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShopeeConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Configuration session invalid or expired"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Shopee credentials",
+        "tags": [
+          "admin",
+          "shopee configuration"
+        ]
+      },
+      "post": {
+        "description": "Stores new tokens in Redis and resets synchronization circuit/cache state.",
+        "operationId": "save_shopee_config_admin_shopee_config_post",
+        "parameters": [
+          {
+            "description": "Token returned by POST /admin/shopee-config/unlock.",
+            "in": "header",
+            "name": "X-Config-Token",
+            "required": true,
+            "schema": {
+              "description": "Token returned by POST /admin/shopee-config/unlock.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "X-Config-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopeeConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Configuration session invalid or expired"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Shopee credentials",
+        "tags": [
+          "admin",
+          "shopee configuration"
+        ]
+      }
+    },
+    "/admin/shopee-config/lock": {
+      "post": {
+        "description": "Immediately invalidates a temporary configuration session.",
+        "operationId": "lock_shopee_config_admin_shopee_config_lock_post",
+        "parameters": [
+          {
+            "description": "Token returned by POST /admin/shopee-config/unlock.",
+            "in": "header",
+            "name": "X-Config-Token",
+            "required": true,
+            "schema": {
+              "description": "Token returned by POST /admin/shopee-config/unlock.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "X-Config-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Lock Shopee credentials",
+        "tags": [
+          "admin",
+          "shopee configuration"
+        ]
+      }
+    },
+    "/admin/shopee-config/unlock": {
+      "post": {
+        "description": "Re-authenticates the administrator and returns a separate temporary configuration token.",
+        "operationId": "unlock_shopee_config_admin_shopee_config_unlock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShopeeConfigUnlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemporaryTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Incorrect admin password"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unlock Shopee credentials",
+        "tags": [
+          "admin",
+          "shopee configuration"
+        ]
+      }
+    },
+    "/admin/users": {
+      "delete": {
+        "description": "Deletes a client account and its refresh tokens and outbound scans. Its pick entries are deleted with their stock restored, and its claimed orders are released.",
+        "operationId": "delete_user_admin_users_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Client account not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete an operator account",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "description": "Returns usernames and scopes for all client accounts. Password hashes are never serialized.",
+        "operationId": "get_users_admin_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponse"
+                  },
+                  "title": "Response Get Users Admin Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List operator accounts",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Creates a client-scope account. This is how operator accounts are created when self-registration is disabled (production).",
+        "operationId": "create_user_admin_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "409": {
+            "description": "Username already exists"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create an operator account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/users/{username}/password": {
+      "post": {
+        "description": "Sets a new password, revokes all of the user's refresh tokens and closes their WebSocket sessions, so every device must log in again.",
+        "operationId": "reset_user_password_admin_users__username__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_]+$",
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Client account not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset an operator password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/auth/admin": {
+      "post": {
+        "description": "Authenticates credentials only when the account has the admin scope.",
+        "operationId": "login_admin_auth_admin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserAuth"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid credentials or non-admin account"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed attempts for this username; retry later"
+          }
+        },
+        "summary": "Log in an administrator",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Deletes the supplied refresh-token record. The access token expires naturally.",
+        "operationId": "logout_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Malformed refresh token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Log out",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Consumes a stored refresh token and returns a replacement token pair.",
+        "operationId": "refresh_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid, expired, revoked, or already consumed token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate a refresh token",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/ws-token": {
+      "post": {
+        "description": "Returns a one-use ticket that expires after configured TTL.",
+        "operationId": "create_ws_token_auth_ws_token_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a WebSocket ticket",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/items/find": {
+      "get": {
+        "description": "Performs case-insensitive SKU/name lookup and recognizes configured barcode aliases.",
+        "operationId": "find_warehouse_items_items_find_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Query",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WarehouseItemResponse"
+                  },
+                  "title": "Response Find Warehouse Items Items Find Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Find warehouse items",
+        "tags": [
+          "items"
+        ]
+      }
+    },
+    "/meta": {
+      "get": {
+        "description": "Public. API version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.",
+        "operationId": "get_meta_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Server metadata",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/outbound/close": {
+      "post": {
+        "description": "Closes matching open scans and completes orders found by order or tracking number. Duplicate input values are counted once.",
+        "operationId": "close_outbound_period_outbound_close_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "title": "Contents",
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundCloseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Close an outbound period",
+        "tags": [
+          "outbound"
+        ]
+      }
+    },
+    "/shopee/orders": {
+      "get": {
+        "description": "Synchronizes with Shopee, then returns active orders: all of them for admins, only the caller's claimed orders for operators. `refresh=true` invalidates the two-minute in-process cache before synchronization.",
+        "operationId": "get_shopee_orders_shopee_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShopeeOrderResponse"
+                  },
+                  "title": "Response Get Shopee Orders Shopee Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Shopee request failed"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Synchronize active Shopee orders",
+        "tags": [
+          "Shopee"
+        ]
+      }
+    },
+    "/shopee/reset-cache-state": {
+      "post": {
+        "description": "Admin-only recovery action that clears the token-fatal circuit state and invalidates the local cache.",
+        "operationId": "reset_shopee_cache_state_shopee_reset_cache_state_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Shopee synchronization state",
+        "tags": [
+          "Shopee"
+        ]
+      }
+    }
+  }
+}
