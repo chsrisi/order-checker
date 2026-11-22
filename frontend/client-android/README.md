@@ -20,6 +20,13 @@ Debug builds use the `.debug` application id and a `-debug` version suffix, so t
 next to the release app and can never update it. Debug builds also allow plain HTTP to the
 emulator host `10.0.2.2`; release builds allow plain HTTP only to `192.168.1.50`.
 
+### Emulator rehearsal build
+
+`assembleRehearsal` is the release build (R8, release signing, production application id)
+that also allows plain HTTP to the emulator host `10.0.2.2`. It exists only to rehearse OTA on
+the emulator against a local backend (IMPLEMENTATION_PLAN T6.14); never publish it to devices.
+Sign it with a throwaway key through the `OC_*` variables, never with the production key.
+
 ## Versions
 
 `gradle.properties`: `oc.versionCode` (integer, sent as `X-Client-Version`) and
@@ -97,9 +104,9 @@ What an operator sees on Android 11 (checked on the API 30 emulator):
    app after it is granted; tap **Update** again.
 2. The Android prompt "Do you want to install an update…?" → **Install** (every update, one
    tap; Android 11 cannot skip it).
-3. On devices with Google Play Protect, a first install from this source may show "App scan
-   recommended": **More details → Install without scanning** (do not send the app to Google).
-   The MT67 may not have Play services; check on the device day.
+3. On devices with Google Play Protect, **every** update may show "App scan recommended"
+   (Play Protect has not seen the new APK): **More details → Install without scanning** (do
+   not send the app to Google). The MT67 may not have Play services; check on the device day.
 4. The app closes; reopen it and the version label shows the new build.
 
 ## Device identity

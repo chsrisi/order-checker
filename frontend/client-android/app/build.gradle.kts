@@ -86,6 +86,14 @@ android {
             applicationIdSuffix = ".debug" // installs beside the release app
             versionNameSuffix = "-debug"
         }
+        // Emulator OTA rehearsal (T6.14): exactly the release build (R8, release signing,
+        // production application id) plus plain HTTP to the emulator host 10.0.2.2
+        // (src/rehearsal/res). Never published to devices.
+        create("rehearsal") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-rehearsal"
+        }
     }
 
     buildFeatures {
