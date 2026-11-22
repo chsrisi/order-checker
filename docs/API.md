@@ -31,7 +31,7 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/auth/logout` | Public | End the refresh token's session (its tokens stop working at once, its sockets close) |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
-| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
+| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
@@ -61,6 +61,36 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.
+
+## Operator-client contract v2 (`/v2`)
+
+The root routes above are contract v1 (frozen, KNOWN_LIMITATIONS #8). Since v0.6.0 the same
+operations are also served under `/v2` for the v2 operator app, by **the same handlers**
+(identical request, response and error behaviour):
+
+| v2 path | Same as |
+|---|---|
+| `POST /v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/logout`, `/v2/auth/ws-token` | `/auth/...` |
+| `POST /v2/outbound` | `POST /outbound` |
+| `POST /v2/pick-items`, `/v2/pick-items/{id}/assign`, `/v2/pick-items/unassign`, `DELETE /v2/pick-items/{id}` | `/pick-items...` |
+| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...` |
+| `GET /v2/items/find` | `GET /items/find` |
+| `POST /v2/stocks/update` | `POST /stocks/update` |
+| `GET /v2/meta` | `GET /meta` |
+
+Not under `/v2`: registration, JWKS (the v2 app does not verify tokens locally), and every
+admin operation (the admin API stays at the root).
+
+**Version gate.** Every `/v2` operation except `/v2/meta` (and the update and device-registration
+endpoints) requires `X-Client-Version: <versionCode>`:
+
+- missing or not a non-negative integer → **400** `{"detail": "X-Client-Version header required"}`
+- below the published `min_supported_version_code` → **426**
+  `{"detail": "Client update required", "min_supported_version_code": N}`; the app shows its
+  update screen
+
+The minimum comes from the published release metadata (OPERATIONS "Publishing a client
+release"); with nothing published there is no minimum.
 
 ## Datetimes
 

@@ -26,6 +26,11 @@ src/main.py
   -> models.py      SQLAlchemy entities and Pydantic API models
 ```
 
+`routers/v2/` serves operator-client contract v2 under `/v2`: it registers the client
+operations one by one with the **v1 endpoint functions** and their metadata, adding only the
+`X-Client-Version` gate. Both contracts therefore share handlers, services and queries; a
+contract-specific behaviour gets its own v2 handler over the same services.
+
 Routers must not open database sessions or call Shopee directly. Services
 coordinate work and notifications. Query functions own short database
 transactions and return detached records. Managers are process-level stateful

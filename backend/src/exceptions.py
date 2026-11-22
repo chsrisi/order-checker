@@ -29,3 +29,21 @@ async def domain_exception_handler(request: Request, exc: Exception):
         status_code=status_code,
         content={"detail": detail},
     )
+
+
+class ClientUpgradeRequired(Exception):
+    """A /v2 client below the published ``min_supported_version_code`` (T6.3, spec §3.4)."""
+
+    def __init__(self, min_supported_version_code: int):
+        self.min_supported_version_code = min_supported_version_code
+
+
+async def client_upgrade_required_handler(request: Request, exc: Exception):
+    minimum = exc.min_supported_version_code if isinstance(exc, ClientUpgradeRequired) else 0
+    return JSONResponse(
+        status_code=426,
+        content={
+            "detail": "Client update required",
+            "min_supported_version_code": minimum,
+        },
+    )

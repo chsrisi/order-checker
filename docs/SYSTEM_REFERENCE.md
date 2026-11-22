@@ -614,6 +614,25 @@ and `backend/tests/test_ws_contract_v1.py`.
 
 ---
 
+## 10A. Operator client contract v2 (`/v2`)
+
+Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contract_v2.py`
+(snapshot `tests/contracts/client_v2.json`, additive unless regenerated on purpose) and the
+committed export `backend/openapi/v2.json`.
+
+- `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
+  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
+  operations.
+- Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
+  `min_supported_version_code` from `<CLIENT_RELEASES_DIR>/latest.json` → 426
+  `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
+  ungated. The metadata file is re-read only when its mtime changes
+  (`services/client_releases.py`).
+- `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
+
+---
+
 ## 11. Maintenance scripts (`backend/scripts`, run as `python -m scripts.<name>`)
 
 | Script | Purpose |

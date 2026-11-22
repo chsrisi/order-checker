@@ -10,7 +10,12 @@ from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from .exceptions import DomainException, domain_exception_handler
+from .exceptions import (
+    ClientUpgradeRequired,
+    DomainException,
+    client_upgrade_required_handler,
+    domain_exception_handler,
+)
 from .logging_config import configure_logging, request_id_context
 
 from .config import API_VERSION, EXPOSE_API_DOCS, PRODUCTION_RULES, get_config_value
@@ -29,6 +34,7 @@ from .routers import (
     websocket,
     meta,
 )
+from .routers.v2 import include_v2
 
 load_dotenv(find_dotenv())
 configure_logging()
@@ -218,6 +224,7 @@ if _cors is not None:
     app.add_middleware(CORSMiddleware, **_cors)
 
 app.add_exception_handler(DomainException, domain_exception_handler)
+app.add_exception_handler(ClientUpgradeRequired, client_upgrade_required_handler)
 
 # Include separated sub-routers
 app.include_router(auth.router)
@@ -230,3 +237,8 @@ app.include_router(shopee.router)
 app.include_router(pick_items.router)
 app.include_router(websocket.router)
 app.include_router(meta.router)
+# Contract v2 mirrors the client operations registered above (T6.3).
+include_v2(
+    app,
+    [auth.router, outbound.router, pick_items.router, shopee.router, items.router, stocks.router, meta.router],
+)

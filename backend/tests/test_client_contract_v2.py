@@ -17,8 +17,23 @@ from contract_harness import build_contract, diff_contract, load_snapshot, write
 
 SNAPSHOT_PATH = Path(__file__).parent / "contracts" / "client_v2.json"
 
-# (method, path) of every HTTP operation the v2 operator client calls (filled by T6.3).
-CLIENT_V2_OPERATIONS: list[tuple[str, str]] = []
+# (method, path) of every HTTP operation the v2 operator client calls (T6.3).
+CLIENT_V2_OPERATIONS: list[tuple[str, str]] = [
+    ("post", "/v2/auth/login"),
+    ("post", "/v2/auth/refresh"),
+    ("post", "/v2/auth/logout"),
+    ("post", "/v2/auth/ws-token"),
+    ("post", "/v2/outbound"),
+    ("post", "/v2/pick-items"),
+    ("post", "/v2/pick-items/{entry_id}/assign"),
+    ("post", "/v2/pick-items/unassign"),
+    ("delete", "/v2/pick-items/{entry_id}"),
+    ("post", "/v2/shopee/orders/acquire"),
+    ("get", "/v2/shopee/orders"),
+    ("get", "/v2/items/find"),
+    ("post", "/v2/stocks/update"),
+    ("get", "/v2/meta"),
+]
 
 
 def test_every_v2_operation_exists_with_200():
