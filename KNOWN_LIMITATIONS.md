@@ -126,7 +126,7 @@ This document tracks known architectural, library, and system limitations within
 - **Policy**:
   - The client-facing API is **contract v1**. The exact surface is listed in `docs/SYSTEM_REFERENCE.md` §10 (originally `docs/archive/BRANCH_SPLIT_REVIEW.md` §2).
   - Keep client API changes to a minimum. Only **additive** changes are allowed: new optional response fields, new endpoints, timezone offsets on datetimes, and new WebSocket event types whose `data` is a JSON **array of objects**.
-  - **Breaking changes require a major version bump** and a manual client rollout. Examples: renaming or removing a path, field, or WS command; success codes other than `200`; making a field nullable; sending non-list WS `data` to client sockets; changing `acquire` 404 semantics. During the rollout the backend must serve the old and new contracts side by side, using path-versioned `/v2/...` routes for the changed operations only.
+  - **Breaking changes require a major version bump** and a manual client rollout. Examples: renaming or removing a path, field, or WS command; success codes other than `200`; making a field nullable; sending non-list WS `data` to client sockets; changing `acquire` 404 semantics. During the rollout the backend must serve the old and new contracts side by side, using path-versioned `/v2/...` routes that mirror the whole operator-client surface (V2-5 + `docs/V2_DELTA.md` D1, superseding A-5's "changed operations only"). Contract v2 is guarded by `tests/test_client_contract_v2.py` (snapshot `tests/contracts/client_v2.json`).
   - Supported targets: operator client on **Android and Windows** only (the client web build is dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
   - **Production is not strictly uptime-sensitive.** Short outages and maintenance windows are acceptable. After a backend restart longer than about 10 s, the client WebSocket stops retrying, and operators must tap *retry* on the connection banner. This is an operational note, not a deploy constraint.
   - Deploy constraints that still apply: keep the WS handshake rejection as HTTP 403. Do not change `JWT_ISSUER`/`JWT_AUDIENCE` (or `APP_ENV`, which sets their defaults) and do not replace `data/keys` outside a planned forced-relogin window (`docs/RELEASE.md`). Backend version bumps no longer change token identity (T3.1).
@@ -142,3 +142,20 @@ This document tracks known architectural, library, and system limitations within
 - **Countermeasure**: The rule is a dormant hardening switch tagged `HARDENING(password-min-length)` in `backend/src/models.py` (`AdminUserCreate`, `AdminPasswordReset`), with a matching commented-out test in `backend/tests/test_admin_users.py`. Enable it by following `docs/OPERATIONS.md` → "Dormant Hardening Switches". Enabling it is a normal backend release with no client impact.
 - **Scope**: It applies only to **new or reset** passwords. Existing passwords keep working at login, and the operator client's login/register requests (`UserAuth`, contract v1) are unaffected.
 - **Code References**: `backend/src/models.py`, `backend/tests/test_admin_users.py`
+
+### 10. Operator Client Release Builds Have No Network (v1 Runs as a Debug Build)
+- **Issue**: A release build of the Flutter operator client cannot reach the server. The devices
+  therefore run a **debug** build: JIT-compiled (slower), `debuggable` (app data readable over
+  `adb run-as`), signed with a developer machine's debug key.
+- **Cause**: A misconfiguration, not an Android limit. `android.permission.INTERNET` is
+  declared only in `src/debug` and `src/profile/AndroidManifest.xml` (Flutter's template, for
+  hot reload). `src/main/AndroidManifest.xml` lacks it, so release builds get no network. The
+  cleartext rule for the LAN IP (`res/xml/network_security_config.xml`) is in `main` and works
+  in both build types.
+- **Countermeasure**: Declare `INTERNET` in `src/main/AndroidManifest.xml` before building a v1
+  release APK (V2_DELTA Q23). The release build type is also signed with the debug key
+  (`build.gradle.kts`), so it installs over a debug build only if built on the same machine;
+  otherwise uninstall first (the operator logs in again). The v2 client declares `INTERNET` in
+  its main manifest, and its OTA rehearsal uses the **signed release** APK.
+- **Code References**: `frontend/client/android/app/src/main/AndroidManifest.xml`,
+  `frontend/client/android/app/build.gradle.kts`

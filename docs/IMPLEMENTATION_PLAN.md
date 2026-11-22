@@ -1,7 +1,7 @@
 # Implementation plan and task guideline
 
-Status: **all tasks done; v0.4.0 (steps 0–5) is in production, v0.5.0 fixes (TF.*) are on
-`fix/pre-v0.5.0`** (§7, as of 2026-11-21). Work begins only when the maintainer says so, either one step at a time or one
+Status: **steps 0–5 and TF.* done** (v0.4.0 and v0.5.0 released). **Steps 6–8 (v2) are planned,
+not started** (§7, as of 2026-11-22). Work begins only when the maintainer says so, either one step at a time or one
 task at a time.
 
 This plan turns the decisions in these files into tasks:
@@ -10,7 +10,11 @@ This plan turns the decisions in these files into tasks:
 - [archive/BRANCH_SPLIT_DELTA.md](archive/BRANCH_SPLIT_DELTA.md) (decision rounds D1–D5; the latest round wins)
 - [archive/STOCK_MODEL_DISCUSSION.md](archive/STOCK_MODEL_DISCUSSION.md)
 
-Those files were archived on 2026-11-21 (see [archive/README.md](archive/README.md)); current
+Steps 6–8 come from [V2_SPEC.md](V2_SPEC.md), [V2_DELTA.md](V2_DELTA.md) (rounds D1–D4) and
+[V2_SERVER_ADDRESS.md](V2_SERVER_ADDRESS.md). Precedence there: **V2_DELTA > this plan >
+V2_SPEC**.
+
+The branch-split files were archived on 2026-11-21 (see [archive/README.md](archive/README.md)); current
 behaviour is described in [SYSTEM_REFERENCE.md](SYSTEM_REFERENCE.md).
 
 Precedence when they disagree: **delta > this plan > base review**. If this plan conflicts with
@@ -101,6 +105,19 @@ that applies unless you say otherwise.
 | P-6 | CI | GitHub Actions workflow in the repo (`.github/workflows/`), run on PRs to `dev` and `master`. | Local release-gate script only (no Actions minutes). |
 | P-7 | Placement of findings the approved sequencing didn't list | See §6, rows marked "placed in planning". | Move or drop any row. |
 | P-8 | `alembic` dependency group | Move `alembic` from the dev group to main dependencies (the prod image runs it), drop `fastapi[standard]` in favour of `fastapi` + `uvicorn[standard]`, and export with `--no-dev`. | Leave packaging as is. |
+| P-9 | v2 WS frame and handshake errors (T6.4) | `{type, data, ts}` with `data` the same list of objects as v1. Handshake errors: accept, then close **4401** (ticket or session) / **4426** (client too old). | Other envelope or codes; delta events instead of snapshots (later). |
+| P-10 | `/v2` version gate (T6.3) | `X-Client-Version` required (missing → 400); below `min_supported_version_code` → 426. `/v2/meta`, `/v2/client/*` and `/v2/device/register` are exempt, so an old client can always find its update. | A missing header treated as version 0. |
+| P-11 | `/v2` surface (T6.3) | Exactly v1's client operations, **minus** register and JWKS, plus `/v2/meta`, OTA and device endpoints. New v2 operations are added deliberately, with the snapshot. | Also mirror `GET /pick-items` or list endpoints now. |
+| P-12 | Device registration proof (T6.6) | ECDSA P-256 signature over the caller's `sid`, made with the Keystore key, verified with `cryptography`. `cryptography` is already installed (via `pyjwt[crypto]`); it becomes a **declared** dependency, with no new package. | No proof at the `pending` stage. |
+| P-13 | Hidden settings unlock (T6.11) | 5 s long-press on the version label, then a PIN from local build config (not committed). | The enrollment QR only (step 8); an admin-password check online. |
+| P-14 | Kotlin API models (T6.10) | `openapi-generator` Gradle plugin, **build-time only**, models only (kotlinx.serialization), from `backend/openapi/v2.json`. | Hand-written models plus a test against the JSON file. |
+| P-15 | APK storage and rollback (T6.5) | `data/releases/client/` mounted like `data/keys`; old APKs kept; a rollback is a new, higher `versionCode` built from old code. | Delete old APKs on publish. |
+| P-16 | `last_seen_at` writes (T6.2, T6.6) | At most once per 60 s per session/device. | Every request. |
+| P-17 | Vue admin timing | Step 7, after the device day; not a v0.6.0 gate. | Start T7.1 in parallel with T6.10. |
+| P-18 | Expired sessions | Removed by the existing refresh-cleanup task. | A separate task. |
+| P-19 | Admin "log out everywhere" (T6.2) | `POST /admin/users/{username}/logout`, client accounts only (like reset and delete). | Also for the admin account itself. |
+| P-20 | Vue admin token storage (T7.2) | Access token in memory, refresh token in `sessionStorage`: closing the tab logs out, with less XSS exposure. | `localStorage` (survives browser restarts). |
+| P-21 | Existing refresh tokens at T6.2 | Deleted by the migration, so everyone logs in once (Q24). | Backfill a session per refresh row (no relogin, more code). |
 
 ---
 
@@ -536,6 +553,409 @@ All Step 1 tasks are client-safe.
   - BOM headers N+1
   - response models for the BOM routes
 
+### Steps 6–8: v2 (V2_SPEC, V2_DELTA D1–D4, V2_SERVER_ADDRESS)
+
+Precedence for these steps: **V2_DELTA > this plan > V2_SPEC**. Step 6 is the device-day
+critical path and ships as backend **v0.6.0** plus client app **2.0.0**. Step 7 (Vue admin) and
+step 8 (device control) follow over normal releases and OTA. Branches: one feature branch per
+task (or a small group) off `dev`, for example `feat/T6.2-sessions`.
+
+```mermaid
+flowchart TD
+  T60["T6.0 docs + A-5 correction"] --> T61["T6.1 contract + OpenAPI harness"]
+  T61 --> T62["T6.2 sessions (sid, PG)"]
+  T61 --> T63["T6.3 /v2 client surface + version gate"]
+  T62 --> T64["T6.4 /v2 WebSocket"]
+  T63 --> T64
+  T63 --> T65["T6.5 OTA endpoints + publish script"]
+  T62 --> T66["T6.6 device registration (pending)"]
+  T63 --> T66
+  T64 --> T67["T6.7 v0.6.0 release prep"]
+  T65 --> T67
+  T66 --> T67
+  T63 --> T610["T6.10 Android skeleton + CI"]
+  T610 --> T611["T6.11 network, auth, profile"]
+  T611 --> T612["T6.12 updater"]
+  T611 --> T613["T6.13 device identity"]
+  T612 --> T614["T6.14 OTA rehearsal"]
+  T613 --> T614
+  T65 --> T614
+  T66 --> T614
+  T614 --> DD["T6.16 device day (maintainer)"]
+  T67 --> DD
+  T611 --> T615["T6.15 feature parity (before or after DD, via OTA)"]
+  DD --> S7["Step 7: Vue admin"]
+  DD --> S8["Step 8: device control"]
+```
+
+Hard ordering constraints:
+
+- T6.1 comes first: every later backend task runs the v1 **and** v2 contract checks.
+- T6.2 makes `sid` required. It forces **one operator relogin**, in the v0.6.0 window (D4 Q24).
+- The device day (T6.16) needs: v0.6.0 deployed (T6.7), a published first APK (T6.5), and a
+  rehearsal passed on the emulator **and** the spare MT67 with the **signed release** APK
+  (T6.14).
+- Feature parity (T6.15) is not a device-day gate (V2-7). Whatever is missing on the day ships
+  later over OTA, and operators use v1 for it meanwhile.
+
+### Step 6: dual-contract backend v0.6.0 and the first v2 client (`dev`)
+
+**T6.0 Commit the v2 planning docs and correct A-5** *(needs go-ahead)*
+- Goal: get V2_SPEC, V2_DELTA, V2_SERVER_ADDRESS, this step, the CLAUDE.md planning flow and
+  KNOWN_LIMITATIONS #10 into version control.
+- Change: docs only.
+  - KNOWN_LIMITATIONS #8: the `/v2` rule changes from "for the changed operations only" (A-5)
+    to "mirror the operator-client surface" (V2-5 + D1).
+  - §5 backlog: the "Client v2" bullet points at Step 6 instead.
+- Accept: `git status` clean apart from the maintainer's own files.
+
+**T6.1 Contract and OpenAPI harness for two surfaces (Q14, spec §10.2)**
+- Change:
+  - `build_contract(app, operations)` takes the operation list (and the WS model map), so v1
+    and v2 share one implementation.
+  - The `CLIENT_OPERATIONS` constant stays the v1 list; `CLIENT_V2_OPERATIONS` is added
+    (initially empty).
+  - New `tests/test_client_contract_v2.py` + `tests/contracts/client_v2.json`. Additive-only,
+    like v1. Regenerating is allowed but must be deliberate: the test prints the diff.
+  - Committed OpenAPI exports `backend/openapi/v2.json` (paths under `/v2`) and
+    `backend/openapi/admin.json` (`/admin/*`, `/auth/admin`, and the root paths the admin app
+    uses). `tests/test_openapi_exports.py` fails when `app.openapi()` and the files differ;
+    `--write` regenerates them.
+- Tests: the harness itself. The v1 snapshot is unchanged byte for byte.
+- Docs: TESTING.md (two contracts, the export files, how to regenerate).
+- Accept: the v1 suite and `client_v1.json` are untouched.
+
+**T6.2 Sessions in PostgreSQL, `sid` required, instant revocation (Q19, Q24, Q10, D3.2, D4.2)**
+- Migration (additive):
+  - `auth.sessions (id PK = sid, username FK, device_id NULL, created_at, last_seen_at,
+    revoked_at NULL, ip_address, agent)`. `device_id` gets its FK in T6.6.
+  - `auth.refresh_tokens.session_id` FK → sessions `ON DELETE CASCADE`.
+  - Existing refresh rows are deleted in the migration. Everyone logs in once (Q24); the
+    downgrade removes the column and the table.
+- Tokens:
+  - Login creates a session. Access and refresh tokens carry `sid`, added to the `require` list
+    in both `jwt.decode` calls.
+  - Refresh rotation keeps the `sid`. Logout deletes the session (and its refresh rows by
+    cascade).
+- `get_current_user`: one query loads the user **and** a live session (`revoked_at IS NULL`).
+  Missing → 401, as for a deleted user today. `last_seen_at` is written at most once per 60 s
+  per session (P-16). `ip_address`/`agent` are written at login (SYSTEM_REFERENCE §14.3).
+- WS:
+  - The ticket value becomes `{username, sid}` (JSON in the same Redis key).
+  - The handshake checks the session.
+  - `ConnectionManager` stores `sid` per socket and gains `disconnect_session(sid, code=1008)`.
+- Revocation entry points, each in **one transaction**, then sockets closed:
+  - logout;
+  - password reset (all of the user's sessions);
+  - user delete;
+  - new admin endpoint `POST /admin/users/{username}/logout` ("log out everywhere", P-19).
+- Expired sessions are removed by the existing refresh-cleanup task (P-18).
+- Tests (unit + PostgreSQL):
+  - a revoked session gets 401 on the next request, and its refresh token fails too;
+  - a token without `sid` → 401;
+  - a session's sockets close with 1008, while the same user's other sessions stay;
+  - `last_seen_at` throttling;
+  - migration round trip.
+  - The v1 contract and WS contract suites pass unchanged (the login response shape does not
+    change).
+- Docs:
+  - SYSTEM_REFERENCE §4.1, §5, §14.2, §14.3;
+  - API.md (new admin endpoint);
+  - RELEASE.md (v0.6.0 window: one relogin);
+  - KNOWN_LIMITATIONS #8 deploy note.
+- Accept: an admin "log out everywhere" puts a v1 device on its login screen within one
+  request, verified with the v1 client on the emulator.
+
+**T6.3 `/v2` operator-client surface and version gate (V2-5, D1, P-10, P-11)**
+- Change:
+  - `src/routers/v2/` registers the client operations one by one with `add_api_route`, reusing
+    the existing endpoint functions. Operations:
+    - `POST /v2/auth/login`, `/refresh`, `/logout`, `/ws-token`;
+    - `POST /v2/outbound`;
+    - `POST /v2/pick-items`, `/{id}/assign`, `/unassign`, `DELETE /v2/pick-items/{id}`;
+    - `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire`;
+    - `GET /v2/items/find`;
+    - `POST /v2/stocks/update`;
+    - `GET /v2/meta`.
+  - Not mirrored: register, JWKS (Q11), and every admin operation.
+  - Tags are prefixed `v2 · `.
+  - **Version gate** dependency on the `/v2` router:
+    - `X-Client-Version` (integer) is required; missing or malformed → 400.
+    - Below `min_supported_version_code` from the published `latest.json` (T6.5; no file → no
+      minimum) → **426** `{detail, min_supported_version_code}`.
+    - `/v2/meta`, `/v2/client/*` and `/v2/device/register` are exempt, because a client that
+      is too old must still find its update.
+  - `config.CLIENT_CONTRACT_MAX = 2`; `/meta` reports `{min: 1, max: 2}`.
+  - Fill `CLIENT_V2_OPERATIONS` and write `client_v2.json`.
+- Tests:
+  - each v2 operation answers the same as its v1 twin;
+  - gate: 400, 426 and pass, with the exempt paths staying open;
+  - `/meta` max = 2;
+  - the v1 snapshot is unchanged.
+- Docs: API.md "v2" section; SYSTEM_REFERENCE new §10A "Client contract v2"; ARCHITECTURE
+  "Backend layers" (the v2 router reuses handlers and services).
+- Accept: both contract suites pass; `openapi/v2.json` is committed.
+
+**T6.4 `/v2` WebSocket (spec §3.2, P-9)**
+- Change:
+  - `WS /v2/ws?token=<ticket from /v2/auth/ws-token>` plus the `X-Client-Version` handshake
+    header.
+  - Sockets are tagged `contract = 2` in `ConnectionManager`.
+  - v2 frame: `{"type", "data", "ts"}`, where `data` is the same list of objects and `ts` is
+    the UTC send time.
+  - Payloads are still built once per audience; only the envelope differs per contract.
+  - v2 handshake errors: accept, then close with **4401** (bad, used or expired ticket, or
+    revoked session) or **4426** (client too old).
+  - The v1 `/ws` is unchanged (HTTP 403 before accept).
+  - Commands as in v1 (`get_items`, `get_shopee_orders`, `get_stocks`).
+- Tests:
+  - a v1 event reaches v2 sockets and the reverse;
+  - one payload build per audience per broadcast (call counter);
+  - close codes;
+  - `test_ws_contract_v1.py` unchanged and green.
+- Docs: API.md WS section, SYSTEM_REFERENCE §8 (contract column).
+
+**T6.5 OTA endpoints and the release publishing script (Q5, D1, P-15)**
+- Change:
+  - New config key `CLIENT_RELEASES_DIR`, default `data/releases/client`, mounted in
+    `compose.yaml` like `data/keys` (`${RELEASES_VOLUME:-./data/releases}:/app/data/releases`).
+  - `GET /v2/client/latest`: public; `latest.json` →
+    `{version_code, version_name, apk_url, sha256, min_supported_version_code, notes}`, or
+    404 if nothing is published yet.
+  - `GET /v2/client/apk/{version_code}` (int path parameter, so no traversal): `FileResponse`
+    of `orderchecker-<version_code>.apk`, `application/vnd.android.package-archive`.
+  - `scripts/publish_client_release.py <apk> --version-code N --version-name X
+    [--min-supported M] [--notes ...] [--confirm]`:
+    - copies the APK in and computes the SHA-256;
+    - writes `latest.json` atomically (temp file + rename);
+    - refuses a `version_code` that is not higher than the current one;
+    - dry run without `--confirm`.
+  - Older APKs stay on disk. A rollback is a **new** higher `version_code` built from older
+    code, because Android refuses downgrades.
+- Tests:
+  - latest with and without a file;
+  - APK download headers and an unknown version → 404;
+  - script: hash, atomic write, refusal of a lower version, dry run;
+  - the version gate reads the minimum from `latest.json`.
+- Docs: OPERATIONS "Publishing a client release"; RELEASE.md (APK steps, with
+  `apksigner verify` against the recorded fingerprint, spec §12.4); `.env.example` (new key).
+
+**T6.6 Device registration, minimal (W5(a), spec §4A.2 device-day requirement, P-12)**
+- Migration (additive): `auth.devices (id, label NULL, model, android_version,
+  app_version_code, public_key UNIQUE, status 'pending'|'active'|'revoked', token_hash NULL,
+  current_user NULL, enrolled_at, last_seen_at)`; FK `sessions.device_id → devices.id`.
+- `POST /v2/device/register` (user access token required):
+  - body: `{public_key (SPKI, base64), model, android_version, app_version_code, signature}`;
+  - `signature` = ECDSA P-256 over the caller's `sid`, made with the Keystore key; verified
+    with `cryptography`;
+  - upserts by `public_key`: a new device is `pending`; `revoked` stays revoked (403);
+  - binds the caller's session to the device.
+- Every gated `/v2` request from a session with a device updates `last_seen_at` and
+  `app_version_code` (from `X-Client-Version`), throttled like T6.2. This is the proof that OTA
+  reached each device.
+- `GET /admin/devices` (read-only list: status, current user, model, Android version, app
+  version, last seen). Approve, revoke and enrollment come in step 8.
+- Tests:
+  - bad signature → 400;
+  - re-registration is idempotent;
+  - a revoked device stays revoked;
+  - a session is bound;
+  - app version updates.
+- Docs: API.md, SYSTEM_REFERENCE §4.1 / §10A.
+
+**T6.7 v0.6.0 release prep**
+- Change:
+  - backend version `0.6.0`;
+  - RELEASE.md "v0.6.0" window:
+    1. back up;
+    2. deploy;
+    3. migrations;
+    4. create `data/releases/client`;
+    5. publish APK 2.0.0 (T6.5 script);
+    6. expect one relogin on the v1 devices;
+    7. smoke test v1 (log in, claim, pick, delete);
+    8. smoke test `/v2/meta` and `/v2/client/latest` from a laptop.
+  - Bring SYSTEM_REFERENCE, ARCHITECTURE, API, OPERATIONS and KNOWN_LIMITATIONS #3 (OTA now
+    exists) and #8 up to date.
+- Accept: §1.3 definition of done; migration gate `v0.5.0 → head`; both contract suites; full
+  integration suite.
+
+**T6.10 Android project skeleton and CI (V2-1, Q7, Q12, Q18, spec §12.4, P-13, P-14)**
+- Change:
+  - Create `frontend/client-android/` with the Gradle wrapper, Kotlin + Compose (BOM) and a
+    single `app` module (packages per feature, not one global state).
+  - `applicationId`/`namespace` `com.bakingholic.orderchecker`; `minSdk 30`, `targetSdk 37`;
+    versions in `gradle.properties` (`oc.versionCode=1`, `oc.versionName=2.0.0`).
+  - Release signing from `keystore.properties` or the `OC_*` environment (spec §12.4). Debug
+    uses `.debug` and `-debug` suffixes.
+  - **`INTERNET` in the main manifest** (KNOWN_LIMITATIONS #10).
+  - `network_security_config.xml`: cleartext only for `192.168.1.50`.
+  - `.gitignore`: `*.p12`, `*.jks`, `*.keystore`, `keystore.properties`, `local.properties`.
+  - API models generated from `backend/openapi/v2.json` (P-14).
+  - CI job `android` (`setup-java`, Gradle cache): `./gradlew lint testDebugUnitTest
+    assembleDebug assembleRelease`. The release build in CI is **unsigned** (no key in CI yet,
+    spec §12.7), so a CI-only flag skips the signing config.
+- Tests: one unit test per package to start; lint clean.
+- Docs: TESTING.md (Android commands), README (the new app), `frontend/client-android/README.md`
+  (build, sign, versions).
+- Accept: you build a signed release APK locally from a clean checkout following the README,
+  and `apksigner verify --print-certs` shows the recorded fingerprint.
+
+**T6.11 Network, auth and server profile (spec §4.5, V2_SERVER_ADDRESS §4.2 stage 1, Q11, backlog items)**
+- Change:
+  - **Server profile** `{primary, fallback?, serviceToken?}`, stored in DataStore. The default
+    is the stage-1 profile `http://192.168.1.50:8000`, no fallback.
+  - The address-switch rule (§4.2) is implemented and unit-tested now, even though stage 1 has
+    no fallback, so stage 2 needs only a new profile.
+  - Hidden settings: a 5 s long-press on the version label, then a PIN from local build config
+    (P-13). From there: edit the profile, show the device id and app version, "check for update
+    now".
+  - OkHttp client:
+    - `X-Client-Version` on every request;
+    - query parameters URL-encoded;
+    - 401 → one refresh (shared in flight) and one retry, then logout;
+    - 426 → the update screen;
+    - optional `CF-Access-*` headers from the profile.
+  - Tokens are encrypted with an Android Keystore AES-GCM key and stored in DataStore. No local
+    JWKS verification (Q11): only `exp` is read, to refresh early.
+  - Login and logout. Logout clears orders, picks and caches. No Register button.
+  - WS client for `/v2/ws`:
+    - parses `type` first;
+    - unlimited backoff (1 s → 30 s cap, with jitter);
+    - reconnects on network change;
+    - on 4401 refreshes the ticket once, then logs out; on 4426 shows the update screen.
+  - Reads `/v2/meta` (location-mode UX).
+- Tests (unit): the switch rule, refresh concurrency, the 426 and 401 paths, backoff, frame
+  parsing, token storage round trip.
+- Docs: the app README (profile, hidden settings).
+
+**T6.12 OTA updater (spec §4.4, §11.2, §12.5) — critical path**
+- Change: a separate `updater` package with no dependency on login state.
+  - Checks:
+    - **first thing at app start**, before the login screen;
+    - on resume;
+    - `WorkManager` periodic work (≥ 15 min);
+    - "check now" in hidden settings.
+  - It tries every address in the profile.
+  - Download to app cache, then verify before installing:
+    1. the SHA-256 against `latest.json`;
+    2. `getPackageArchiveInfo` with `GET_SIGNING_CERTIFICATES`: the same package, the same
+       signer digest as the installed app, and a higher `versionCode`.
+  - Install through a `PackageInstaller` session. If "install unknown apps" isn't granted,
+    open the Settings page for it with a one-line explanation.
+  - Below `min_supported_version_code` (or on a 426): a blocking update screen. Otherwise a
+    banner with "Update" and "Later".
+  - Install results are reported in the UI (success shows the new version after restart;
+    failures show the reason).
+- Tests (unit):
+  - version compare;
+  - hash mismatch rejected;
+  - signer or package mismatch rejected;
+  - blocking vs optional decision;
+  - no network → no crash and a retry later.
+- Accept: on the API 30 emulator, build N updates itself to N+1 published with the T6.5 script.
+
+**T6.13 Device identity and registration (spec §4A.1–4A.2, T6.6)**
+- Change:
+  - On first start, generate an EC P-256 keypair in the Android Keystore (non-exportable).
+  - After every login, call `POST /v2/device/register` with the public key, model,
+    `Build.VERSION.RELEASE` and `versionCode`, signing the `sid` from the access token.
+  - Show the registration status in hidden settings.
+- Tests: the signature payload, and idempotent retries when offline.
+- Accept: both rehearsal devices appear as `pending` in `GET /admin/devices`.
+
+**T6.14 OTA rehearsal (Q17, spec §11.3)** *(agent on the emulator, maintainer on the spare MT67)*
+- Run with **signed release APKs only** (KNOWN_LIMITATIONS #10), against a dev backend on the
+  LAN profile.
+  1. Install 2.0.0 (`versionCode 1`) with `adb`. Grant "install unknown apps"
+     (`adb shell appops set com.bakingholic.orderchecker REQUEST_INSTALL_PACKAGES allow`, or
+     through Settings).
+  2. Log in; the device shows as `pending`.
+  3. Publish `versionCode 2` and update. Then publish `3` with `--min-supported 3` and check
+     the blocking update screen.
+  4. Updater without a session: log out (or build a variant with login disabled), publish
+     `4`, and update from the login screen.
+  5. Negative cases: a wrong `sha256` in `latest.json` is rejected, and so is an APK signed
+     with the debug key.
+  6. On the MT67 only:
+     - note any Play Protect prompt;
+     - note the wedge suffix (Enter or Tab);
+     - scan into a v2 field;
+     - note model and Android build.
+- Accept: every step passes on both targets, and the results are recorded in §7.
+
+**T6.15 Feature parity (W4, spec §4.3, KNOWN_LIMITATIONS #4)** — may ship after the device day
+over OTA. One sub-task per screen, each with unit tests and a short manual check on the
+emulator:
+- T6.15a scan input component: keyboard wedge, a focused field that submits on the configured
+  suffix, focus restored after every action; no soft keyboard.
+- T6.15b Orders · Inbound:
+  - scan an order (`^\d{6}`) → acquire (404 → sync and retry once) → select it;
+  - scan SKUs and quantity → pick;
+  - assign, unassign, delete;
+  - whole-card scrolling;
+  - the over-quantity warning compares resolved SKUs.
+- T6.15c Orders · Outbound: scan a label, history with a tag filter.
+- T6.15d Item finder.
+- T6.15e Stocks: set, add, transfer, with location suggestions.
+- T6.15f Account and the connection banner.
+
+**T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)*
+1. Back up the devices' state (nothing to keep apart from v1, which stays installed).
+2. Per device:
+   1. `adb install` the published 2.0.0 (or newer) APK;
+   2. grant "install unknown apps";
+   3. open the app: the update check runs first;
+   4. log in, and confirm `pending` in `GET /admin/devices`.
+3. One real OTA to a dummy build on both devices.
+4. Record per device: model, Android build, wedge suffix, Play Protect behaviour.
+5. Operators keep v1 for anything v2 can't do yet (pilot order: Q20, pinned).
+
+### Step 7: Vue admin at `/console/` (V2-3, V2-6, D1, Q13) — after the device day
+
+- **T7.1 Skeleton and hosting.**
+  - `frontend/admin-web/`: Vue 3 + Vite (`base: '/console/'`), Vue Router, Pinia, Naive UI.
+  - TS types from `backend/openapi/admin.json` via `openapi-typescript`.
+  - The admin `Dockerfile` gains a Node build stage, and both apps go into one nginx image.
+  - nginx `location /console/`: SPA fallback to `/console/index.html`; `immutable` caching for
+    `/console/assets/`; security headers repeated (TF.5 rule).
+  - CI job `admin-web`: lint, type-check, unit tests, build.
+  - Check with `nginx -t` after envsubst.
+- **T7.2 Login and session handling.**
+  - `POST /auth/admin`; the access token lives in memory and the refresh token in
+    `sessionStorage` (P-20).
+  - 401 → one refresh. The WS client uses v1-framed `/ws`.
+- **T7.3–T7.9 Screens, ported one at a time in spec §5 order:**
+  - users (plus "log out everywhere", T6.2);
+  - orders and scan history (`limit`/`offset`, `X-Total-Count`);
+  - inventory;
+  - period closure;
+  - BOM inspection;
+  - Shopee config (`X-Config-Token`);
+  - CSV exports (Blob download).
+  - Each task is done when it matches the Flutter screen. During the overlap the admin API only
+    changes additively (spec §5).
+- **T7.10 Devices view:** the read-only list from `GET /admin/devices`.
+- **T7.11 Retire the Flutter admin** once every screen is ported and used for 2 weeks (Q8,
+  pinned): Vue moves to `/` and `frontend/admin/` is removed.
+
+### Step 8: device control (spec §4A, W5(b)–(d), Q9) — later
+
+- **T8.1 Approve and revoke.**
+  - Admin endpoints and Vue screens.
+  - Revoking a device kills all its sessions (T6.2 machinery) and its device token.
+  - Approving issues a **device token**: random, stored hashed in `auth.devices.token_hash`,
+    and kept by the device encrypted with a Keystore key.
+- **T8.2 Device credential on the update endpoints** (Q5 follow-up): `/v2/client/*` also
+  accepts the device token, and the public access is removed once both devices have one.
+- **T8.3 QR enrollment:** a short-lived code generated in the admin; the QR carries the server
+  profile too (V2_SERVER_ADDRESS §4.2).
+- **T8.4 Device WS channel and commands:** `logout`, `assign_user`, `update_now`,
+  `refresh_config`, with acknowledgement; desired state through `GET /v2/device/state`; audit
+  of user and device.
+- **T8.5 Per-device config:** `GET /v2/device/config`, including server-profile pushes for
+  stage 2.
+
 ### Housekeeping (any time; D2.1)
 
 - **TH.1**
@@ -548,6 +968,12 @@ All Step 1 tasks are client-safe.
   - package chunk size (docs say 10, code says 50)
   - Known Limitation #6's references to `AGENTS.md` / `GEMINI.md`
   - document or retire the `STOCK_SINGLE_LOCATION_BYPASS` alias (covered by T2.9)
+- **TH.3** Drop the Windows operator client ([V2_DELTA.md](V2_DELTA.md) D1, ex V2-2):
+  - Delete `frontend/client/windows/`.
+  - Supported targets become: operator client **Android only**, admin **web only**. Update
+    KNOWN_LIMITATIONS #7 and #8, SYSTEM_REFERENCE §1/§2/§12.1, ARCHITECTURE "Frontends",
+    README, and TESTING if it mentions Windows.
+  - `flutter analyze && flutter test` in `frontend/client`.
 
 ---
 
@@ -563,8 +989,13 @@ All Step 1 tasks are client-safe.
   - Compare resolved SKUs in the over-quantity warning.
   - Clear orders and picks on logout.
   - Ship side by side with v1 through `/v2` routes only where operations change (A-5).
+  - **→ Scheduled as steps 6–8.** A-5 is superseded by V2-5 + V2_DELTA D1 (the `/v2` mirror
+    of the client surface). Every item above is folded into T6.11 and T6.15.
 - Move Shopee sync off the request path to a scheduled worker; consider Shopee push
-  notifications.
+  notifications. Review the sync flow first (V2_DELTA Q25, pinned; 4–5 s today).
+- v2 stage 2: domain via Cloudflare Tunnel (maintainer runbook, V2_SERVER_ADDRESS §7). It needs
+  T6.11's profile and a `compose.tunnel.yaml` + Uvicorn proxy-headers task, to be planned
+  then.
 - Multi-worker readiness: Redis pub/sub fan-out and a distributed sync lock.
 - Admin shortfall/reconciliation report (Q5).
 - `timestamptz` migration.
@@ -594,6 +1025,27 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | F-M1 | T1.6 | | F-M18 | T5.1 (`ws` ticket: frozen, accepted) |
 | F-M2, F-M3 | T4.8 | | Low items | T3.1 (versions), T2.9 (alias), T2.2 (deps), T5.3–T5.4, TH.1–TH.2; Dockerfile migrate-on-start accepted (D1.2) |
 | F-M4 | T4.8 + T0.2 (WS 403 check) | | WS error string frames | T1.9 *(placed in planning)* |
+
+### 6.1 v2 decision coverage
+
+| Decision (V2_DELTA) | Task |
+|---|---|
+| V2-5 + D1 `/v2` scope, P-10, P-11 | T6.3 |
+| D1 `/console/` | T7.1 |
+| D1 APK served by the backend, Q5 | T6.5 (T8.2 device credential later) |
+| D1 TH.3 Windows dropped | TH.3 |
+| Q1 MT67 keyboard wedge (Q22 broadcast API pinned) | T6.15a, T6.14 |
+| Q6 option C, stage 1 | T6.11 (stage 2: backlog, V2_SERVER_ADDRESS §7) |
+| Q7 directories | T6.10, T7.1 |
+| Q9 device token | T8.1 |
+| Q10, Q19, Q24 sessions, instant revocation | T6.2 |
+| Q11 no local JWKS | T6.11 |
+| Q12 Android deps, Q18 identity and signing | T6.10 |
+| Q13 Vue deps | T7.1 |
+| Q14 committed OpenAPI files | T6.1 |
+| Q15 no device owner, Q16 `adb`, Q17 rehearsal | T6.14, T6.16 |
+| KNOWN_LIMITATIONS #10 (release manifest) | T6.10, T6.14 |
+| Pinned: Q8 retirement, Q20 pilot, Q21 Google registration, Q25 sync review | T7.11 / T6.16 / your task / backlog |
 
 ---
 
@@ -656,3 +1108,29 @@ same change as the task.
 | TF.4 | done | migration `c3f8a2d5e6b1` drops `orders.pick_item_entries_log`; never written, superseded by `stocks_log` (`ref_type='pick_entry'`). Gate passed for empty → head and `v0.4.0` → head |
 | TF.5 | done | admin web stuck on an old build: nginx served unhashed Flutter `.js` as `immutable` for a year. Now `no-cache` (ETag revalidation); security headers repeated per location (nginx drops inherited `add_header`); `.env*` kept out of the image; builder pinned to `cirruslabs/flutter:3.44.0` (no newer image exists; CI runs 3.47.5). One hard reload per admin browser after the v0.5.0 deploy (RELEASE.md) |
 | TF.6 | done | backend version 0.5.0; client toolchain files synced to Flutter 3.47.5 (migrator output, `pubspec.lock`) |
+| TH.3 | todo | decided in V2_DELTA D1 (2026-11-22); independent of the v2 work |
+| T6.0 | todo | |
+| T6.1 | todo | |
+| T6.2 | todo | |
+| T6.3 | todo | |
+| T6.4 | todo | |
+| T6.5 | todo | |
+| T6.6 | todo | |
+| T6.7 | todo | |
+| T6.10 | todo | |
+| T6.11 | todo | |
+| T6.12 | todo | |
+| T6.13 | todo | |
+| T6.14 | todo | |
+| T6.15 | todo | |
+| T6.16 | todo | |
+| T7.1 | todo | |
+| T7.2 | todo | |
+| T7.3–T7.9 | todo | |
+| T7.10 | todo | |
+| T7.11 | todo | |
+| T8.1 | todo | |
+| T8.2 | todo | |
+| T8.3 | todo | |
+| T8.4 | todo | |
+| T8.5 | todo | |

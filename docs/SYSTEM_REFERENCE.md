@@ -621,6 +621,9 @@ refresh and reconnect, or logout.
 
 ### 12.1 Operator client (`frontend/client`, Android + Windows)
 
+Production devices run a **debug** build: release builds lack the `INTERNET` permission
+(KNOWN_LIMITATIONS #10).
+
 Drawer navigation; Inbound, Outbound and Stocks have **Input / History** sub-tabs.
 
 | Index | Screen | Behaviour |
