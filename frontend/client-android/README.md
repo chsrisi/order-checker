@@ -102,6 +102,16 @@ What an operator sees on Android 11 (checked on the API 30 emulator):
    The MT67 may not have Play services; check on the device day.
 4. The app closes; reopen it and the version label shows the new build.
 
+## Device identity
+
+On first use the app creates an EC P-256 key pair in the Android Keystore (`oc_device`,
+non-exportable, signing only). After every login it calls `POST /v2/device/register` with the
+public key, model, Android version and versionCode, signing the access token's `sid`. New
+devices are `pending` in `GET /admin/devices`; approval and revocation screens come with step
+8. Registration retries with backoff when offline (it is idempotent on the server), and the
+hidden settings show the device id and status. Uninstalling the app (or clearing its data)
+deletes the key: the device then registers as a new `pending` device.
+
 ## Layout
 
 - `core/`: app identity (`AppInfo`: versionCode, contract).
@@ -112,4 +122,4 @@ What an operator sees on Android 11 (checked on the API 30 emulator):
 - `api/model/` (generated, `build/generated/openapi`): models from `backend/openapi/v2.json`.
   Regenerated on every build; never edit or commit them.
 - `updater/`: update policy, APK verification, download, PackageInstaller, periodic worker.
-- Device identity: IMPLEMENTATION_PLAN T6.13.
+- `device/`: Keystore device key, registration with retry.

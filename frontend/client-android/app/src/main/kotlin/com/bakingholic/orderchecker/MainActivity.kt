@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bakingholic.orderchecker.device.DeviceStatus
 import com.bakingholic.orderchecker.ui.AppViewModel
 import com.bakingholic.orderchecker.ui.HomeScreen
 import com.bakingholic.orderchecker.ui.LoginScreen
@@ -58,6 +59,7 @@ private fun App(vm: AppViewModel) {
     val onFallback by vm.onFallback.collectAsStateWithLifecycle()
     val meta by vm.meta.collectAsStateWithLifecycle()
     val update by vm.updateState.collectAsStateWithLifecycle()
+    val device by vm.deviceStatus.collectAsStateWithLifecycle()
     val graph = vm.graph
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column {
@@ -68,7 +70,14 @@ private fun App(vm: AppViewModel) {
                         pinGate = graph.pinGate,
                         profile = graph.profile,
                         appVersion = graph.appInfo.label,
-                        deviceInfo = "Device: not registered yet",
+                        deviceInfo = "Device: " + when (val d = device) {
+                            DeviceStatus.Unregistered -> "not registered (log in first)"
+                            DeviceStatus.Registering -> "registering…"
+                            is DeviceStatus.Retrying -> "registration pending (${d.reason}); retrying"
+                            is DeviceStatus.Registered -> "${d.deviceId.take(8)} · ${d.status}"
+                            DeviceStatus.Revoked -> "REVOKED by the admin"
+                            is DeviceStatus.Rejected -> "registration refused (${d.reason})"
+                        },
                         onSave = vm::saveProfile,
                         onCheckUpdate = { vm.checkForUpdate() },
                         onClose = vm::closeSettings,

@@ -1,6 +1,10 @@
 package com.bakingholic.orderchecker
 
 import android.content.Context
+import android.os.Build
+import com.bakingholic.orderchecker.device.DataStoreRegistrationStore
+import com.bakingholic.orderchecker.device.DeviceRegistrar
+import com.bakingholic.orderchecker.device.KeystoreDeviceKeys
 import android.net.ConnectivityManager
 import android.net.Network
 import androidx.datastore.core.DataStore
@@ -71,6 +75,16 @@ class AppGraph(context: Context) {
     val meta = MetaRepository(api)
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
+
+    // Device identity (T6.13): Keystore key, registered after every login.
+    val device = DeviceRegistrar(
+        session,
+        KeystoreDeviceKeys(),
+        appInfo,
+        model = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+        androidVersion = Build.VERSION.RELEASE,
+        store = DataStoreRegistrationStore(context.settingsStore),
+    )
 
     // OTA updater (T6.12): independent of the login state.
     val updates = UpdateManager(

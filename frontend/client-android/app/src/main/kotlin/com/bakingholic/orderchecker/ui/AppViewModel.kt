@@ -8,6 +8,7 @@ import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
 import com.bakingholic.orderchecker.net.ServerUnreachableException
 import com.bakingholic.orderchecker.net.UpgradeRequiredException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,8 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val wsState = graph.ws.state
     val meta = graph.meta.meta
     val updateState = graph.updates.state
+    val deviceStatus = graph.device.status
+    private var registration: Job? = null
 
     init {
         viewModelScope.launch {
@@ -85,6 +88,7 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     }
 
     fun logout() {
+        registration?.cancel()
         viewModelScope.launch {
             graph.session.logout()
             _screen.value = Screen.Login()
@@ -117,6 +121,8 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
 
     private fun enterHome() {
         graph.ws.start()
+        registration?.cancel()
+        registration = viewModelScope.launch { graph.device.registerWithRetry() }
         viewModelScope.launch { runCatching { graph.meta.refresh() } }
     }
 
