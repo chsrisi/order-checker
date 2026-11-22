@@ -27,19 +27,23 @@ After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z` (maintain
 
 1. **Announce** the window to operators. Ask them to finish open picks and scans.
 2. **Back up** (keep for at most 90 days, ideally 30; see OPERATIONS "Data Retention"):
+
    ```bash
    cd backend
    docker compose exec -T db pg_dump -U postgres -Fc bakingholic > backup-$(date +%F).dump
    docker compose exec -T redis sh -c 'REDISCLI_AUTH="$(cat /run/secrets/redis_password 2>/dev/null)" redis-cli SAVE'
    tar czf keys-$(date +%F).tgz data/keys
    ```
+
    (Before v0.4.0, Redis has no password, so the `REDISCLI_AUTH` part is empty and still works.)
 3. **Deploy:**
+
    ```bash
    git fetch --tags && git checkout vX.Y.Z
    docker compose -f compose.yaml -f compose.prod.yaml up -d --build
    docker compose -f compose.yaml -f compose.prod.yaml logs -f server   # migrations + "startup_config_accepted"
    ```
+
    If startup is refused, the log lists every configuration problem (OPERATIONS
    "Environment Profiles"). Fix them and run `up -d` again.
 4. **Smoke test:**
@@ -64,9 +68,7 @@ V2_SPEC §12.2–12.3. Its SHA-256 certificate fingerprint is public: record it 
 compare every release APK against it (`apksigner verify --print-certs <apk>`, the
 `Signer #1 certificate SHA-256 digest` line). A mismatch means the wrong key: do not publish.
 
-<!-- Paste the output of: keytool -list -v -keystore <p12> -alias orderchecker | grep SHA256:
-     (keytool prints it with colons; apksigner prints it without; both are the same value) -->
-- Release key (alias `orderchecker`, generated YYYY-MM-DD): `SHA256: <paste fingerprint>`
+- Release key (alias `orderchecker`, generated 2026-11-22): `SHA256: 95:46:2A:5E:71:9C:66:95:13:E1:48:6C:44:4E:B0:9D:79:8D:42:89:C6:CB:41:B8:49:40:FF:33:76:BE:53:FA`
 
 ## 5. Release-specific windows
 
@@ -129,10 +131,12 @@ the commands below were run then. Kept as the record of that window. This window
    created. A downgrade keeps the folded rows.
 3. Run the cutover command. It deletes the remaining open pick entries **without restoring
    stock** and writes one `cutover_clear` log row:
+
    ```bash
    docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries            # count only
    docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries --confirm
    ```
+
    If this step is missed, a legacy entry has no allocations, and deleting it restores nothing.
    Nothing is guessed.
 4. If production runs `STOCK_LOCATION_MODE=single`, also run
@@ -162,11 +166,13 @@ and shows the login screen; operators log in once. The admin web logs in again t
 6. Smoke test v1 on one device: log in (expect the relogin), sync, claim an order, add a pick,
    delete it (stock comes back), scan a test label.
 7. Smoke test v2 from a laptop on the LAN:
+
    ```bash
    curl -s http://192.168.1.50:8000/v2/meta          # client_contract {"min":1,"max":2}
    curl -si http://192.168.1.50:8000/v2/client/latest | head -1   # 404 until step 5, then 200
    curl -si http://192.168.1.50:8000/v2/items/find?query=x | head -1   # 400: no X-Client-Version
    ```
+
 8. Admin: *log out everywhere* on a test operator (`POST /admin/users/{username}/logout`), check
    that its device returns to the login screen within one request.
 
