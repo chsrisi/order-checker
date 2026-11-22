@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# Signing material never enters git (V2_SPEC §12)
+keystore.properties
+*.p12
+*.jks
+*.keystore

@@ -102,6 +102,19 @@ cd frontend/client && flutter analyze && flutter test
 cd frontend/admin && flutter analyze && flutter test
 ```
 
+Android operator app v2 (`frontend/client-android`, needs a JDK 17+ and the Android SDK with
+platform 37.2; Android Studio's bundled JBR works as `JAVA_HOME`):
+
+```bash
+cd frontend/client-android
+./gradlew lint testDebugUnitTest assembleDebug
+./gradlew assembleRelease -Poc.unsignedRelease=true   # without a key; signed: see its README
+```
+
+The API models are generated from `backend/openapi/v2.json` at build time, so a contract
+change shows up as a compile error or a failing model test. Emulator checks use an API 30
+image (Android 11, like the MT67).
+
 ## Test conventions
 
 - Name tests after observable behavior, not implementation methods.
@@ -136,6 +149,7 @@ production rows into fixtures.
 |---|---|
 | `backend` | Ruff, `requirements.txt` in sync with `uv.lock` (`--no-dev`), the full pytest suite (unit + contract v1 + PostgreSQL integration) |
 | `migrations` | `backend/scripts/ci_migration_gate.sh`: empty → head, and previous `v*` tag → head |
+| `android (client-android)` | Gradle `lint`, unit tests, debug build, unsigned release build |
 | `flutter (client/admin)` | `flutter analyze` and `flutter test` (with `.env` copied from `.env.example`) |
 
 Run the migration gate locally against a disposable database:

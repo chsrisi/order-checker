@@ -1117,7 +1117,7 @@ same change as the task.
 | T6.5 | done | Releases volume mounted **read-only**; the script runs on the host (`--dir`). APK path parameter is an int (no traversal). Range requests/resume left to `FileResponse` defaults |
 | T6.6 | done | migration `e5b8f3a1c2d4`. **Deviations:** column `current_username` (not `current_user`, a reserved SQL word); `cryptography` declared in `pyproject.toml` (already installed, P-12). Device touch rides on the per-request session lookup (no extra query); `app_version_code` is written immediately on change, `last_seen_at` throttled. Registration itself is not version-gated |
 | T6.7 | done | version 0.6.0; RELEASE.md v0.6.0 window. APK publish moved to the device day (no APK exists before T6.10). Tag and release PR are the maintainer's (docs/RELEASE.md §1) |
-| T6.10 | todo | |
+| T6.10 | done | AGP 9.5.2 (built-in Kotlin) + Kotlin 2.4.21, Gradle 9.9.2, Compose BOM 2026.11.01. **Deviations:** `compileSdk` 37.2 (the BOM needs ≥ 37.1; `targetSdk` stays 37); bytecode 17 without a Gradle toolchain (any JDK ≥ 17 builds); OpenAPI spec validation off (exports strip `info.version`); debug-only cleartext to `10.0.2.2` for emulator rehearsal; backups disabled (tokens, device key). Launch checked on the API 30 emulator |
 | T6.11 | todo | |
 | T6.12 | todo | |
 | T6.13 | todo | |
