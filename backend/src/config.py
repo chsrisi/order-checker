@@ -182,11 +182,15 @@ def stock_location_mode() -> str:
 # Versions (IMPLEMENTATION_PLAN T3.1, delta A-7)
 # ------------------------------------------------------------------------------
 # One SemVer for the backend: [project].version in backend/pyproject.toml.
-# CLIENT_CONTRACT is the operator-client API major the backend serves (KNOWN_LIMITATIONS #8);
-# it changes only with a client major and side-by-side /v2 routes.
-CLIENT_CONTRACT = 1
+# CLIENT_CONTRACT is the newest operator-client API major the backend serves (KNOWN_LIMITATIONS
+# #8); it changes only with a client major and side-by-side routes. Since v0.6.0 the root routes
+# are contract v1 (frozen) and /v2 is contract v2 (IMPLEMENTATION_PLAN T6.3).
+CLIENT_CONTRACT = 2
 CLIENT_CONTRACT_MIN = 1
-CLIENT_CONTRACT_MAX = 1
+CLIENT_CONTRACT_MAX = 2
+
+# Directory holding the published operator-client APKs and latest.json (T6.5, V2_DELTA Q5).
+CLIENT_RELEASES_DIR = get_config_value("CLIENT_RELEASES_DIR", "data/releases/client")
 
 
 def read_project_version(pyproject: Path | None = None) -> str:

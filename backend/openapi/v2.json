@@ -1,0 +1,2217 @@
+{
+  "components": {
+    "schemas": {
+      "ClientReleaseResponse": {
+        "properties": {
+          "apk_url": {
+            "description": "Path of the APK on this server; resolve it against the address used.",
+            "title": "Apk Url",
+            "type": "string"
+          },
+          "min_supported_version_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Older apps get 426 on every gated /v2 call and must update.",
+            "title": "Min Supported Version Code"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "sha256": {
+            "description": "Hex SHA-256 of the APK; verify before installing.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "version_code": {
+            "description": "Android versionCode of the newest published APK.",
+            "title": "Version Code",
+            "type": "integer"
+          },
+          "version_name": {
+            "title": "Version Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_code",
+          "version_name",
+          "apk_url",
+          "sha256"
+        ],
+        "title": "ClientReleaseResponse",
+        "type": "object"
+      },
+      "ContractRange": {
+        "properties": {
+          "max": {
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "ContractRange",
+        "type": "object"
+      },
+      "DeviceRegisterRequest": {
+        "properties": {
+          "android_version": {
+            "maxLength": 32,
+            "title": "Android Version",
+            "type": "string"
+          },
+          "app_version_code": {
+            "minimum": 0.0,
+            "title": "App Version Code",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 128,
+            "title": "Model",
+            "type": "string"
+          },
+          "public_key": {
+            "description": "Base64 DER SubjectPublicKeyInfo of an EC P-256 key.",
+            "maxLength": 1024,
+            "title": "Public Key",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 `sid` claim of the caller's access token, made with the Keystore private key.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_key",
+          "model",
+          "android_version",
+          "app_version_code",
+          "signature"
+        ],
+        "title": "DeviceRegisterRequest",
+        "type": "object"
+      },
+      "DeviceResponse": {
+        "properties": {
+          "android_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Android Version"
+          },
+          "app_version_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version Code"
+          },
+          "current_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Username"
+          },
+          "enrolled_at": {
+            "format": "date-time",
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "enrolled_at"
+        ],
+        "title": "DeviceResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "MetaResponse": {
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "app_env": {
+            "title": "App Env",
+            "type": "string"
+          },
+          "client_contract": {
+            "$ref": "#/components/schemas/ContractRange"
+          },
+          "features": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Features",
+            "type": "object"
+          },
+          "stock_location_mode": {
+            "title": "Stock Location Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_version",
+          "client_contract",
+          "app_env",
+          "stock_location_mode",
+          "features"
+        ],
+        "title": "MetaResponse",
+        "type": "object"
+      },
+      "OutboundCreate": {
+        "properties": {
+          "content": {
+            "description": "Order number or shipping label value.",
+            "examples": [
+              "240719ABC123"
+            ],
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional scanner-supplied classification tags.",
+            "title": "Tags"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "OutboundCreate",
+        "type": "object"
+      },
+      "OutboundResponse": {
+        "properties": {
+          "closed": {
+            "default": false,
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "owner_user": {
+            "title": "Owner User",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "created_at",
+          "owner_user"
+        ],
+        "title": "OutboundResponse",
+        "type": "object"
+      },
+      "PickItemEntryAssign": {
+        "properties": {
+          "order_sn": {
+            "description": "Claimed Shopee order number.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Quantity to assign; defaults to the full entry.",
+            "title": "Qty"
+          }
+        },
+        "required": [
+          "order_sn"
+        ],
+        "title": "PickItemEntryAssign",
+        "type": "object"
+      },
+      "PickItemEntryCreate": {
+        "properties": {
+          "order_sn": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Sn"
+          },
+          "qty": {
+            "description": "Quantity to add to the pick list.",
+            "exclusiveMinimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "Warehouse SKU or recognized barcode.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "title": "PickItemEntryCreate",
+        "type": "object"
+      },
+      "PickItemEntryResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "order_sn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Sn"
+          },
+          "owner_user": {
+            "title": "Owner User",
+            "type": "string"
+          },
+          "qty": {
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sku",
+          "qty",
+          "timestamp",
+          "owner_user"
+        ],
+        "title": "PickItemEntryResponse",
+        "type": "object"
+      },
+      "PickItemEntryUnassign": {
+        "properties": {
+          "order_sn": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "qty": {
+            "exclusiveMinimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "sku",
+          "qty"
+        ],
+        "title": "PickItemEntryUnassign",
+        "type": "object"
+      },
+      "RefreshTokenRequest": {
+        "properties": {
+          "refresh_token": {
+            "description": "Refresh token returned by login or registration.",
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshTokenRequest",
+        "type": "object"
+      },
+      "ShopeeAcquireResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "order_sn"
+        ],
+        "title": "ShopeeAcquireResponse",
+        "type": "object"
+      },
+      "ShopeeOrderInfoResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "logistics_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logistics Status"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "package_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Number"
+          },
+          "pickup_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pickup Code"
+          },
+          "tracking_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracking Number"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ShopeeOrderInfoResponse",
+        "type": "object"
+      },
+      "ShopeeOrderItemBOMResponse": {
+        "properties": {
+          "component_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Name"
+          },
+          "component_sku": {
+            "title": "Component Sku",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "component_sku",
+          "quantity"
+        ],
+        "title": "ShopeeOrderItemBOMResponse",
+        "type": "object"
+      },
+      "ShopeeOrderRecipientResponse": {
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ShopeeOrderRecipientResponse",
+        "type": "object"
+      },
+      "ShopeeOrderResponse": {
+        "properties": {
+          "done": {
+            "default": false,
+            "title": "Done",
+            "type": "boolean"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          },
+          "info": {
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderInfoResponse"
+            },
+            "title": "Info",
+            "type": "array"
+          },
+          "item_list": {
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderItemBOMResponse"
+            },
+            "title": "Item List",
+            "type": "array"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "owner_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User"
+          },
+          "recipient_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShopeeOrderRecipientResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ship_by": {
+            "format": "date-time",
+            "title": "Ship By",
+            "type": "string"
+          },
+          "shipping_carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Carrier"
+          },
+          "split_up": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Up"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "status",
+          "ship_by"
+        ],
+        "title": "ShopeeOrderResponse",
+        "type": "object"
+      },
+      "StockCreate": {
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "mode": {
+            "default": "set",
+            "description": "Adjustment behavior when not transferring.",
+            "enum": [
+              "add",
+              "set"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "move_to": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move To"
+          },
+          "sku": {
+            "description": "Warehouse SKU or recognized barcode.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          },
+          "stock": {
+            "description": "Quantity to set/add, or transfer amount.",
+            "minimum": 0.0,
+            "title": "Stock",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sku",
+          "stock"
+        ],
+        "title": "StockCreate",
+        "type": "object"
+      },
+      "StockUpdateResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "stock": {
+            "title": "Stock",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "sku",
+          "stock"
+        ],
+        "title": "StockUpdateResponse",
+        "type": "object"
+      },
+      "Token": {
+        "properties": {
+          "access_token": {
+            "description": "Short-lived RS256 bearer token.",
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "description": "Single-use-on-refresh token valid for 24 hours.",
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "Token",
+        "type": "object"
+      },
+      "UserAuth": {
+        "properties": {
+          "password": {
+            "examples": [
+              "correct-horse-battery-staple"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "examples": [
+              "operator_1"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserAuth",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WarehouseItemResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku"
+        ],
+        "title": "WarehouseItemResponse",
+        "type": "object"
+      },
+      "WebSocketTicketResponse": {
+        "properties": {
+          "expires_in": {
+            "description": "Ticket lifetime in seconds.",
+            "examples": [
+              30
+            ],
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token": {
+            "description": "One-use WebSocket ticket.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_in"
+        ],
+        "title": "WebSocketTicketResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Backend for the Bakingholic operator and administrator applications. Authenticate with an RS256 bearer token. WebSocket clients first request a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is documented in the project API guide because OpenAPI does not describe it.",
+    "license": {
+      "name": "Proprietary"
+    },
+    "summary": "Order fulfillment, warehouse inventory, and Shopee synchronization API.",
+    "title": "Bakingholic Order Checker API"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v2/auth/login": {
+      "post": {
+        "description": "Authenticates any existing account for the operator application.",
+        "operationId": "v2_login_client_v2_auth_login_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserAuth"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "429": {
+            "description": "Too many failed attempts for this username; retry later"
+          }
+        },
+        "summary": "Log in an operator",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/logout": {
+      "post": {
+        "description": "Ends the refresh token's session: its access and refresh tokens stop working at once and its WebSocket connections are closed.",
+        "operationId": "v2_logout_v2_auth_logout_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Malformed refresh token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "summary": "Log out",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/refresh": {
+      "post": {
+        "description": "Consumes a stored refresh token and returns a replacement token pair.",
+        "operationId": "v2_refresh_v2_auth_refresh_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid, expired, revoked, or already consumed token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "summary": "Rotate a refresh token",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/ws-token": {
+      "post": {
+        "description": "Returns a one-use ticket that expires after configured TTL.",
+        "operationId": "v2_create_ws_token_v2_auth_ws_token_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a WebSocket ticket",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/client/apk/{version_code}": {
+      "get": {
+        "description": "Public. The published APK with this versionCode.",
+        "operationId": "download_apk_v2_client_apk__version_code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_code",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Version Code",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.android.package-archive": {}
+            },
+            "description": "The APK file"
+          },
+          "404": {
+            "description": "No APK with this versionCode"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download an operator-app APK",
+        "tags": [
+          "v2 \u00b7 client release"
+        ]
+      }
+    },
+    "/v2/client/latest": {
+      "get": {
+        "description": "Public. Metadata of the newest published APK, written by `scripts.publish_client_release`. 404 while nothing is published.",
+        "operationId": "latest_release_v2_client_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No release published"
+          }
+        },
+        "summary": "Newest operator-app release",
+        "tags": [
+          "v2 \u00b7 client release"
+        ]
+      }
+    },
+    "/v2/device/register": {
+      "post": {
+        "description": "Operator access token required. Registers the device by its Keystore public key (new devices are `pending`) and binds the caller's session to it. Idempotent: call it after every login. `signature` signs the token's `sid` claim.",
+        "operationId": "register_device_v2_device_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid public key or signature"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "403": {
+            "description": "Device revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Register this device",
+        "tags": [
+          "v2 \u00b7 device"
+        ]
+      }
+    },
+    "/v2/items/find": {
+      "get": {
+        "description": "Performs case-insensitive SKU/name lookup and recognizes configured barcode aliases.",
+        "operationId": "v2_find_warehouse_items_v2_items_find_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WarehouseItemResponse"
+                  },
+                  "title": "Response V2 Find Warehouse Items V2 Items Find Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Find warehouse items",
+        "tags": [
+          "v2 \u00b7 items"
+        ]
+      }
+    },
+    "/v2/meta": {
+      "get": {
+        "description": "Public. API version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.",
+        "operationId": "v2_get_meta_v2_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Server metadata",
+        "tags": [
+          "v2 \u00b7 meta"
+        ]
+      }
+    },
+    "/v2/outbound": {
+      "post": {
+        "description": "Stores a trimmed label value, rejects a duplicate open scan for the same user, and adds a matched order's carrier tag.",
+        "operationId": "v2_create_outbound_v2_outbound_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "409": {
+            "description": "Duplicate open scan"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record an outbound scan",
+        "tags": [
+          "v2 \u00b7 outbound"
+        ]
+      }
+    },
+    "/v2/pick-items": {
+      "post": {
+        "description": "Resolves the SKU/barcode and merges the quantity into a matching user/order entry.",
+        "operationId": "v2_create_pie_v2_pick_items_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickItemEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickItemEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "404": {
+            "description": "SKU/barcode not found, or `order_sn` not claimed by the caller"
+          },
+          "409": {
+            "description": "`order_sn` is already completed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add a pick-list entry",
+        "tags": [
+          "v2 \u00b7 pick items"
+        ]
+      }
+    },
+    "/v2/pick-items/unassign": {
+      "post": {
+        "description": "Moves up to the requested quantity from an order-specific entry back to the user's general pick list.",
+        "operationId": "v2_unassign_pie_v2_pick_items_unassign_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickItemEntryUnassign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "404": {
+            "description": "Assigned entry not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Return picked quantity from an order",
+        "tags": [
+          "v2 \u00b7 pick items"
+        ]
+      }
+    },
+    "/v2/pick-items/{entry_id}": {
+      "delete": {
+        "description": "Operators may delete their own entries; administrators may delete any entry. The stock the entry deducted is returned to inventory.",
+        "operationId": "v2_delete_pie_v2_pick_items__entry_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "404": {
+            "description": "Entry not found or not owned by user"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete a pick entry",
+        "tags": [
+          "v2 \u00b7 pick items"
+        ]
+      }
+    },
+    "/v2/pick-items/{entry_id}/assign": {
+      "post": {
+        "description": "Moves all or part of an unassigned entry to an order claimed by the authenticated operator.",
+        "operationId": "v2_assign_pie_v2_pick_items__entry_id__assign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickItemEntryAssign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickItemEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid quantity"
+          },
+          "404": {
+            "description": "Entry or claimed order not found"
+          },
+          "409": {
+            "description": "Order already completed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Assign a pick entry to an order",
+        "tags": [
+          "v2 \u00b7 pick items"
+        ]
+      }
+    },
+    "/v2/shopee/orders": {
+      "get": {
+        "description": "Synchronizes with Shopee, then returns active orders: all of them for admins, only the caller's claimed orders for operators. `refresh=true` invalidates the two-minute in-process cache before synchronization.",
+        "operationId": "v2_get_shopee_orders_v2_shopee_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShopeeOrderResponse"
+                  },
+                  "title": "Response V2 Get Shopee Orders V2 Shopee Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "502": {
+            "description": "Shopee request failed"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Synchronize active Shopee orders",
+        "tags": [
+          "v2 \u00b7 Shopee"
+        ]
+      }
+    },
+    "/v2/shopee/orders/acquire": {
+      "post": {
+        "description": "Assigns an existing synchronized order to the authenticated operator.",
+        "operationId": "v2_acquire_order_v2_shopee_orders_acquire_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "order_sn",
+            "required": true,
+            "schema": {
+              "title": "Order Sn",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShopeeAcquireResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "Order assigned to another operator"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim a Shopee order",
+        "tags": [
+          "v2 \u00b7 Shopee"
+        ]
+      }
+    },
+    "/v2/stocks/update": {
+      "post": {
+        "description": "Sets/adds inventory at a location, or transfers a positive quantity to `move_to` without allowing negative source stock.",
+        "operationId": "v2_update_stock_v2_stocks_update_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid mode, quantity, or transfer"
+          },
+          "404": {
+            "description": "SKU/barcode not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Adjust or transfer inventory",
+        "tags": [
+          "v2 \u00b7 stocks"
+        ]
+      }
+    }
+  }
+}

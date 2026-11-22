@@ -1,23 +1,30 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..models import (
     MessageResponse,
     RefreshTokenRequest,
     Token,
-    User,
     UserAuth,
     WebSocketTicketResponse,
 )
-from ..dependencies import get_current_user
 from ..services import auth_service
+from ..services.auth_service import Principal, get_current_principal
 from ..services.managers import ticket_mgr, key_mgr
 
 logger = logging.getLogger("backend.routers.auth")
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 public_router = APIRouter(tags=["authentication"])
+
+
+def _client_info(request: Request) -> dict:
+    """Recorded on the session at login (``auth.sessions.ip_address/agent``)."""
+    return {
+        "ip_address": request.client.host if request.client else None,
+        "agent": request.headers.get("user-agent"),
+    }
 
 
 @router.post(
@@ -48,8 +55,10 @@ async def register_client(auth: UserAuth):
         429: {"description": "Too many failed attempts for this username; retry later"},
     },
 )
-async def login_client(auth: UserAuth):
-    return await auth_service.login_throttled(auth.username, auth.password)
+async def login_client(auth: UserAuth, request: Request):
+    return await auth_service.login_throttled(
+        auth.username, auth.password, **_client_info(request)
+    )
 
 
 @router.post(
@@ -62,19 +71,24 @@ async def login_client(auth: UserAuth):
         429: {"description": "Too many failed attempts for this username; retry later"},
     },
 )
-async def login_admin(auth: UserAuth):
-    return await auth_service.login_throttled(auth.username, auth.password, required_scope="admin")
+async def login_admin(auth: UserAuth, request: Request):
+    return await auth_service.login_throttled(
+        auth.username, auth.password, required_scope="admin", **_client_info(request)
+    )
 
 
 @router.post(
     "/logout",
     response_model=MessageResponse,
     summary="Log out",
-    description="Deletes the supplied refresh-token record. The access token expires naturally.",
+    description=(
+        "Ends the refresh token's session: its access and refresh tokens stop working at once "
+        "and its WebSocket connections are closed."
+    ),
     responses={400: {"description": "Malformed refresh token"}},
 )
-def logout(body: RefreshTokenRequest):
-    return auth_service.logout_user(body.refresh_token)
+async def logout(body: RefreshTokenRequest):
+    return await auth_service.logout_user(body.refresh_token)
 
 
 @router.post(
@@ -88,11 +102,13 @@ def logout(body: RefreshTokenRequest):
     },
 )
 async def create_ws_token(
-    current_user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ):
     ttl = ticket_mgr.default_ttl
     try:
-        ticket = await ticket_mgr.generate_ticket(current_user.username, ttl_seconds=ttl)
+        ticket = await ticket_mgr.generate_ticket(
+            principal.user.username, ttl_seconds=ttl, sid=principal.sid
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="WebSocket ticket service unavailable") from exc
     return {"token": ticket, "expires_in": ttl}

@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from passlib.context import CryptContext
 import jwt
 import jwt.exceptions as jwt_exc
 from jwt import PyJWK
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
@@ -29,6 +30,9 @@ from ..config import (
 logger = logging.getLogger("backend.services.auth")
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 ALGORITHM = JWT_ALGORITHM
+# ``sid`` (session id) is required since v0.6.0 (T6.2, V2_DELTA Q24): a token without one
+# predates sessions and is rejected, so every user logs in once after the upgrade.
+REQUIRED_CLAIMS = ["exp", "nbf", "sub", "aud", "iss", "jti", "iat", "sid"]
 
 
 def verify_access_token(token: str) -> dict:
@@ -43,7 +47,7 @@ def verify_access_token(token: str) -> dict:
         PyJWK.from_dict(jwk).key,
         audience=JWT_AUDIENCE,
         issuer=JWT_ISSUER,
-        options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
+        options={"require": REQUIRED_CLAIMS},
         algorithms=[ALGORITHM],
         leeway=JWT_LEEWAY_SECONDS,
     )
@@ -67,7 +71,7 @@ def verify_refresh_token(token: str) -> dict:
         PyJWK.from_dict(jwk).key,
         audience=JWT_AUDIENCE,
         issuer=JWT_ISSUER,
-        options={"require": ["exp", "nbf", "sub", "aud", "iss", "jti", "iat"]},
+        options={"require": REQUIRED_CLAIMS},
         algorithms=[ALGORITHM],
         leeway=JWT_LEEWAY_SECONDS,
     )
@@ -79,9 +83,18 @@ def verify_refresh_token(token: str) -> dict:
     return payload
 
 
-def get_current_user(
+@dataclass(frozen=True)
+class Principal:
+    """The authenticated caller: the user row and the session (``sid``) of its token."""
+
+    user: User
+    sid: str
+
+
+def get_current_principal(
     token: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
-) -> User:
+    request: Request = None,  # type: ignore[assignment]  # injected by FastAPI
+) -> Principal:
     # Plain def: FastAPI runs it in the threadpool, so the DB lookup and RSA verification
     # never block the event loop (F-H1).
     credentials_exception = HTTPException(
@@ -91,14 +104,22 @@ def get_current_user(
     )
     try:
         payload = verify_access_token(token.credentials)
-        username = payload["sub"]
-        user = queries.get_user_data(username)
+        # One query: the user *and* a live session. A revoked or deleted session answers
+        # 401 on the very next request (instant revocation, T6.2).
+        # A gated /v2 request carries the app's versionCode (set by the gate, which runs
+        # first); it updates the session's device (T6.6).
+        client_version = getattr(request.state, "client_version", None) if request else None
+        user = queries.get_user_for_session(payload["sub"], payload["sid"], client_version)
         if not user:
-            raise jwt_exc.InvalidTokenError("User not found in db")
-        return user
+            raise jwt_exc.InvalidTokenError("User or session not found")
+        return Principal(user=user, sid=payload["sid"])
     except jwt_exc.InvalidTokenError as exc:
         logger.error(str(exc))
         raise credentials_exception from exc
+
+
+def get_current_user(principal: Principal = Depends(get_current_principal)) -> User:
+    return principal.user
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -115,10 +136,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(username: str) -> str:
+def new_session_id() -> str:
+    return secrets.token_hex(16)
+
+
+def create_access_token(username: str, sid: str) -> str:
     expire = datetime.now(UTC) + timedelta(seconds=ACCESS_TTL_SECONDS)
     to_encode = {
         "sub": username,
+        "sid": sid,
         "exp": expire,
         "type": "access",
         "jti": secrets.token_hex(16),
@@ -137,11 +163,12 @@ def create_access_token(username: str) -> str:
     return encoded_jwt
 
 
-def create_refresh_token(username: str):
+def create_refresh_token(username: str, sid: str):
     expires_delta = timedelta(seconds=REFRESH_TTL_SECONDS)
     expire = datetime.now(UTC) + expires_delta
     to_encode = {
         "sub": username,
+        "sid": sid,
         "type": "refresh",
         "jti": secrets.token_hex(16),
         "exp": expire,
@@ -162,12 +189,34 @@ def create_refresh_token(username: str):
     return encoded_jwt, to_encode["jti"], expire
 
 
-def get_tokens(user: User):
+def get_tokens(
+    user: User,
+    sid: str | None = None,
+    ip_address: str | None = None,
+    agent: str | None = None,
+):
+    """Issue a token pair. Without ``sid`` a new session starts (login, registration); with
+    ``sid`` the pair belongs to that existing, live session (refresh rotation)."""
     logger.info(f"Generating tokens for user: {user.username} (scope: {user.scope})")
-    access_token = create_access_token(user.username)
-    refresh_token, jti, expire = create_refresh_token(user.username)
+    new_session = sid is None
+    session_id = new_session_id() if new_session else sid
+    access_token = create_access_token(user.username, session_id)
+    refresh_token, jti, expire = create_refresh_token(user.username, session_id)
 
-    queries.create_refresh_token(jti=jti, username=user.username, expires_at=expire)
+    if new_session:
+        queries.create_session(
+            username=user.username,
+            jti=jti,
+            expires_at=expire,
+            sid=session_id,
+            ip_address=ip_address,
+            agent=(agent or "")[:256] or None,
+        )
+    elif not queries.create_refresh_token(
+        jti=jti, username=user.username, expires_at=expire, session_id=session_id
+    ):
+        # The session was revoked between consuming the old token and storing the new one.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     logger.debug(f"Refresh token stored in DB for user {user.username}, expires at {expire}")
 
     return {
@@ -206,6 +255,16 @@ async def admin_create_user(username: str, password: str) -> User:
     logger.info(f"Operator account {username} created by an administrator")
     await conn_mgr.broadcast(WSMessageType.USERS, scope="admin")
     return user
+
+
+async def admin_logout_user(username: str) -> int:
+    """Log a client account out everywhere: revoke all its sessions, close its sockets."""
+    sids = await asyncio.to_thread(queries.revoke_user_sessions, username)
+    if sids is None:
+        raise DomainException(status_code=404, detail="User not found")
+    logger.info(f"All sessions of {username} revoked by an administrator ({len(sids)})")
+    await conn_mgr.disconnect_user(username)
+    return len(sids)
 
 
 async def admin_reset_password(username: str, password: str) -> None:
@@ -248,7 +307,13 @@ def _dummy_hash() -> str:
     return _DUMMY_HASH
 
 
-async def login_throttled(username: str, password: str, required_scope: str | None = None) -> dict:
+async def login_throttled(
+    username: str,
+    password: str,
+    required_scope: str | None = None,
+    ip_address: str | None = None,
+    agent: str | None = None,
+) -> dict:
     """Login with per-username failure throttling; Argon2 runs off the event loop."""
     if await login_throttle.is_locked(username):
         raise HTTPException(
@@ -257,7 +322,9 @@ async def login_throttled(username: str, password: str, required_scope: str | No
             headers={"Retry-After": str(login_throttle.window)},
         )
     try:
-        tokens = await asyncio.to_thread(login_user, username, password, required_scope)
+        tokens = await asyncio.to_thread(
+            login_user, username, password, required_scope, ip_address, agent
+        )
     except HTTPException as exc:
         if exc.status_code == status.HTTP_401_UNAUTHORIZED:
             await login_throttle.record_failure(username)
@@ -270,6 +337,8 @@ def login_user(
     username: str,
     password: str,
     required_scope: str | None = None,
+    ip_address: str | None = None,
+    agent: str | None = None,
 ) -> dict:
     logger.info(f"Login attempt for user: {username} (required scope: {required_scope})")
     user = queries.get_user_data(username)
@@ -303,18 +372,20 @@ def login_user(
         )
 
     logger.info(f"User {username} logged in successfully")
-    return get_tokens(user)
+    return get_tokens(user, ip_address=ip_address, agent=agent)
 
 
-def logout_user(refresh_token: str) -> dict:
+async def logout_user(refresh_token: str) -> dict:
+    """End the token's session: revoke it, delete its refresh tokens, close its sockets."""
     try:
         payload = verify_refresh_token(refresh_token)
-        jti = payload["jti"]
+        sid = payload["sid"]
     except jwt_exc.InvalidTokenError as exc:
         logger.error(str(exc))
         raise HTTPException(status_code=400, detail="Bad Request") from exc
 
-    queries.delete_refresh_token(jti)
+    await asyncio.to_thread(queries.revoke_session, sid)
+    await conn_mgr.disconnect_session(sid)
     return {"message": "Logged out successfully"}
 
 
@@ -346,13 +417,17 @@ def refresh_tokens(refresh_token: str) -> dict:
         logger.error("Token expired in DB")
         raise credentials_exception
 
+    if db_token.session_id != payload.get("sid"):
+        logger.error("Token session mismatch")
+        raise credentials_exception
+
     user = queries.get_user_data(db_token.username)
     if not user:
         logger.error("User not found")
         raise credentials_exception
 
     logger.info(f"Rotating refresh token for user: {user.username}")
-    return get_tokens(user)
+    return get_tokens(user, sid=db_token.session_id)
 
 
 def _delete_outdated_refresh_tokens() -> int:

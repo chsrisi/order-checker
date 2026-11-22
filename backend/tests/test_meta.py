@@ -17,7 +17,7 @@ def test_meta_is_public_and_minimal(monkeypatch):
         "features",
     }
     assert body["api_version"] == config.API_VERSION
-    assert body["client_contract"] == {"min": 1, "max": 1}
+    assert body["client_contract"] == {"min": 1, "max": 2}
     assert body["app_env"] == "development"
     assert body["stock_location_mode"] == "single"
     assert all(isinstance(v, bool) for v in body["features"].values())

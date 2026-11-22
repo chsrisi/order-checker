@@ -189,7 +189,8 @@ async def test_shopee_token_seeds_from_shopee_prefix(monkeypatch):
 def test_versioning_and_jwt_config_defaults():
     """T3.1: one version from pyproject; token identity per environment."""
     assert config.API_VERSION == config.PROJECT_VERSION == config.read_project_version()
-    assert config.CLIENT_CONTRACT == 1
+    assert config.CLIENT_CONTRACT == 2  # /v2 since v0.6.0 (T6.3); root routes stay v1
+    assert (config.CLIENT_CONTRACT_MIN, config.CLIENT_CONTRACT_MAX) == (1, 2)
     assert config.DEFAULT_JWT_AUDIENCE == f"api.bakingholic:{config.APP_ENV}"
     assert config.DEFAULT_JWT_ISSUER == f"auth.bakingholic:{config.APP_ENV}"
     assert config.JWT_ALGORITHM == "RS256"

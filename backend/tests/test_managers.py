@@ -1,3 +1,4 @@
+import json
 import asyncio
 from unittest.mock import AsyncMock
 
@@ -30,8 +31,8 @@ def test_mark_synced_clears_fatal_state():
 async def test_ticket_is_stored_without_being_logged(monkeypatch, caplog):
     redis = SimpleRedis()
     monkeypatch.setattr(ticket_manager, "redis_mgr", redis)
-    ticket = await TicketManager().generate_ticket("operator", ttl_seconds=10)
-    assert redis.values[f"ws_token:{ticket}"] == "operator"
+    ticket = await TicketManager().generate_ticket("operator", ttl_seconds=10, sid="s1")
+    assert json.loads(redis.values[f"ws_token:{ticket}"]) == {"username": "operator", "sid": "s1"}
     assert ticket not in caplog.text
 
 
@@ -40,9 +41,17 @@ async def test_ticket_is_consumed_once(monkeypatch):
     redis = SimpleRedis()
     monkeypatch.setattr(ticket_manager, "redis_mgr", redis)
     manager = TicketManager()
-    ticket = await manager.generate_ticket("operator")
-    assert await manager.consume_ticket(ticket) == "operator"
+    ticket = await manager.generate_ticket("operator", sid="s1")
+    assert await manager.consume_ticket(ticket) == ("operator", "s1")
     assert await manager.consume_ticket(ticket) is None
+
+
+@pytest.mark.asyncio
+async def test_ticket_from_before_sessions_is_rejected(monkeypatch):
+    redis = SimpleRedis()
+    monkeypatch.setattr(ticket_manager, "redis_mgr", redis)
+    redis.values["ws_token:old"] = "operator"  # pre-T6.2 value: a bare username
+    assert await TicketManager().consume_ticket("old") is None
 
 
 @pytest.mark.asyncio
@@ -85,4 +94,4 @@ async def test_concurrent_ticket_consumers_have_one_winner(monkeypatch):
     manager = TicketManager()
     ticket = await manager.generate_ticket("operator")
     results = await asyncio.gather(*(manager.consume_ticket(ticket) for _ in range(5)))
-    assert results.count("operator") == 1
+    assert sum(r is not None for r in results) == 1

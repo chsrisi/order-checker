@@ -1,12 +1,13 @@
 [project]
 name = "bakingholic-backend"
-version = "0.5.0"
+version = "0.6.0"
 description = "backend API for bakingholic management apps"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "aiohttp[speedups]>=3.13.5",
     "alembic>=1.18.4",
+    "cryptography>=49.0.0",
     "fastapi>=0.136.3",
     "passlib[argon2]>=1.7.4",
     "psycopg[binary]>=3.3.4",

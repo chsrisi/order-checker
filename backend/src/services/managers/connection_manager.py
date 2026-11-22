@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
@@ -21,9 +22,26 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
         self.user_scopes: Dict[WebSocket, str] = {}
+        # Session (``sid``) each socket was opened with, so one session can be closed (T6.2).
+        self.socket_sessions: Dict[WebSocket, str] = {}
+        # Client contract per socket: 1 = root /ws (frozen frames), 2 = /v2/ws (T6.4).
+        self.socket_contracts: Dict[WebSocket, int] = {}
 
-    async def connect(self, websocket: WebSocket, username: str, scope: str):
-        await websocket.accept()
+    async def connect(
+        self,
+        websocket: WebSocket,
+        username: str,
+        scope: str,
+        sid: Optional[str] = None,
+        contract: int = 1,
+        accept: bool = True,
+    ):
+        if accept:
+            await websocket.accept()
+        if sid is not None:
+            self.socket_sessions[websocket] = sid
+        if contract != 1:
+            self.socket_contracts[websocket] = contract
         if username not in self.active_connections:
             self.active_connections[username] = []
         self.active_connections[username].append(websocket)
@@ -43,6 +61,8 @@ class ConnectionManager:
             if not sessions:
                 del self.active_connections[username]
         self.user_scopes.pop(websocket, None)
+        self.socket_sessions.pop(websocket, None)
+        self.socket_contracts.pop(websocket, None)
         logger.info(f"WebSocket disconnected: {username}")
         if username in self.active_connections:
             logger.debug(
@@ -60,6 +80,8 @@ class ConnectionManager:
         sockets = self.active_connections.pop(username, [])
         for ws in sockets:
             self.user_scopes.pop(ws, None)
+            self.socket_sessions.pop(ws, None)
+            self.socket_contracts.pop(ws, None)
             try:
                 await ws.close(code=code)
             except Exception as e:  # already gone
@@ -67,6 +89,27 @@ class ConnectionManager:
         if sockets:
             logger.info(f"Closed {len(sockets)} WebSocket session(s) for {username}")
         return len(sockets)
+
+    async def disconnect_session(self, sid: str, code: int = 1008) -> int:
+        """Close every socket opened with session ``sid`` (logout, revoked session); the
+        user's other sessions stay connected."""
+        targets = [ws for ws, s in self.socket_sessions.items() if s == sid]
+        for ws in targets:
+            for username, sockets in list(self.active_connections.items()):
+                if ws in sockets:
+                    self.disconnect(ws, username)
+                    break
+            else:
+                self.user_scopes.pop(ws, None)
+                self.socket_sessions.pop(ws, None)
+                self.socket_contracts.pop(ws, None)
+            try:
+                await ws.close(code=code)
+            except Exception as e:  # already gone
+                logger.debug(f"Closing socket of session {sid} failed: {e}")
+        if targets:
+            logger.info(f"Closed {len(targets)} WebSocket session(s) of a revoked session")
+        return len(targets)
 
     # Payloads identical for every recipient: built once per broadcast (T4.5).
     SCOPE_INDEPENDENT = frozenset({WSMessageType.USERS, WSMessageType.STOCKS})
@@ -136,10 +179,19 @@ class ConnectionManager:
         username: str,
     ):
         try:
-            await websocket.send_json({"type": message_type.value, "data": data})
+            await websocket.send_json(self.frame(message_type, data, websocket))
         except Exception as e:
             logger.error(f"Error sending message to {username}: {str(e)}")
             self.disconnect(websocket, username)
+
+    def frame(self, message_type: WSMessageType, data: Any, websocket: WebSocket) -> dict:
+        """The envelope for this socket's contract. The payload (``data``, always a list of
+        objects) is shared; only the envelope differs: v1 ``{type, data}`` (frozen), v2
+        ``{type, data, ts}`` with ``ts`` the UTC send time (P-9)."""
+        frame = {"type": message_type.value, "data": data}
+        if self.socket_contracts.get(websocket, 1) >= 2:
+            frame["ts"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return frame
 
     @staticmethod
     def error_payload(detail: str) -> list[dict[str, str]]:

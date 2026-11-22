@@ -1,7 +1,8 @@
 # System reference
 
-State as of **2026-11-21**, branch `fix/pre-v0.5.0` (on top of `v0.4.0` = `2081206`): backend
-`0.5.0` (`backend/pyproject.toml`), operator client contract **v1**, Alembic head `c3f8a2d5e6b1`.
+State as of **2026-11-22**, branch `feat/v2-step6` (on top of `v0.5.0`): backend `0.6.0`
+(`backend/pyproject.toml`), operator client contracts **v1** (root, frozen) and **v2** (`/v2`,
+§10A), Alembic head `e5b8f3a1c2d4`.
 
 This file describes what the code does now, precisely enough to reason about behaviour
 without reading the source. It complements the other guides and does not repeat them:
@@ -139,9 +140,23 @@ PostgreSQL, five schemas. All `DateTime` columns are naive UTC; the API serializ
 **`auth.users`**: `username` PK; `password_hash` (Argon2 via passlib); `scope` (`"admin"` |
 `"client"`; plain string, no enum or constraint).
 
-**`auth.refresh_tokens`**: `jti` PK; `username` FK → users; `created_at`; `expires_at`
-(indexed); `revoked_at` nullable (never set by current code: revocation deletes rows);
-`ip_address`, `agent` nullable (never written).
+**`auth.sessions`** (T6.2): one row per login. `id` PK (= the `sid` token claim);
+`username` FK → users (indexed); `created_at`; `expires_at` (indexed; extended to the newest
+refresh token's expiry on every rotation); `last_seen_at` (written at most once per 60 s);
+`revoked_at` nullable (set on logout, password reset, "log out everywhere"); `ip_address`,
+`agent` (from the login request, agent ≤ 256 chars). Live = `revoked_at IS NULL`. Deleted by
+the refresh-cleanup task once `expires_at` passed, and with the user.
+
+**`auth.devices`** (T6.6): `id` PK (uuid hex); `public_key` UNIQUE (base64 DER SPKI, P-256);
+`status` `pending`|`active`|`revoked` (CHECK); `label`, `model`, `android_version`,
+`app_version_code`; `token_hash` (unused until step 8); `current_username` FK → users
+`ON DELETE SET NULL` (the SQL word `current_user` is reserved); `enrolled_at`, `last_seen_at`.
+`auth.sessions.device_id` FK → devices `ON DELETE SET NULL` (indexed, NULL for v1 and admin).
+
+**`auth.refresh_tokens`**: `jti` PK; `username` FK → users; `session_id` FK → sessions
+`ON DELETE CASCADE` (indexed); `created_at`; `expires_at` (indexed); `revoked_at` nullable
+(never set: revocation deletes rows); `ip_address`, `agent` nullable (never written; the
+session holds them).
 
 **`shopee.orders`**: `order_sn` PK; `split_up` bool; `ship_by` (from Shopee `ship_by_date`;
 column was `created_at` before migration `bcc1283662c5`); `owner_user` FK → users, nullable
@@ -220,6 +235,8 @@ BOM, item and ERP tables are populated outside this application (no API writes t
 | `d862d86e8707` | `bom_details.quantity_standard` NOT NULL; `items.barcode_supplier` → `supplier_barcode` |
 | `b7c4e1a9d2f3` | `pick_stock_allocations`, structured `stocks_log` columns, duplicate-bin merge (`migration_merge`), unique `uq_stocks_sku_location` |
 | `c3f8a2d5e6b1` | drops the never-used `orders.pick_item_entries_log` (downgrade recreates it empty) |
+| `d4a7e2c9b1f0` | `auth.sessions`, `refresh_tokens.session_id`; deletes pre-session refresh tokens (one relogin) |
+| `e5b8f3a1c2d4` | `auth.devices`, `sessions.device_id` (additive) |
 
 Integration tests build the schema from empty with `alembic upgrade head`, check the full
 down/up round trip and assert no autogenerate drift. CI's migration gate upgrades from the
@@ -231,7 +248,7 @@ previous release tag.
 |---|---|---|---|
 | `shopee:access_token`, `shopee:refresh_token` | Shopee tokens | none | admin config save, token refresh; seeded on first read from `SHOPEE_ACCESS_TOKEN` / `ACCESS_TOKEN` (and `..._REFRESH_TOKEN`) config |
 | `shopee:current_ip` | egress IP Shopee reported as undeclared | none | `shopee_request` on `source_ip_undeclared` |
-| `ws_token:<urlsafe32>` | username | `WS_TICKET_TTL_SECONDS` (30) | `POST /auth/ws-token`; consumed with `GETDEL` |
+| `ws_token:<urlsafe32>` | JSON `{username, sid}` | `WS_TICKET_TTL_SECONDS` (30) | `POST /auth/ws-token`; consumed with `GETDEL` |
 | `cfg_token:<hex64>` | admin username | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` (120) | `POST /admin/shopee-config/unlock` |
 | `login_fail:<lowercased username>` | failure count | `LOGIN_LOCKOUT_SECONDS` (900), reset to a full window at the locking failure | failed logins |
 
@@ -242,13 +259,24 @@ Redis needs ≥ 6.2 (`GETDEL`). Compose ships `redis:8.8-alpine`.
 ## 5. Authentication and sessions
 
 **Tokens.** RS256 JWTs signed by `key_mgr` with header `kid`. Claims: `sub` (username),
-`type` (`access` | `refresh`), `jti` (random hex), `iat`, `nbf`, `exp`, `aud`, `iss`.
+`sid` (session id), `type` (`access` | `refresh`), `jti` (random hex), `iat`, `nbf`, `exp`,
+`aud`, `iss`.
 `aud`/`iss` default to `api.bakingholic:<APP_ENV>` / `auth.bakingholic:<APP_ENV>`
 (overridable with `JWT_AUDIENCE`/`JWT_ISSUER`); a token from another environment is rejected.
 Verification requires all claims, checks `type`, allows `JWT_LEEWAY_SECONDS` (30) of skew.
 Access TTL `ACCESS_TTL_SECONDS` (900); refresh TTL `REFRESH_TTL_SECONDS` (86400). Scope is
-**not** in the token: every request reloads the user row, so a scope change or user deletion
-applies immediately to HTTP (a deleted user's access token yields 401).
+**not** in the token: every request loads the user row **joined with its live session**
+(`queries.get_user_for_session`, one query), so a scope change, a user deletion or a revoked
+session applies to the very next HTTP request (401). Endpoints that need the session use the
+`get_current_principal` dependency (`Principal(user, sid)`).
+
+**Sessions** (`auth.sessions`, T6.2). Login and registration start one; refresh rotation stays
+in it (a refresh token whose session is gone, revoked or different fails with 401). Ending a
+session revokes it and deletes its refresh tokens in one transaction, then closes its sockets
+(1008): logout ends that session only (`ConnectionManager.disconnect_session`); password reset,
+`POST /admin/users/{username}/logout` and user deletion end all of the user's sessions.
+`scripts.set_admin_password` revokes the admin's sessions. v1 clients see a 401, fail their one
+refresh and return to the login screen.
 
 **Login** (`/auth/login` any scope, `/auth/admin` admin only). Username `^[a-zA-Z0-9_]+$`,
 1–64 chars; password 1–256. Unknown users still pay one Argon2 verify (timing). Wrong scope,
@@ -257,8 +285,9 @@ unknown user and wrong password all return 401 "Incorrect username or password".
 with `Retry-After`; success resets; Redis down → throttle fails open.
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
-under races), then checks expiry and user existence and issues a new pair. Logout deletes the
-row (400 if the token does not verify). Access tokens are never blacklisted.
+under races), then checks expiry, the session (same `sid`, still live) and user existence, and
+issues a new pair in that session. Logout ends the whole session (400 if the token does not
+verify; see **Sessions**).
 
 **Key rotation** (`key_manager.py`, files `<KEYS_DIR>/key_YYYYmmdd_HHMMSS.{pub,key}`,
 default `data/keys`):
@@ -274,10 +303,11 @@ Verification looks the `kid` up in the cached JWKS, then forces a disk reload on
 failing. Both apps cache JWKS client-side for 15 min and force-refresh after a failed
 verification. Replacing `data/keys` invalidates every token (forced relogin).
 
-**WebSocket ticket.** `POST /auth/ws-token` (bearer) stores a one-use ticket in Redis (503 if
-Redis fails). `WS /ws?token=<ticket>` consumes it with `GETDEL`, loads the user, and accepts;
-a missing/used/expired ticket or unknown user is rejected **before accept** with HTTP 403
-(contract v1 relies on this).
+**WebSocket ticket.** `POST /auth/ws-token` (bearer) stores a one-use ticket in Redis with the
+caller's username and `sid` (503 if Redis fails). `WS /ws?token=<ticket>` consumes it with
+`GETDEL`, loads the user for that live session, and accepts; a missing/used/expired ticket, a
+pre-session ticket or a revoked session is rejected **before accept** with HTTP 403 (contract
+v1 relies on this). The socket remembers its `sid` so it can be closed with its session.
 
 **Shopee config session.** `POST /admin/shopee-config/unlock {password}` re-verifies the
 admin's password (401 otherwise) and returns `{token, expires_in: 120}`. `GET`/`POST
@@ -510,6 +540,14 @@ Frame: `{"type": <event>, "data": [<object>, ...]}`. `data` is **always a list o
 including errors (`[{"detail": "..."}]`). Unknown commands → error frame
 `Unknown command: <first 64 chars>`.
 
+Two endpoints share one `ConnectionManager` and one command loop (`routers/websocket.py`,
+T6.4): `/ws` (contract v1, rejection = HTTP 403 before accept) and `/v2/ws` (contract v2:
+`X-Client-Version` header; failures close after accept with 4400 / 4401 / 4426). Each socket
+is tagged with its contract (`socket_contracts`) and its session (`socket_sessions`).
+`ConnectionManager.frame()` wraps the shared payload per socket: v1 `{type, data}`, v2
+`{type, data, ts}`. Payloads are still built once per audience, whatever the mix of contracts,
+so every event reaches v1 and v2 devices and both admins alike.
+
 **Commands → reply to this socket only:**
 
 | Command | Reply |
@@ -592,6 +630,38 @@ and `backend/tests/test_ws_contract_v1.py`.
 
 ---
 
+## 10A. Operator client contract v2 (`/v2`)
+
+Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contract_v2.py`
+(snapshot `tests/contracts/client_v2.json`, additive unless regenerated on purpose) and the
+committed export `backend/openapi/v2.json`.
+
+- `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
+  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
+  operations.
+- Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
+  `min_supported_version_code` from `<CLIENT_RELEASES_DIR>/latest.json` → 426
+  `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
+  ungated. The metadata file is re-read only when its mtime changes
+  (`services/client_releases.py`).
+- `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
+- OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
+  `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
+  (`orderchecker-<code>.apk`, `latest.json`), written only by `scripts.publish_client_release`
+  (higher versionCode required, SHA-256 checked after copy, metadata replaced atomically last);
+  compose mounts `RELEASES_VOLUME` read-only.
+- Devices (T6.6, `routers/device.py`, `services/device_service.py`, `queries/devices.py`):
+  `POST /v2/device/register` verifies an ECDSA P-256 signature over the caller's `sid`
+  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403, row lock + retry
+  on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
+  `request.state.client_version`; `get_current_principal` passes it to
+  `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
+  the 60 s throttle, `app_version_code` at once when it changed. Root (v1) requests never touch
+  devices. `GET /admin/devices` lists them.
+
+---
+
 ## 11. Maintenance scripts (`backend/scripts`, run as `python -m scripts.<name>`)
 
 | Script | Purpose |
@@ -620,6 +690,9 @@ connection-failed banner with a manual retry. An error containing `403` triggers
 refresh and reconnect, or logout.
 
 ### 12.1 Operator client (`frontend/client`, Android + Windows)
+
+Production devices run a **debug** build: release builds lack the `INTERNET` permission
+(KNOWN_LIMITATIONS #10).
 
 Drawer navigation; Inbound, Outbound and Stocks have **Input / History** sub-tabs.
 
@@ -683,9 +756,9 @@ Facts verified against the source on 2026-11-21. Fixing them is not scheduled un
 plan says so.
 
 1. Process-local state (sockets, sync cache/lock, Shopee circuit): one worker only.
-2. Access tokens stay valid until expiry after logout (15 min).
+2. ~~Access tokens stay valid until expiry after logout~~: fixed by sessions (T6.2).
 3. `warehouse.shopee_items` is unused; `refresh_tokens.revoked_at/ip_address/agent` are
-   never written.
+   never written (sessions hold IP and agent since T6.2).
 4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
 5. Period closure pushes updates to admins only; operators see closed scans disappear on
