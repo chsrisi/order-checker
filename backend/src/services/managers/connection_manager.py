@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
@@ -23,13 +24,24 @@ class ConnectionManager:
         self.user_scopes: Dict[WebSocket, str] = {}
         # Session (``sid``) each socket was opened with, so one session can be closed (T6.2).
         self.socket_sessions: Dict[WebSocket, str] = {}
+        # Client contract per socket: 1 = root /ws (frozen frames), 2 = /v2/ws (T6.4).
+        self.socket_contracts: Dict[WebSocket, int] = {}
 
     async def connect(
-        self, websocket: WebSocket, username: str, scope: str, sid: Optional[str] = None
+        self,
+        websocket: WebSocket,
+        username: str,
+        scope: str,
+        sid: Optional[str] = None,
+        contract: int = 1,
+        accept: bool = True,
     ):
-        await websocket.accept()
+        if accept:
+            await websocket.accept()
         if sid is not None:
             self.socket_sessions[websocket] = sid
+        if contract != 1:
+            self.socket_contracts[websocket] = contract
         if username not in self.active_connections:
             self.active_connections[username] = []
         self.active_connections[username].append(websocket)
@@ -50,6 +62,7 @@ class ConnectionManager:
                 del self.active_connections[username]
         self.user_scopes.pop(websocket, None)
         self.socket_sessions.pop(websocket, None)
+        self.socket_contracts.pop(websocket, None)
         logger.info(f"WebSocket disconnected: {username}")
         if username in self.active_connections:
             logger.debug(
@@ -68,6 +81,7 @@ class ConnectionManager:
         for ws in sockets:
             self.user_scopes.pop(ws, None)
             self.socket_sessions.pop(ws, None)
+            self.socket_contracts.pop(ws, None)
             try:
                 await ws.close(code=code)
             except Exception as e:  # already gone
@@ -88,6 +102,7 @@ class ConnectionManager:
             else:
                 self.user_scopes.pop(ws, None)
                 self.socket_sessions.pop(ws, None)
+                self.socket_contracts.pop(ws, None)
             try:
                 await ws.close(code=code)
             except Exception as e:  # already gone
@@ -164,10 +179,19 @@ class ConnectionManager:
         username: str,
     ):
         try:
-            await websocket.send_json({"type": message_type.value, "data": data})
+            await websocket.send_json(self.frame(message_type, data, websocket))
         except Exception as e:
             logger.error(f"Error sending message to {username}: {str(e)}")
             self.disconnect(websocket, username)
+
+    def frame(self, message_type: WSMessageType, data: Any, websocket: WebSocket) -> dict:
+        """The envelope for this socket's contract. The payload (``data``, always a list of
+        objects) is shared; only the envelope differs: v1 ``{type, data}`` (frozen), v2
+        ``{type, data, ts}`` with ``ts`` the UTC send time (P-9)."""
+        frame = {"type": message_type.value, "data": data}
+        if self.socket_contracts.get(websocket, 1) >= 2:
+            frame["ts"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return frame
 
     @staticmethod
     def error_payload(detail: str) -> list[dict[str, str]]:

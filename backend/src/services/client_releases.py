@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import config
+from ..exceptions import ClientUpgradeRequired, DomainException
 
 logger = logging.getLogger("backend.services.client_releases")
 
@@ -61,3 +62,18 @@ def min_supported_version_code() -> int | None:
         return None
     value = release.get("min_supported_version_code")
     return value if isinstance(value, int) else None
+
+
+def check_client_version(raw: str | None) -> int:
+    """Validate an ``X-Client-Version`` value: 400 if missing or not a non-negative integer,
+    ``ClientUpgradeRequired`` (426 / WS close 4426) below the published minimum (P-10)."""
+    try:
+        version = int(raw or "")
+    except ValueError:
+        raise DomainException(status_code=400, detail="X-Client-Version header required")
+    if version < 0:
+        raise DomainException(status_code=400, detail="X-Client-Version header required")
+    minimum = min_supported_version_code()
+    if minimum is not None and version < minimum:
+        raise ClientUpgradeRequired(minimum)
+    return version

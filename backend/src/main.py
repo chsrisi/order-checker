@@ -236,6 +236,7 @@ app.include_router(stocks.router)
 app.include_router(shopee.router)
 app.include_router(pick_items.router)
 app.include_router(websocket.router)
+app.include_router(websocket.v2_router)
 app.include_router(meta.router)
 # Contract v2 mirrors the client operations registered above (T6.3).
 include_v2(

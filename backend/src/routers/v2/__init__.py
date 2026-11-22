@@ -17,7 +17,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, FastAPI, Header
 from fastapi.routing import APIRoute
 
-from ...exceptions import ClientUpgradeRequired, DomainException
 from ...services import client_releases
 
 V2_PREFIX = "/v2"
@@ -60,16 +59,7 @@ def require_client_version(
         description="Required. The app's integer versionCode.",
     ),
 ) -> int:
-    try:
-        version = int(x_client_version or "")
-    except ValueError:
-        raise DomainException(status_code=400, detail="X-Client-Version header required")
-    if version < 0:
-        raise DomainException(status_code=400, detail="X-Client-Version header required")
-    minimum = client_releases.min_supported_version_code()
-    if minimum is not None and version < minimum:
-        raise ClientUpgradeRequired(minimum)
-    return version
+    return client_releases.check_client_version(x_client_version)
 
 
 def v2_tag(tag: str) -> str:

@@ -532,6 +532,14 @@ Frame: `{"type": <event>, "data": [<object>, ...]}`. `data` is **always a list o
 including errors (`[{"detail": "..."}]`). Unknown commands → error frame
 `Unknown command: <first 64 chars>`.
 
+Two endpoints share one `ConnectionManager` and one command loop (`routers/websocket.py`,
+T6.4): `/ws` (contract v1, rejection = HTTP 403 before accept) and `/v2/ws` (contract v2:
+`X-Client-Version` header; failures close after accept with 4400 / 4401 / 4426). Each socket
+is tagged with its contract (`socket_contracts`) and its session (`socket_sessions`).
+`ConnectionManager.frame()` wraps the shared payload per socket: v1 `{type, data}`, v2
+`{type, data, ts}`. Payloads are still built once per audience, whatever the mix of contracts,
+so every event reaches v1 and v2 devices and both admins alike.
+
 **Commands → reply to this socket only:**
 
 | Command | Reply |

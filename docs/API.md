@@ -171,6 +171,17 @@ Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
 
+**Contract v2 socket (`/v2/ws`, since v0.6.0).** Ticket from `POST /v2/auth/ws-token`, then
+`WS_URL/v2/ws?token=<ticket>` with the header `X-Client-Version: <versionCode>`. Same commands,
+same events, same `data` payloads as v1 (built once per audience for both). Differences:
+
+- Frames are `{"type": ..., "data": [...], "ts": "<UTC send time, ...Z>"}`; parse `type` first.
+- Handshake failures are reported **after accept** with a close code: **4400** missing or
+  malformed `X-Client-Version`, **4401** ticket missing/used/expired or its session revoked,
+  **4426** client below `min_supported_version_code` (show the update screen). A revoked
+  session's open socket is closed with **1008**, as for v1.
+
+
 **Frame rule (client contract v1):** `data` is always a JSON array of objects, for every
 type and every audience, because the v1 apps parse `data` before they read `type`. Error
 frames follow the rule too:
