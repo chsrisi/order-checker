@@ -47,7 +47,10 @@ This document tracks known architectural, library, and system limitations within
 - **Partly resolved (v0.5, T4.7)**: the backend now publishes `GET /meta`: API version,
   supported client contract range, `app_env`, `stock_location_mode` and feature flags. The
   frozen v1 client does not read it. The admin app and the next client major (contract v2)
-  can. Pushing changes in real time and OTA updates remain open.
+  can. Pushing changes in real time remains open.
+- **OTA resolved for the v2 operator app (v0.6.0, T6.5)**: the backend serves
+  `GET /v2/client/latest` and the APK; `min_supported_version_code` forces updates (426 /
+  close 4426). The v1 Flutter client cannot update itself and is replaced by v2 by hand once.
 - **Future High-Level Plan & Context**:
   - Resolving this synchronization gap is scheduled as a primary objective of the upcoming **Sync Milestone**.
   - In the Sync Milestone, the architecture will introduce:
@@ -131,7 +134,7 @@ This document tracks known architectural, library, and system limitations within
   - **Production is not strictly uptime-sensitive.** Short outages and maintenance windows are acceptable. After a backend restart longer than about 10 s, the client WebSocket stops retrying, and operators must tap *retry* on the connection banner. This is an operational note, not a deploy constraint.
   - Deploy constraints that still apply: keep the WS handshake rejection as HTTP 403. Do not change `JWT_ISSUER`/`JWT_AUDIENCE` (or `APP_ENV`, which sets their defaults) and do not replace `data/keys` outside a planned forced-relogin window (`docs/RELEASE.md`). Backend version bumps no longer change token identity (T3.1). **Exception: v0.6.0** adds sessions and makes the `sid` claim required, so every device logs in once in that window (RELEASE.md "v0.6.0").
   - Decisions after the initial review are recorded in `docs/archive/BRANCH_SPLIT_DELTA.md` (archived 2026-11-21).
-- **Future Path**: The Sync Milestone (#3) adds version and settings discovery (`GET /meta`) and OTA prompts, so future client majors can negotiate. v1 clients will never call it.
+- **Future Path**: v0.6.0 serves contract v2 under `/v2` for the Kotlin operator app, which updates over the air (OPERATIONS "Publishing a client release") and negotiates via `/v2/meta` and `X-Client-Version`. v1 stays frozen until no v1 build remains in the field (V2_DELTA; removal is a later decision). v1 clients will never call `/meta`.
 - **Code References**:
   - Client API calls and WS parser: `frontend/client/lib/app_state.dart`, `frontend/client/lib/models.dart`
   - Contract inventory: `docs/SYSTEM_REFERENCE.md` §10; original review: `docs/archive/BRANCH_SPLIT_REVIEW.md`

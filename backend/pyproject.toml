@@ -1,6 +1,6 @@
 [project]
 name = "bakingholic-backend"
-version = "0.5.0"
+version = "0.6.0"
 description = "backend API for bakingholic management apps"
 readme = "README.md"
 requires-python = ">=3.14"

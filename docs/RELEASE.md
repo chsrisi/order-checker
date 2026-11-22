@@ -129,13 +129,38 @@ the commands below were run then. Kept as the record of that window. This window
 
 ### v0.6.0: dual-contract backend, sessions, OTA (IMPLEMENTATION_PLAN step 6)
 
-Written in full by T6.7. Known so far:
+Migrations `d4a7e2c9b1f0` (sessions; deletes refresh tokens) and `e5b8f3a1c2d4` (devices,
+additive). Rollback: `alembic downgrade c3f8a2d5e6b1`, then check out `v0.5.0`. Tokens issued
+by v0.6.0 keep working on v0.5.0 (it ignores `sid`), so a rollback needs no second relogin.
 
-- **One relogin for everyone.** Migration `d4a7e2c9b1f0` adds `auth.sessions` and deletes all
-  existing refresh tokens, and tokens without the `sid` claim are rejected (V2_DELTA Q24). Each
-  v1 device gets 401, fails its refresh and shows the login screen; operators log in once.
-  A downgrade (`alembic downgrade c3f8a2d5e6b1`) drops the sessions again; tokens issued
-  meanwhile keep working on the old code (it ignores `sid`).
+**One relogin for everyone.** `auth.sessions` replaces the old refresh tokens and tokens
+without the `sid` claim are rejected (V2_DELTA Q24). Each v1 device gets 401, fails its refresh
+and shows the login screen; operators log in once. The admin web logs in again too.
+
+1. Announce the window and the one-time relogin (§2 step 1).
+2. Back up (§2 step 2).
+3. Create the releases directory on the host, next to `data/keys`:
+   `mkdir -p backend/data/releases/client` (mounted read-only into the container as
+   `RELEASES_VOLUME`; OPERATIONS "Publishing a client release").
+4. Deploy (§2 step 3). The log shows both migrations, then `startup_config_accepted`.
+5. Publish the first v2 APK when it exists (step 6 device day, T6.16), from `backend/`:
+   `uv run python -m scripts.publish_client_release <apk> --version-code 1 --version-name
+   2.0.0 --dir data/releases/client --confirm`. Until then `GET /v2/client/latest` answers 404,
+   which is expected.
+6. Smoke test v1 on one device: log in (expect the relogin), sync, claim an order, add a pick,
+   delete it (stock comes back), scan a test label.
+7. Smoke test v2 from a laptop on the LAN:
+   ```bash
+   curl -s http://192.168.1.50:8000/v2/meta          # client_contract {"min":1,"max":2}
+   curl -si http://192.168.1.50:8000/v2/client/latest | head -1   # 404 until step 5, then 200
+   curl -si http://192.168.1.50:8000/v2/items/find?query=x | head -1   # 400: no X-Client-Version
+   ```
+8. Admin: *log out everywhere* on a test operator (`POST /admin/users/{username}/logout`), check
+   that its device returns to the login screen within one request.
+
+Release notes: one-time relogin; logout, password reset and the new "log out everywhere" take
+effect immediately; the backend serves the v2 operator app (`/v2`, OTA updates, device
+registration) next to the unchanged v1 app.
 
 ### v0.5.0: pre-release fixes (no relogin, no client change)
 

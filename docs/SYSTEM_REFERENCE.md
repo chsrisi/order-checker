@@ -1,7 +1,8 @@
 # System reference
 
-State as of **2026-11-21**, branch `fix/pre-v0.5.0` (on top of `v0.4.0` = `2081206`): backend
-`0.5.0` (`backend/pyproject.toml`), operator client contract **v1**, Alembic head `c3f8a2d5e6b1`.
+State as of **2026-11-22**, branch `feat/v2-step6` (on top of `v0.5.0`): backend `0.6.0`
+(`backend/pyproject.toml`), operator client contracts **v1** (root, frozen) and **v2** (`/v2`,
+§10A), Alembic head `e5b8f3a1c2d4`.
 
 This file describes what the code does now, precisely enough to reason about behaviour
 without reading the source. It complements the other guides and does not repeat them:
