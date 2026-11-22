@@ -3,7 +3,15 @@ from typing import List
 from datetime import datetime, UTC, timedelta
 from sqlalchemy import select, delete, or_, update
 
-from ...models import AuthSession, User, RefreshToken, OutboundItem, PickItemEntry, ShopeeOrder
+from ...models import (
+    AuthSession,
+    Device,
+    User,
+    RefreshToken,
+    OutboundItem,
+    PickItemEntry,
+    ShopeeOrder,
+)
 from .engine import get_db
 from .stocks import restore_for_pick
 
@@ -167,13 +175,18 @@ def create_refresh_token(jti: str, username: str, expires_at: datetime, session_
         return True
 
 
-def get_user_for_session(username: str, sid: str) -> User | None:
+def get_user_for_session(username: str, sid: str, client_version: int | None = None) -> User | None:
     """The user, if ``sid`` is one of its live sessions; touches ``last_seen_at`` at most once
-    per ``LAST_SEEN_INTERVAL``. This is the per-request check behind instant revocation (T6.2)."""
+    per ``LAST_SEEN_INTERVAL``. This is the per-request check behind instant revocation (T6.2).
+
+    ``client_version`` (the ``X-Client-Version`` of a gated /v2 request) also touches the
+    session's device: ``last_seen_at`` on the same throttle, and ``app_version_code`` as soon as
+    it changes, which is how an admin sees that an OTA update arrived (T6.6, P-16)."""
     with get_db() as db:
         row = db.execute(
-            select(User, AuthSession.last_seen_at)
+            select(User, AuthSession.last_seen_at, AuthSession.device_id, Device.app_version_code)
             .join(AuthSession, AuthSession.username == User.username)
+            .outerjoin(Device, Device.id == AuthSession.device_id)
             .where(
                 User.username == username,
                 AuthSession.id == sid,
@@ -182,10 +195,20 @@ def get_user_for_session(username: str, sid: str) -> User | None:
         ).first()
         if row is None:
             return None
-        user, last_seen = row
+        user, last_seen, device_id, device_version = row
         now = datetime.now(UTC)
-        if last_seen is None or last_seen.replace(tzinfo=UTC) < now - LAST_SEEN_INTERVAL:
+        stale = last_seen is None or last_seen.replace(tzinfo=UTC) < now - LAST_SEEN_INTERVAL
+        if stale:
             db.execute(update(AuthSession).where(AuthSession.id == sid).values(last_seen_at=now))
+        if device_id is not None and client_version is not None:
+            if stale or device_version != client_version:
+                db.execute(
+                    update(Device)
+                    .where(Device.id == device_id)
+                    .values(last_seen_at=now, app_version_code=client_version)
+                )
+                stale = True
+        if stale:
             db.commit()
         return user
 

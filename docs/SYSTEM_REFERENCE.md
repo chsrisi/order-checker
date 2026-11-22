@@ -146,6 +146,12 @@ refresh token's expiry on every rotation); `last_seen_at` (written at most once 
 `agent` (from the login request, agent ≤ 256 chars). Live = `revoked_at IS NULL`. Deleted by
 the refresh-cleanup task once `expires_at` passed, and with the user.
 
+**`auth.devices`** (T6.6): `id` PK (uuid hex); `public_key` UNIQUE (base64 DER SPKI, P-256);
+`status` `pending`|`active`|`revoked` (CHECK); `label`, `model`, `android_version`,
+`app_version_code`; `token_hash` (unused until step 8); `current_username` FK → users
+`ON DELETE SET NULL` (the SQL word `current_user` is reserved); `enrolled_at`, `last_seen_at`.
+`auth.sessions.device_id` FK → devices `ON DELETE SET NULL` (indexed, NULL for v1 and admin).
+
 **`auth.refresh_tokens`**: `jti` PK; `username` FK → users; `session_id` FK → sessions
 `ON DELETE CASCADE` (indexed); `created_at`; `expires_at` (indexed); `revoked_at` nullable
 (never set: revocation deletes rows); `ip_address`, `agent` nullable (never written; the
@@ -229,6 +235,7 @@ BOM, item and ERP tables are populated outside this application (no API writes t
 | `b7c4e1a9d2f3` | `pick_stock_allocations`, structured `stocks_log` columns, duplicate-bin merge (`migration_merge`), unique `uq_stocks_sku_location` |
 | `c3f8a2d5e6b1` | drops the never-used `orders.pick_item_entries_log` (downgrade recreates it empty) |
 | `d4a7e2c9b1f0` | `auth.sessions`, `refresh_tokens.session_id`; deletes pre-session refresh tokens (one relogin) |
+| `e5b8f3a1c2d4` | `auth.devices`, `sessions.device_id` (additive) |
 
 Integration tests build the schema from empty with `alembic upgrade head`, check the full
 down/up round trip and assert no autogenerate drift. CI's migration gate upgrades from the
@@ -643,6 +650,14 @@ committed export `backend/openapi/v2.json`.
   (`orderchecker-<code>.apk`, `latest.json`), written only by `scripts.publish_client_release`
   (higher versionCode required, SHA-256 checked after copy, metadata replaced atomically last);
   compose mounts `RELEASES_VOLUME` read-only.
+- Devices (T6.6, `routers/device.py`, `services/device_service.py`, `queries/devices.py`):
+  `POST /v2/device/register` verifies an ECDSA P-256 signature over the caller's `sid`
+  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403, row lock + retry
+  on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
+  `request.state.client_version`; `get_current_principal` passes it to
+  `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
+  the 60 s throttle, `app_version_code` at once when it changed. Root (v1) requests never touch
+  devices. `GET /admin/devices` lists them.
 
 ---
 

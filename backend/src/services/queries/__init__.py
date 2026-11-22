@@ -1,4 +1,10 @@
 from .engine import get_db, SessionLocal
+from .devices import (
+    DeviceRevoked,
+    register_device,
+    list_devices,
+    get_device,
+)
 from .users import (
     get_user_data,
     get_all_user_data,
@@ -67,6 +73,10 @@ from .csv_export import (
 )
 
 __all__ = [
+    "DeviceRevoked",
+    "register_device",
+    "list_devices",
+    "get_device",
     "get_db",
     "SessionLocal",
     "get_user_data",

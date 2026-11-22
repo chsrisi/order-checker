@@ -35,6 +35,7 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
+| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
@@ -91,6 +92,16 @@ endpoints) requires `X-Client-Version: <versionCode>`:
 
 The minimum comes from the published release metadata (OPERATIONS "Publishing a client
 release"); with nothing published there is no minimum.
+
+**Device registration (operator token, not gated).** `POST /v2/device/register`
+`{public_key, model, android_version, app_version_code, signature}` → the device
+`{id, status, label, model, android_version, app_version_code, current_username, enrolled_at,
+last_seen_at}`. `public_key` is the base64 DER SubjectPublicKeyInfo of the app's Android
+Keystore EC P-256 key; `signature` is the base64 DER ECDSA/SHA-256 signature over the UTF-8
+`sid` claim of the access token used for the call. New devices are `pending`; calling it again
+is idempotent (call it after every login). **400** bad key or signature, **403** device revoked.
+It binds the session to the device; from then on every gated `/v2` request updates the
+device's `last_seen_at` and `app_version_code` (from `X-Client-Version`).
 
 **Client updates (public, not gated).** `GET /v2/client/latest` →
 `{version_code, version_name, apk_url, sha256, size_bytes, min_supported_version_code, notes,

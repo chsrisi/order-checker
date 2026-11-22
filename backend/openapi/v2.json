@@ -95,6 +95,137 @@
         "title": "ContractRange",
         "type": "object"
       },
+      "DeviceRegisterRequest": {
+        "properties": {
+          "android_version": {
+            "maxLength": 32,
+            "title": "Android Version",
+            "type": "string"
+          },
+          "app_version_code": {
+            "minimum": 0.0,
+            "title": "App Version Code",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 128,
+            "title": "Model",
+            "type": "string"
+          },
+          "public_key": {
+            "description": "Base64 DER SubjectPublicKeyInfo of an EC P-256 key.",
+            "maxLength": 1024,
+            "title": "Public Key",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 `sid` claim of the caller's access token, made with the Keystore private key.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_key",
+          "model",
+          "android_version",
+          "app_version_code",
+          "signature"
+        ],
+        "title": "DeviceRegisterRequest",
+        "type": "object"
+      },
+      "DeviceResponse": {
+        "properties": {
+          "android_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Android Version"
+          },
+          "app_version_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version Code"
+          },
+          "current_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Username"
+          },
+          "enrolled_at": {
+            "format": "date-time",
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "enrolled_at"
+        ],
+        "title": "DeviceResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1286,6 +1417,62 @@
         "summary": "Newest operator-app release",
         "tags": [
           "v2 \u00b7 client release"
+        ]
+      }
+    },
+    "/v2/device/register": {
+      "post": {
+        "description": "Operator access token required. Registers the device by its Keystore public key (new devices are `pending`) and binds the caller's session to it. Idempotent: call it after every login. `signature` signs the token's `sid` claim.",
+        "operationId": "register_device_v2_device_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid public key or signature"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "403": {
+            "description": "Device revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Register this device",
+        "tags": [
+          "v2 \u00b7 device"
         ]
       }
     },

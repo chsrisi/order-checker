@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 import jwt
 import jwt.exceptions as jwt_exc
 from jwt import PyJWK
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security.http import HTTPBearer, HTTPAuthorizationCredentials
 
 from .managers import key_mgr, ACCESS_TTL_SECONDS, conn_mgr
@@ -93,6 +93,7 @@ class Principal:
 
 def get_current_principal(
     token: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    request: Request = None,  # type: ignore[assignment]  # injected by FastAPI
 ) -> Principal:
     # Plain def: FastAPI runs it in the threadpool, so the DB lookup and RSA verification
     # never block the event loop (F-H1).
@@ -105,7 +106,10 @@ def get_current_principal(
         payload = verify_access_token(token.credentials)
         # One query: the user *and* a live session. A revoked or deleted session answers
         # 401 on the very next request (instant revocation, T6.2).
-        user = queries.get_user_for_session(payload["sub"], payload["sid"])
+        # A gated /v2 request carries the app's versionCode (set by the gate, which runs
+        # first); it updates the session's device (T6.6).
+        client_version = getattr(request.state, "client_version", None) if request else None
+        user = queries.get_user_for_session(payload["sub"], payload["sid"], client_version)
         if not user:
             raise jwt_exc.InvalidTokenError("User or session not found")
         return Principal(user=user, sid=payload["sid"])

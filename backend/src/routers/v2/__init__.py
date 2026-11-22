@@ -14,7 +14,7 @@ exempt: a client that is too old must still find its update.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, FastAPI, Header
+from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.routing import APIRoute
 
 from ...services import client_releases
@@ -53,13 +53,17 @@ GATE_RESPONSES = {
 
 
 def require_client_version(
+    request: Request,
     x_client_version: str | None = Header(
         None,
         alias="X-Client-Version",
         description="Required. The app's integer versionCode.",
     ),
 ) -> int:
-    return client_releases.check_client_version(x_client_version)
+    version = client_releases.check_client_version(x_client_version)
+    # Read by get_current_principal to touch the session's device (T6.6).
+    request.state.client_version = version
+    return version
 
 
 def v2_tag(tag: str) -> str:

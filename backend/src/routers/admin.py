@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
+    DeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
     DeleteCountResponse,
@@ -80,6 +81,20 @@ async def reset_user_password(
     await auth_service.admin_reset_password(username, body.password)
     logger.info(f"Admin {current_user.username} reset the password of {username}")
     return {"message": "Password reset; all sessions revoked"}
+
+
+@router.get(
+    "/devices",
+    response_model=List[DeviceResponse],
+    summary="List v2 devices",
+    description=(
+        "Registered v2 operator devices, most recently seen first: status, current operator, "
+        "model, Android version, app versionCode and last contact. Read-only until step 8."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def list_devices(_admin: User = Depends(require_admin)):
+    return queries.list_devices()
 
 
 @router.post(

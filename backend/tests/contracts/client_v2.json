@@ -29,6 +29,70 @@
       },
       "success_200": true
     },
+    "GET /v2/client/apk/{version_code}": {
+      "params": {
+        "version_code": {
+          "in": "path",
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        }
+      },
+      "request": null,
+      "response": null,
+      "success_200": true
+    },
+    "GET /v2/client/latest": {
+      "params": {},
+      "request": null,
+      "response": {
+        "nullable": false,
+        "properties": {
+          "apk_url": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "min_supported_version_code": {
+            "nullable": true,
+            "required": false,
+            "type": "integer"
+          },
+          "notes": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "published_at": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "sha256": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "size_bytes": {
+            "nullable": true,
+            "required": false,
+            "type": "integer"
+          },
+          "version_code": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "version_name": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
     "GET /v2/items/find": {
       "params": {
         "X-Client-Version": {
@@ -435,6 +499,98 @@
             "type": "integer"
           },
           "token": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/device/register": {
+      "params": {},
+      "request": {
+        "nullable": false,
+        "properties": {
+          "android_version": {
+            "maxLength": 32,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "app_version_code": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 128,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 1024,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 512,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "android_version": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "app_version_code": {
+            "nullable": true,
+            "required": false,
+            "type": "integer"
+          },
+          "current_username": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "enrolled_at": {
+            "format": "date-time",
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "id": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "label": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "status": {
             "nullable": false,
             "required": true,
             "type": "string"

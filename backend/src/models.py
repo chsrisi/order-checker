@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 from datetime import datetime, UTC
 from typing import List, Optional, Union, Annotated, Any, Literal
 
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float, Index, text
+from sqlalchemy import CheckConstraint, Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float, Index, text
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from pydantic import (
@@ -113,6 +113,72 @@ class AuthSession(Base):
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     ip_address: Mapped[Optional[str]] = mapped_column(String)
     agent: Mapped[Optional[str]] = mapped_column(String)
+    # The v2 device this session registered from (T6.6); NULL for v1 apps and the admin.
+    device_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.devices.id", ondelete="SET NULL"), index=True
+    )
+
+
+DEVICE_STATUSES = ("pending", "active", "revoked")
+
+
+class Device(Base):
+    """A v2 operator device, identified by its Android Keystore public key (V2_SPEC §4A,
+    IMPLEMENTATION_PLAN T6.6). Registered as ``pending`` at the first login; approval,
+    revocation and the device credential (``token_hash``) come in step 8."""
+
+    __tablename__ = "devices"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'active', 'revoked')", name="ck_devices_status"
+        ),
+        {"schema": "auth"},
+    )
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[Optional[str]] = mapped_column(String)
+    model: Mapped[Optional[str]] = mapped_column(String)
+    android_version: Mapped[Optional[str]] = mapped_column(String)
+    app_version_code: Mapped[Optional[int]] = mapped_column(Integer)
+    # Base64 DER SubjectPublicKeyInfo of the device's P-256 key.
+    public_key: Mapped[str] = mapped_column(String, unique=True)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    token_hash: Mapped[Optional[str]] = mapped_column(String)
+    # The operator who last registered or used it. ("current_user" is reserved in SQL.)
+    current_username: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.users.username", ondelete="SET NULL")
+    )
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class DeviceRegisterRequest(BaseModel):
+    public_key: str = Field(
+        max_length=1024, description="Base64 DER SubjectPublicKeyInfo of an EC P-256 key."
+    )
+    model: str = Field(max_length=128)
+    android_version: str = Field(max_length=32)
+    app_version_code: int = Field(ge=0)
+    signature: str = Field(
+        max_length=512,
+        description=(
+            "Base64 DER ECDSA signature (SHA-256) over the UTF-8 `sid` claim of the caller's "
+            "access token, made with the Keystore private key."
+        ),
+    )
+
+
+class DeviceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str
+    label: Optional[str] = None
+    model: Optional[str] = None
+    android_version: Optional[str] = None
+    app_version_code: Optional[int] = None
+    current_username: Optional[str] = None
+    enrolled_at: datetime
+    last_seen_at: Optional[datetime] = None
 
 
 class RefreshToken(Base):

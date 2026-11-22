@@ -39,7 +39,9 @@ click==8.4.2
 colorama==0.4.6 ; sys_platform == 'win32'
     # via click
 cryptography==49.0.0
-    # via pyjwt
+    # via
+    #   bakingholic-backend
+    #   pyjwt
 fastapi==0.139.0
     # via bakingholic-backend
 frozenlist==1.8.0

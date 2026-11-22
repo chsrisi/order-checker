@@ -49,7 +49,9 @@ def test_current_principal_requires_a_live_session(monkeypatch):
     monkeypatch.setattr(
         auth_service.queries,
         "get_user_for_session",
-        lambda u, sid: seen.append((u, sid)) or (user() if sid == "live" else None),
+        lambda u, sid, version=None: (
+            seen.append((u, sid, version)) or (user() if sid == "live" else None)
+        ),
     )
     creds = SimpleNamespace(credentials=auth_service.create_access_token("operator", "live"))
     principal = auth_service.get_current_principal(creds)
@@ -58,7 +60,10 @@ def test_current_principal_requires_a_live_session(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         auth_service.get_current_principal(revoked)
     assert exc.value.status_code == 401
-    assert seen == [("operator", "live"), ("operator", "gone")]
+    # The gate's versionCode (request.state) is passed on to touch the device (T6.6).
+    request = SimpleNamespace(state=SimpleNamespace(client_version=7))
+    auth_service.get_current_principal(creds, request)
+    assert seen == [("operator", "live", None), ("operator", "gone", None), ("operator", "live", 7)]
 
 
 def test_refresh_token_cannot_be_used_as_access_token():

@@ -1115,7 +1115,7 @@ same change as the task.
 | T6.3 | done | v2 routes are built from the v1 routers' `APIRoute`s (FastAPI 0.139 keeps included routers wrapped, so `app.routes` can't be searched). `X-Client-Version` is declared optional in OpenAPI and enforced as 400 by the gate. Release metadata reader `services/client_releases.py` landed here (T6.5 adds endpoints and the script) |
 | T6.4 | done | **Addition:** close code **4400** for a missing/malformed `X-Client-Version` (P-9 named only 4401/4426). Version check shared with HTTP (`client_releases.check_client_version`) |
 | T6.5 | done | Releases volume mounted **read-only**; the script runs on the host (`--dir`). APK path parameter is an int (no traversal). Range requests/resume left to `FileResponse` defaults |
-| T6.6 | todo | |
+| T6.6 | done | migration `e5b8f3a1c2d4`. **Deviations:** column `current_username` (not `current_user`, a reserved SQL word); `cryptography` declared in `pyproject.toml` (already installed, P-12). Device touch rides on the per-request session lookup (no extra query); `app_version_code` is written immediately on change, `last_seen_at` throttled. Registration itself is not version-gated |
 | T6.7 | todo | |
 | T6.10 | todo | |
 | T6.11 | todo | |
