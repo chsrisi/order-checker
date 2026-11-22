@@ -75,6 +75,33 @@ see the app version and the device registration.
 - `/v2/ws` reconnects forever with backoff (1 s doubling to 30 s, ±20 %) and at once when the
   network comes back. Close 4401 or 1008 → one fresh ticket, then a session check.
 
+## Over-the-air updates
+
+The updater (`updater/`) does not depend on the login state. It checks `GET
+/v2/client/latest` on **every** address of the profile:
+
+- at app start, before the login screen;
+- on resume (at most once a minute);
+- every 15 minutes in the background (WorkManager);
+- on "Check for update now" in the hidden settings.
+
+A release below `min_supported_version_code` (or any 426) shows a blocking "Update required"
+screen. A newer optional release shows a banner with **Update** / **Later**. Before
+installing, the app checks the SHA-256 against `latest.json`, and that the package name and
+signing certificate match the installed app and the versionCode is higher. Then it installs
+through a PackageInstaller session.
+
+What an operator sees on Android 11 (checked on the API 30 emulator):
+
+1. The first update asks for **Install unknown apps** for Order Checker. Android restarts the
+   app after it is granted; tap **Update** again.
+2. The Android prompt "Do you want to install an update…?" → **Install** (every update, one
+   tap; Android 11 cannot skip it).
+3. On devices with Google Play Protect, a first install from this source may show "App scan
+   recommended": **More details → Install without scanning** (do not send the app to Google).
+   The MT67 may not have Play services; check on the device day.
+4. The app closes; reopen it and the version label shows the new build.
+
 ## Layout
 
 - `core/`: app identity (`AppInfo`: versionCode, contract).
@@ -84,4 +111,5 @@ see the app version and the device registration.
 - `settings/`: profile store, PIN gate. `meta/`: `/v2/meta`. `ui/`: Compose screens.
 - `api/model/` (generated, `build/generated/openapi`): models from `backend/openapi/v2.json`.
   Regenerated on every build; never edit or commit them.
-- Updater and device identity: IMPLEMENTATION_PLAN T6.12–T6.13.
+- `updater/`: update policy, APK verification, download, PackageInstaller, periodic worker.
+- Device identity: IMPLEMENTATION_PLAN T6.13.

@@ -17,7 +17,13 @@ import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
 import com.bakingholic.orderchecker.settings.PinGate
 import com.bakingholic.orderchecker.settings.ProfileStore
+import com.bakingholic.orderchecker.updater.AndroidPackageInspector
+import com.bakingholic.orderchecker.updater.ApkVerifier
+import com.bakingholic.orderchecker.updater.PackageInstallerApkInstaller
+import com.bakingholic.orderchecker.updater.UpdateChecker
+import com.bakingholic.orderchecker.updater.UpdateManager
 import com.bakingholic.orderchecker.ws.WsClient
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,8 +72,18 @@ class AppGraph(context: Context) {
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
 
+    // OTA updater (T6.12): independent of the login state.
+    val updates = UpdateManager(
+        appInfo,
+        UpdateChecker(http, appInfo, { profile }),
+        ApkVerifier(AndroidPackageInspector(context)),
+        PackageInstallerApkInstaller(context),
+        downloadDir = File(context.cacheDir, "updates"),
+    )
+
     init {
         scope.launch { profileStore.profile.collect { profile = it } }
+        scope.launch { updates.clearDownloads() }
         context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) = ws.kick()

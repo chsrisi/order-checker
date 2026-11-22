@@ -23,7 +23,9 @@ import com.bakingholic.orderchecker.ui.HomeScreen
 import com.bakingholic.orderchecker.ui.LoginScreen
 import com.bakingholic.orderchecker.ui.Screen
 import com.bakingholic.orderchecker.ui.SettingsScreen
-import com.bakingholic.orderchecker.ui.UpdateRequiredScreen
+import com.bakingholic.orderchecker.ui.UpdateBanner
+import com.bakingholic.orderchecker.ui.UpdateBlockingScreen
+import com.bakingholic.orderchecker.ui.blocking
 import com.bakingholic.orderchecker.ui.VersionLabel
 import com.bakingholic.orderchecker.ws.WsClient
 
@@ -40,6 +42,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { MaterialTheme { App(viewModel) } }
     }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.checkForUpdate(minIntervalMillis = 60_000) // T6.12: also on resume
+    }
 }
 
 @Composable
@@ -50,9 +57,11 @@ private fun App(vm: AppViewModel) {
     val ws by vm.wsState.collectAsStateWithLifecycle()
     val onFallback by vm.onFallback.collectAsStateWithLifecycle()
     val meta by vm.meta.collectAsStateWithLifecycle()
+    val update by vm.updateState.collectAsStateWithLifecycle()
     val graph = vm.graph
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column {
+            if (!update.blocking() && !settingsOpen) UpdateBanner(update, vm::installUpdate, vm::postponeUpdate)
             Box(modifier = Modifier.weight(1f).fillMaxSize()) {
                 when {
                     settingsOpen -> SettingsScreen(
@@ -61,9 +70,10 @@ private fun App(vm: AppViewModel) {
                         appVersion = graph.appInfo.label,
                         deviceInfo = "Device: not registered yet",
                         onSave = vm::saveProfile,
-                        onCheckUpdate = {},
+                        onCheckUpdate = { vm.checkForUpdate() },
                         onClose = vm::closeSettings,
                     )
+                    update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     screen is Screen.Login -> LoginScreen(screen as Screen.Login, vm::login)
                     screen is Screen.Home -> HomeScreen(
@@ -77,10 +87,7 @@ private fun App(vm: AppViewModel) {
                         stockMode = meta?.stockLocationMode,
                         onLogout = vm::logout,
                     )
-                    screen is Screen.UpdateRequired -> UpdateRequiredScreen(
-                        (screen as Screen.UpdateRequired).minSupportedVersionCode,
-                        graph.appInfo.versionCode,
-                    )
+                    screen is Screen.UpdateRequired -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                 }
             }
             Box(modifier = Modifier.fillMaxSize().weight(0.08f), contentAlignment = Alignment.Center) {

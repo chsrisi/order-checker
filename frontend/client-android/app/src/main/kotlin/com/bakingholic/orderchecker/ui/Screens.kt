@@ -112,16 +112,3 @@ fun HomeScreen(
         OutlinedButton(onClick = onLogout, modifier = Modifier.testTag("logout")) { Text("Log out") }
     }
 }
-
-@Composable
-fun UpdateRequiredScreen(minVersionCode: Int?, currentVersionCode: Int) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Update required", style = MaterialTheme.typography.headlineSmall)
-        Text("This app ($currentVersionCode) is too old for the server" + (minVersionCode?.let { " (needs $it)" } ?: "") + ".")
-        Text("The update is installed from this screen once available.")
-    }
-}

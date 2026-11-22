@@ -35,18 +35,24 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val user = graph.session.user
     val wsState = graph.ws.state
     val meta = graph.meta.meta
+    val updateState = graph.updates.state
 
     init {
         viewModelScope.launch {
             graph.events.collect { event ->
                 when (event) {
                     is AppEvent.LoggedOut -> _screen.value = Screen.Login(error = "Session ended. Please log in again.")
-                    is AppEvent.UpgradeRequired -> _screen.value = Screen.UpdateRequired(event.minSupportedVersionCode)
+                    is AppEvent.UpgradeRequired -> {
+                        _screen.value = Screen.UpdateRequired(event.minSupportedVersionCode)
+                        viewModelScope.launch { graph.updates.check() }
+                    }
                 }
             }
         }
         viewModelScope.launch {
-            // The updater (T6.12) runs before this; then restore the session.
+            // The update check comes first, before the login screen (T6.12): a build with a
+            // broken login must still be replaceable.
+            graph.updates.check()
             _screen.value = if (graph.session.restore()) Screen.Home.also { enterHome() } else Screen.Login()
         }
         viewModelScope.launch {
@@ -84,6 +90,16 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
             _screen.value = Screen.Login()
         }
     }
+
+    fun checkForUpdate(minIntervalMillis: Long = 0) {
+        viewModelScope.launch { graph.updates.check(minIntervalMillis) }
+    }
+
+    fun installUpdate() {
+        viewModelScope.launch { graph.updates.update() }
+    }
+
+    fun postponeUpdate() = graph.updates.postpone()
 
     fun openSettings() {
         _settingsOpen.value = true
