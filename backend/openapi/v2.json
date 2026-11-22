@@ -1,6 +1,82 @@
 {
   "components": {
     "schemas": {
+      "ClientReleaseResponse": {
+        "properties": {
+          "apk_url": {
+            "description": "Path of the APK on this server; resolve it against the address used.",
+            "title": "Apk Url",
+            "type": "string"
+          },
+          "min_supported_version_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Older apps get 426 on every gated /v2 call and must update.",
+            "title": "Min Supported Version Code"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "sha256": {
+            "description": "Hex SHA-256 of the APK; verify before installing.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "version_code": {
+            "description": "Android versionCode of the newest published APK.",
+            "title": "Version Code",
+            "type": "integer"
+          },
+          "version_name": {
+            "title": "Version Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_code",
+          "version_name",
+          "apk_url",
+          "sha256"
+        ],
+        "title": "ClientReleaseResponse",
+        "type": "object"
+      },
       "ContractRange": {
         "properties": {
           "max": {
@@ -1142,6 +1218,74 @@
         "summary": "Create a WebSocket ticket",
         "tags": [
           "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/client/apk/{version_code}": {
+      "get": {
+        "description": "Public. The published APK with this versionCode.",
+        "operationId": "download_apk_v2_client_apk__version_code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_code",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Version Code",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.android.package-archive": {}
+            },
+            "description": "The APK file"
+          },
+          "404": {
+            "description": "No APK with this versionCode"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download an operator-app APK",
+        "tags": [
+          "v2 \u00b7 client release"
+        ]
+      }
+    },
+    "/v2/client/latest": {
+      "get": {
+        "description": "Public. Metadata of the newest published APK, written by `scripts.publish_client_release`. 404 while nothing is published.",
+        "operationId": "latest_release_v2_client_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No release published"
+          }
+        },
+        "summary": "Newest operator-app release",
+        "tags": [
+          "v2 \u00b7 client release"
         ]
       }
     },

@@ -92,6 +92,12 @@ endpoints) requires `X-Client-Version: <versionCode>`:
 The minimum comes from the published release metadata (OPERATIONS "Publishing a client
 release"); with nothing published there is no minimum.
 
+**Client updates (public, not gated).** `GET /v2/client/latest` →
+`{version_code, version_name, apk_url, sha256, size_bytes, min_supported_version_code, notes,
+published_at}` (404 while nothing is published); `GET /v2/client/apk/{version_code}` → the APK
+(`application/vnd.android.package-archive`, 404 if unknown). `apk_url` is a path; resolve it
+against the server address in use. Verify `sha256` before installing.
+
 ## Datetimes
 
 Every datetime in HTTP responses and WebSocket frames is a UTC instant with a `Z` suffix, for

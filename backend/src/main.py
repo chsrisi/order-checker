@@ -33,6 +33,7 @@ from .routers import (
     pick_items,
     websocket,
     meta,
+    client_release,
 )
 from .routers.v2 import include_v2
 
@@ -237,9 +238,18 @@ app.include_router(shopee.router)
 app.include_router(pick_items.router)
 app.include_router(websocket.router)
 app.include_router(websocket.v2_router)
+app.include_router(client_release.router)
 app.include_router(meta.router)
 # Contract v2 mirrors the client operations registered above (T6.3).
 include_v2(
     app,
-    [auth.router, outbound.router, pick_items.router, shopee.router, items.router, stocks.router, meta.router],
+    [
+        auth.router,
+        outbound.router,
+        pick_items.router,
+        shopee.router,
+        items.router,
+        stocks.router,
+        meta.router,
+    ],
 )

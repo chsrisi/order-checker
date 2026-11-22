@@ -638,6 +638,11 @@ committed export `backend/openapi/v2.json`.
   ungated. The metadata file is re-read only when its mtime changes
   (`services/client_releases.py`).
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
+- OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
+  `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
+  (`orderchecker-<code>.apk`, `latest.json`), written only by `scripts.publish_client_release`
+  (higher versionCode required, SHA-256 checked after copy, metadata replaced atomically last);
+  compose mounts `RELEASES_VOLUME` read-only.
 
 ---
 

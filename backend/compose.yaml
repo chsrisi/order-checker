@@ -31,8 +31,12 @@ services:
       - LOG_TO_FILE=${LOG_TO_FILE:-true}
       - LOG_DIR=${LOG_DIR:-logs}
       - KEYS_DIR=${KEYS_DIR:-data/keys}
+      - CLIENT_RELEASES_DIR=${CLIENT_RELEASES_DIR:-data/releases/client}
     volumes:
       - "${KEYS_VOLUME:-./data/keys}:/app/data/keys"
+      # Published operator-app APKs + latest.json (T6.5); written on the host by
+      # scripts.publish_client_release, read-only for the app.
+      - "${RELEASES_VOLUME:-./data/releases}:/app/data/releases:ro"
       - "${LOGS_VOLUME:-./logs}:/app/logs"
     secrets:
       - source: database_url
