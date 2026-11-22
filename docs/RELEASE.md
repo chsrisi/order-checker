@@ -8,7 +8,8 @@ working as long as contract v1 holds.
 
 ## 1. Release PR checklist (`dev` → `master`)
 
-- [ ] CI green: backend (incl. contract v1 + PostgreSQL), migration gate, both Flutter apps.
+- [ ] CI green: backend (incl. contract v1 + PostgreSQL), migration gate, both Flutter apps,
+      `android (client-android)`.
 - [ ] **Contract v1 sign-off.** `backend/tests/contracts/client_v1.json` is unchanged, or
       every change is additive and explained in the PR (e.g. T2.14 length limits). WS frames
       still carry `data` as a list of objects, and the WS handshake still rejects with 403.
@@ -56,7 +57,18 @@ After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z` (maintain
 4. If the token identity (`APP_ENV`, `JWT_AUDIENCE`, `JWT_ISSUER`) or the keys differ between the two versions, operators log in again.
 5. If data must be restored: `pg_restore -U postgres -d bakingholic --clean backup-<date>.dump`, then restore `data/keys` (a database restore without the keys forces a relogin) and the Redis volume (it holds the Shopee tokens).
 
-## 4. Release-specific windows
+## 4. Operator app (v2) signing key
+
+The Android app's release key is permanent (V2_SPEC §12.1). Generate and back it up as in
+V2_SPEC §12.2–12.3. Its SHA-256 certificate fingerprint is public: record it here once, and
+compare every release APK against it (`apksigner verify --print-certs <apk>`, the
+`Signer #1 certificate SHA-256 digest` line). A mismatch means the wrong key: do not publish.
+
+<!-- Paste the output of: keytool -list -v -keystore <p12> -alias orderchecker | grep SHA256:
+     (keytool prints it with colons; apksigner prints it without; both are the same value) -->
+- Release key (alias `orderchecker`, generated YYYY-MM-DD): `SHA256: <paste fingerprint>`
+
+## 5. Release-specific windows
 
 ### v0.4.0: first production-rules release (IMPLEMENTATION_PLAN T3.6)
 

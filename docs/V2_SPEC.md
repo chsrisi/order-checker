@@ -271,7 +271,7 @@ Priority order. Anything not finished is shipped later over OTA.
 
 ## 7. Release placement
 
-- v0.5.0 already carries the inventory migration and cutover (RELEASE.md §4). **Decide** whether the
+- v0.5.0 already carries the inventory migration and cutover (RELEASE.md §5). **Decide** whether the
   `/v2` backend surface ships in v0.5.0 or a following release; the device day needs at least the
   OTA endpoints and enough `/v2` routes for login.
 - nginx: proxy `/v2/` to the API; serve `/admin/` (Vue static, SPA fallback); serve the APK path;
