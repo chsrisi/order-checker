@@ -8,7 +8,8 @@ working as long as contract v1 holds.
 
 ## 1. Release PR checklist (`dev` → `master`)
 
-- [ ] CI green: backend (incl. contract v1 + PostgreSQL), migration gate, both Flutter apps.
+- [ ] CI green: backend (incl. contract v1 + PostgreSQL), migration gate, both Flutter apps,
+      `android (client-android)`.
 - [ ] **Contract v1 sign-off.** `backend/tests/contracts/client_v1.json` is unchanged, or
       every change is additive and explained in the PR (e.g. T2.14 length limits). WS frames
       still carry `data` as a list of objects, and the WS handshake still rejects with 403.
@@ -26,19 +27,23 @@ After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z` (maintain
 
 1. **Announce** the window to operators. Ask them to finish open picks and scans.
 2. **Back up** (keep for at most 90 days, ideally 30; see OPERATIONS "Data Retention"):
+
    ```bash
    cd backend
    docker compose exec -T db pg_dump -U postgres -Fc bakingholic > backup-$(date +%F).dump
    docker compose exec -T redis sh -c 'REDISCLI_AUTH="$(cat /run/secrets/redis_password 2>/dev/null)" redis-cli SAVE'
    tar czf keys-$(date +%F).tgz data/keys
    ```
+
    (Before v0.4.0, Redis has no password, so the `REDISCLI_AUTH` part is empty and still works.)
 3. **Deploy:**
+
    ```bash
    git fetch --tags && git checkout vX.Y.Z
    docker compose -f compose.yaml -f compose.prod.yaml up -d --build
    docker compose -f compose.yaml -f compose.prod.yaml logs -f server   # migrations + "startup_config_accepted"
    ```
+
    If startup is refused, the log lists every configuration problem (OPERATIONS
    "Environment Profiles"). Fix them and run `up -d` again.
 4. **Smoke test:**
@@ -56,7 +61,16 @@ After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z` (maintain
 4. If the token identity (`APP_ENV`, `JWT_AUDIENCE`, `JWT_ISSUER`) or the keys differ between the two versions, operators log in again.
 5. If data must be restored: `pg_restore -U postgres -d bakingholic --clean backup-<date>.dump`, then restore `data/keys` (a database restore without the keys forces a relogin) and the Redis volume (it holds the Shopee tokens).
 
-## 4. Release-specific windows
+## 4. Operator app (v2) signing key
+
+The Android app's release key is permanent (V2_SPEC §12.1). Generate and back it up as in
+V2_SPEC §12.2–12.3. Its SHA-256 certificate fingerprint is public: record it here once, and
+compare every release APK against it (`apksigner verify --print-certs <apk>`, the
+`Signer #1 certificate SHA-256 digest` line). A mismatch means the wrong key: do not publish.
+
+- Release key (alias `orderchecker`, generated 2026-11-22): `SHA256: 95:46:2A:5E:71:9C:66:95:13:E1:48:6C:44:4E:B0:9D:79:8D:42:89:C6:CB:41:B8:49:40:FF:33:76:BE:53:FA`
+
+## 5. Release-specific windows
 
 ### v0.4.0: first production-rules release (IMPLEMENTATION_PLAN T3.6)
 
@@ -117,15 +131,54 @@ the commands below were run then. Kept as the record of that window. This window
    created. A downgrade keeps the folded rows.
 3. Run the cutover command. It deletes the remaining open pick entries **without restoring
    stock** and writes one `cutover_clear` log row:
+
    ```bash
    docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries            # count only
    docker compose -f compose.yaml -f compose.prod.yaml exec server python -m scripts.clear_open_pick_entries --confirm
    ```
+
    If this step is missed, a legacy entry has no allocations, and deleting it restores nothing.
    Nothing is guessed.
 4. If production runs `STOCK_LOCATION_MODE=single`, also run
    `python -m scripts.stock_merge_single --confirm` (OPERATIONS "Stock Location Mode").
 5. Smoke test: pick 1 of an item, delete the entry, and check that the stock is back.
+
+### v0.6.0: dual-contract backend, sessions, OTA (IMPLEMENTATION_PLAN step 6)
+
+Migrations `d4a7e2c9b1f0` (sessions; deletes refresh tokens) and `e5b8f3a1c2d4` (devices,
+additive). Rollback: `alembic downgrade c3f8a2d5e6b1`, then check out `v0.5.0`. Tokens issued
+by v0.6.0 keep working on v0.5.0 (it ignores `sid`), so a rollback needs no second relogin.
+
+**One relogin for everyone.** `auth.sessions` replaces the old refresh tokens and tokens
+without the `sid` claim are rejected (V2_DELTA Q24). Each v1 device gets 401, fails its refresh
+and shows the login screen; operators log in once. The admin web logs in again too.
+
+1. Announce the window and the one-time relogin (§2 step 1).
+2. Back up (§2 step 2).
+3. Create the releases directory on the host, next to `data/keys`:
+   `mkdir -p backend/data/releases/client` (mounted read-only into the container as
+   `RELEASES_VOLUME`; OPERATIONS "Publishing a client release").
+4. Deploy (§2 step 3). The log shows both migrations, then `startup_config_accepted`.
+5. Publish the first v2 APK when it exists (step 6 device day, T6.16), from `backend/`:
+   `uv run python -m scripts.publish_client_release <apk> --version-code 1 --version-name
+   2.0.0 --dir data/releases/client --confirm`. Until then `GET /v2/client/latest` answers 404,
+   which is expected.
+6. Smoke test v1 on one device: log in (expect the relogin), sync, claim an order, add a pick,
+   delete it (stock comes back), scan a test label.
+7. Smoke test v2 from a laptop on the LAN:
+
+   ```bash
+   curl -s http://192.168.1.50:8000/v2/meta          # client_contract {"min":1,"max":2}
+   curl -si http://192.168.1.50:8000/v2/client/latest | head -1   # 404 until step 5, then 200
+   curl -si http://192.168.1.50:8000/v2/items/find?query=x | head -1   # 400: no X-Client-Version
+   ```
+
+8. Admin: *log out everywhere* on a test operator (`POST /admin/users/{username}/logout`), check
+   that its device returns to the login screen within one request.
+
+Release notes: one-time relogin; logout, password reset and the new "log out everywhere" take
+effect immediately; the backend serves the v2 operator app (`/v2`, OTA updates, device
+registration) next to the unchanged v1 app.
 
 ### v0.5.0: pre-release fixes (no relogin, no client change)
 

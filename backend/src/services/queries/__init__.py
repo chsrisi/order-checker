@@ -1,4 +1,10 @@
 from .engine import get_db, SessionLocal
+from .devices import (
+    DeviceRevoked,
+    register_device,
+    list_devices,
+    get_device,
+)
 from .users import (
     get_user_data,
     get_all_user_data,
@@ -10,6 +16,10 @@ from .users import (
     consume_refresh_token,
     set_password_and_revoke_sessions,
     delete_outdated_refresh_tokens,
+    create_session,
+    get_user_for_session,
+    revoke_session,
+    revoke_user_sessions,
 )
 from .outbound import (
     get_outbounds_data,
@@ -63,6 +73,10 @@ from .csv_export import (
 )
 
 __all__ = [
+    "DeviceRevoked",
+    "register_device",
+    "list_devices",
+    "get_device",
     "get_db",
     "SessionLocal",
     "get_user_data",
@@ -74,6 +88,10 @@ __all__ = [
     "delete_refresh_token",
     "consume_refresh_token",
     "set_password_and_revoke_sessions",
+    "create_session",
+    "get_user_for_session",
+    "revoke_session",
+    "revoke_user_sessions",
     "delete_outdated_refresh_tokens",
     "get_outbounds_data",
     "get_all_outbound_data",

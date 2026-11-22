@@ -641,6 +641,34 @@ For standalone Docker, `BACKEND_HOST` must resolve inside the web container. The
 
 ---
 
+## Publishing a client release
+
+The v2 operator app updates itself from the backend (V2_DELTA Q5, IMPLEMENTATION_PLAN T6.5).
+APKs and `latest.json` live in `RELEASES_VOLUME` (default `./data/releases`, mounted read-only
+at `/app/data/releases`; the app reads `CLIENT_RELEASES_DIR=data/releases/client`).
+
+1. Build and sign the release APK (`frontend/client-android`, RELEASE.md "Operator app
+   releases"), then check it: `apksigner verify --print-certs app-release.apk`.
+2. Dry run on the host, from `backend/`:
+
+   ```bash
+   uv run python -m scripts.publish_client_release app-release.apk \
+     --version-code 3 --version-name 2.0.2 --dir data/releases/client
+   ```
+
+3. Repeat with `--confirm`. The APK is copied to `orderchecker-<versionCode>.apk`, verified
+   by SHA-256, and `latest.json` is replaced atomically **last**. No restart needed: the
+   backend re-reads the file when it changes.
+
+Rules: the versionCode must be higher than the published one (a rollback is a new, higher
+versionCode built from older code). `--min-supported N` forces every older app to update: its
+gated `/v2` calls answer 426 and `/v2/ws` closes with 4426. Omitted, the previous minimum is
+kept. Old APK files stay; delete them by hand once no device runs them.
+
+Endpoints (public, ungated): `GET /v2/client/latest`, `GET /v2/client/apk/{versionCode}`.
+
+---
+
 ## Backups & Persistence
 
 Back up all three durable assets together:
@@ -648,6 +676,8 @@ Back up all three durable assets together:
 1. PostgreSQL data (`db-data`) for relational business state.
 2. Redis data (`redis-data`) for live Shopee credentials.
 3. Key storage directory (`KEYS_VOLUME`, default `./data/keys`) for active JWT signing and verification keys.
+4. Client releases (`RELEASES_VOLUME`, default `./data/releases`): can be republished from the
+   signed APKs, but keep `latest.json` so `min_supported_version_code` survives.
 
 Test restoration regularly. Restoring the database without key files forces all users to log in again. Restoring without Redis requires re-entering Shopee tokens via the Admin UI or seed variables.
 

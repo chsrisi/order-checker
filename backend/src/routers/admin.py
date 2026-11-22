@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
+    DeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
     DeleteCountResponse,
@@ -63,8 +64,9 @@ async def create_user(body: AdminUserCreate, current_user: User = Depends(requir
     response_model=MessageResponse,
     summary="Reset an operator password",
     description=(
-        "Sets a new password, revokes all of the user's refresh tokens and closes their "
-        "WebSocket sessions, so every device must log in again."
+        "Sets a new password, revokes all of the user's sessions (tokens stop working on the "
+        "next request) and closes their WebSocket connections, so every device must log in "
+        "again."
     ),
     responses={
         403: {"description": "Admin scope required"},
@@ -79,6 +81,43 @@ async def reset_user_password(
     await auth_service.admin_reset_password(username, body.password)
     logger.info(f"Admin {current_user.username} reset the password of {username}")
     return {"message": "Password reset; all sessions revoked"}
+
+
+@router.get(
+    "/devices",
+    response_model=List[DeviceResponse],
+    summary="List v2 devices",
+    description=(
+        "Registered v2 operator devices, most recently seen first: status, current operator, "
+        "model, Android version, app versionCode and last contact. Read-only until step 8."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def list_devices(_admin: User = Depends(require_admin)):
+    return queries.list_devices()
+
+
+@router.post(
+    "/users/{username}/logout",
+    response_model=MessageResponse,
+    summary="Log an operator out everywhere",
+    description=(
+        "Revokes every session of a client account: its access and refresh tokens stop "
+        "working on the next request and its WebSocket connections are closed. Each device "
+        "returns to its login screen; the password is unchanged."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Client account not found"},
+    },
+)
+async def logout_user_everywhere(
+    username: str = Path(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$"),
+    current_user: User = Depends(require_admin),
+):
+    count = await auth_service.admin_logout_user(username)
+    logger.info(f"Admin {current_user.username} logged out {username} everywhere")
+    return {"message": f"{count} session(s) revoked"}
 
 
 @router.delete(

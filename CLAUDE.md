@@ -71,8 +71,33 @@ one-line pointer here.
 - Definition of done: Ruff clean, full pytest including PostgreSQL integration tests, the
   migration gate when migrations change, `flutter analyze && flutter test` in each touched app,
   docs updated in the same change (`docs/TESTING.md` has the commands).
-- When a planned task list exists (`docs/IMPLEMENTATION_PLAN.md` for steps 0–5 and TF.*),
+- When a planned task list exists (`docs/IMPLEMENTATION_PLAN.md`: steps 0–5 and TF.* done; steps 6–8 = v2),
   update its §7 tracker in the same change as the task.
+
+### Planning flow for a milestone
+
+How v0.4/v0.5 were planned (see `docs/archive/`) and how v2 is planned
+(`docs/V2_SPEC.md` → `docs/V2_DELTA.md`). Follow it for any multi-step change.
+
+1. **Review / spec** (`docs/<NAME>_REVIEW.md` or `_SPEC.md`): name the commit it was checked
+   against. Verify every claim about current behaviour in the code first; the code wins. Then
+   give a system map, findings or feasibility, and questions, each with a recommendation. No
+   code changes.
+2. **Decision delta** (`docs/<NAME>_DELTA.md`): one dated round per maintainer reply, with a
+   decisions table, consequences, and one open-questions table (✅ decided, ⚠️ revisit, ❓ open
+   with its working default, 📌 kept). Say when each answer is needed. Never rewrite earlier
+   rounds; later rounds win. Precedence: **delta > plan > review**.
+3. **Side discussions** for a single design topic get their own file (example:
+   `archive/STOCK_MODEL_DISCUSSION.md`).
+4. **Plan:** a new step in `docs/IMPLEMENTATION_PLAN.md`. Tasks follow the
+   Goal/Refs/Change/Tests/Docs/Accept format, with P-* planning defaults the maintainer can
+   veto, the dependency graph, and §7 tracker rows. Write it only once the "before planning"
+   questions are answered.
+5. **Implement** only on an explicit go-ahead, one step or task at a time. Update the tracker
+   row in the same change.
+6. **Close:** bring `SYSTEM_REFERENCE.md` and the guides up to date, then move the
+   review/delta/discussion files to `docs/archive/` with a dated banner and a row in its
+   README.
 
 ### Environment notes for agents
 

@@ -12,12 +12,13 @@ It refuses empty/default/placeholder passwords and revokes the admin's refresh t
 
 import sys
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from src.config import get_config_value
-from src.models import RefreshToken, User
+from src.models import User
 from src.services.auth_service import get_password_hash
 from src.services.queries.engine import get_db
+from src.services.queries.users import _revoke_user_sessions
 from src.settings_guard import PLACEHOLDER_ADMIN_PASSWORDS
 
 
@@ -31,7 +32,7 @@ def set_admin_password() -> str:
         if user is None or user.scope != "admin":
             raise SystemExit(f"No admin account named {username!r}; start the server to seed it")
         user.password_hash = get_password_hash(password)
-        db.execute(delete(RefreshToken).where(RefreshToken.username == username))
+        _revoke_user_sessions(db, username)  # sessions revoked, refresh tokens deleted
         db.commit()
     return username
 

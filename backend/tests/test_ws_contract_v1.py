@@ -17,6 +17,7 @@ from src.models import WSMessageType
 from src.routers import websocket as ws_router
 from src.services.managers import connection_manager
 from src.services.managers.connection_manager import ConnectionManager
+from src.services.managers.ticket_manager import TicketClaims
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -68,11 +69,15 @@ def test_ws_payloads_are_lists_of_objects(monkeypatch, message_type, scope):
 
 
 def _client_with_ticket(monkeypatch, scope="client"):
-    monkeypatch.setattr(ws_router.ticket_mgr, "consume_ticket", AsyncMock(return_value="operator"))
+    monkeypatch.setattr(
+        ws_router.ticket_mgr,
+        "consume_ticket",
+        AsyncMock(return_value=TicketClaims("operator", "sid-1")),
+    )
     monkeypatch.setattr(
         ws_router.queries,
-        "get_user_data",
-        lambda _u: SimpleNamespace(username="operator", scope=scope),
+        "get_user_for_session",
+        lambda _u, _sid: SimpleNamespace(username="operator", scope=scope),
     )
     from src.main import app
 
@@ -97,6 +102,22 @@ def test_ws_bad_ticket_is_rejected_with_http_403(monkeypatch, url):
 
     with pytest.raises(WebSocketDenialResponse) as exc:
         with TestClient(app).websocket_connect(url):
+            pass
+    assert exc.value.status_code == 403
+
+
+def test_ws_ticket_of_a_revoked_session_is_rejected_with_http_403(monkeypatch):
+    """T6.2: the ticket is valid but its session was revoked meanwhile."""
+    monkeypatch.setattr(
+        ws_router.ticket_mgr,
+        "consume_ticket",
+        AsyncMock(return_value=TicketClaims("operator", "revoked")),
+    )
+    monkeypatch.setattr(ws_router.queries, "get_user_for_session", lambda _u, _sid: None)
+    from src.main import app
+
+    with pytest.raises(WebSocketDenialResponse) as exc:
+        with TestClient(app).websocket_connect("/ws?token=t"):
             pass
     assert exc.value.status_code == 403
 

@@ -16,7 +16,8 @@ administrators.
 
 ```text
 backend/          FastAPI API, SQLAlchemy models, Alembic migrations, Docker stack
-frontend/client/  Flutter operator app (Android, Windows)
+frontend/client/  Flutter operator app v1 (Android, Windows), contract v1, frozen
+frontend/client-android/  Kotlin + Compose operator app v2 (Android 11+), contract v2, OTA updates
 frontend/admin/   Flutter administration app (web, served by nginx)
 docs/             Architecture, API, operations, testing, and review guides
 ```
@@ -80,6 +81,7 @@ cd backend && docker compose -f compose.yaml -f compose.test.yaml run --build --
 cd backend && uv run python -m pytest
 cd frontend/client && flutter analyze && flutter test
 cd frontend/admin && flutter analyze && flutter test
+cd frontend/client-android && ./gradlew lint testDebugUnitTest assembleDebug
 ```
 
 Start with the [documentation index](docs/PROJECT.md), or jump to the

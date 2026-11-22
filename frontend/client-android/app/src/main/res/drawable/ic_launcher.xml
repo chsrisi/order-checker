@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder launcher icon: a checkmark on a dark tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:fillColor="#FF1F3A5F" android:pathData="M8,4h32a4,4 0,0 1,4 4v32a4,4 0,0 1,-4 4h-32a4,4 0,0 1,-4 -4v-32a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M20,31.2l-7.1,-7.1 -2.8,2.8 9.9,9.9 18.1,-18.1 -2.8,-2.8z" />
+</vector>

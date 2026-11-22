@@ -12,9 +12,12 @@ Send the returned access token on protected routes:
 Authorization: Bearer <access_token>
 ```
 
-Access tokens last 15 minutes. `POST /auth/refresh` consumes a stored refresh
-token and rotates both tokens. `POST /auth/logout` deletes the refresh-token JTI;
-it does not blacklist the short-lived access token. Public signing keys are at
+Access tokens last 15 minutes. Every login starts a **session**; its id is the `sid` claim
+of every access and refresh token of that login (required since v0.6.0). `POST /auth/refresh`
+consumes a stored refresh token and rotates both tokens within the same session. Each request
+checks that the token's session is still live, so ending a session (logout, password reset,
+"log out everywhere", user deletion) makes its access **and** refresh tokens fail with 401 on
+the next request and closes its WebSocket connections (code 1008). Public signing keys are at
 `GET /.well-known/jwks.json`.
 
 ## HTTP endpoints
@@ -25,13 +28,15 @@ it does not blacklist the short-lived access token. Public signing keys are at
 | POST | `/auth/login` | Public | Operator login. **429** after 10 failed attempts for a username within 15 minutes |
 | POST | `/auth/admin` | Public | Admin-only login (same 429 throttle) |
 | POST | `/auth/refresh` | Public | Rotate refresh token pair |
-| POST | `/auth/logout` | Public | Delete refresh-token record |
+| POST | `/auth/logout` | Public | End the refresh token's session (its tokens stop working at once, its sockets close) |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
-| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
+| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
-| POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all refresh tokens and closes sockets; 404 for unknown or admin accounts |
+| POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
+| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
 | GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
@@ -57,6 +62,52 @@ it does not blacklist the short-lived access token. Public signing keys are at
 
 Request and response fields, examples, constraints, and error responses are kept
 in OpenAPI so generated clients do not need to duplicate this table.
+
+## Operator-client contract v2 (`/v2`)
+
+The root routes above are contract v1 (frozen, KNOWN_LIMITATIONS #8). Since v0.6.0 the same
+operations are also served under `/v2` for the v2 operator app, by **the same handlers**
+(identical request, response and error behaviour):
+
+| v2 path | Same as |
+|---|---|
+| `POST /v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/logout`, `/v2/auth/ws-token` | `/auth/...` |
+| `POST /v2/outbound` | `POST /outbound` |
+| `POST /v2/pick-items`, `/v2/pick-items/{id}/assign`, `/v2/pick-items/unassign`, `DELETE /v2/pick-items/{id}` | `/pick-items...` |
+| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...` |
+| `GET /v2/items/find` | `GET /items/find` |
+| `POST /v2/stocks/update` | `POST /stocks/update` |
+| `GET /v2/meta` | `GET /meta` |
+
+Not under `/v2`: registration, JWKS (the v2 app does not verify tokens locally), and every
+admin operation (the admin API stays at the root).
+
+**Version gate.** Every `/v2` operation except `/v2/meta` (and the update and device-registration
+endpoints) requires `X-Client-Version: <versionCode>`:
+
+- missing or not a non-negative integer → **400** `{"detail": "X-Client-Version header required"}`
+- below the published `min_supported_version_code` → **426**
+  `{"detail": "Client update required", "min_supported_version_code": N}`; the app shows its
+  update screen
+
+The minimum comes from the published release metadata (OPERATIONS "Publishing a client
+release"); with nothing published there is no minimum.
+
+**Device registration (operator token, not gated).** `POST /v2/device/register`
+`{public_key, model, android_version, app_version_code, signature}` → the device
+`{id, status, label, model, android_version, app_version_code, current_username, enrolled_at,
+last_seen_at}`. `public_key` is the base64 DER SubjectPublicKeyInfo of the app's Android
+Keystore EC P-256 key; `signature` is the base64 DER ECDSA/SHA-256 signature over the UTF-8
+`sid` claim of the access token used for the call. New devices are `pending`; calling it again
+is idempotent (call it after every login). **400** bad key or signature, **403** device revoked.
+It binds the session to the device; from then on every gated `/v2` request updates the
+device's `last_seen_at` and `app_version_code` (from `X-Client-Version`).
+
+**Client updates (public, not gated).** `GET /v2/client/latest` →
+`{version_code, version_name, apk_url, sha256, size_bytes, min_supported_version_code, notes,
+published_at}` (404 while nothing is published); `GET /v2/client/apk/{version_code}` → the APK
+(`application/vnd.android.package-archive`, 404 if unknown). `apk_url` is a path; resolve it
+against the server address in use. Verify `sha256` before installing.
 
 ## Datetimes
 
@@ -136,6 +187,17 @@ updates. Responses and server broadcasts have this envelope:
 Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
+
+**Contract v2 socket (`/v2/ws`, since v0.6.0).** Ticket from `POST /v2/auth/ws-token`, then
+`WS_URL/v2/ws?token=<ticket>` with the header `X-Client-Version: <versionCode>`. Same commands,
+same events, same `data` payloads as v1 (built once per audience for both). Differences:
+
+- Frames are `{"type": ..., "data": [...], "ts": "<UTC send time, ...Z>"}`; parse `type` first.
+- Handshake failures are reported **after accept** with a close code: **4400** missing or
+  malformed `X-Client-Version`, **4401** ticket missing/used/expired or its session revoked,
+  **4426** client below `min_supported_version_code` (show the update screen). A revoked
+  session's open socket is closed with **1008**, as for v1.
+
 
 **Frame rule (client contract v1):** `data` is always a JSON array of objects, for every
 type and every audience, because the v1 apps parse `data` before they read `type`. Error

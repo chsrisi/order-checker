@@ -1,0 +1,16 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# Signing material never enters git (V2_SPEC §12)
+keystore.properties
+*.p12
+*.jks
+*.keystore
+# Build outputs copied out of build/ (APKs are published through the backend, never committed)
+*.apk
+*.aab
+*.idsig
