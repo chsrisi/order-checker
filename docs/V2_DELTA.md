@@ -261,6 +261,14 @@ your go-ahead, beginning with T6.0.
 | Q29 | Order between client and admin | Foundations first, in parallel, because they need no UX debate: T6.15a scan input and T7.1–T7.2 (Vue skeleton, login). Then the client screens by daily use (Inbound, Outbound, Stocks, Item finder, Account), with admin screens alternating (Orders and scan history, Users, Inventory, then the rest). | before T6.15b / T7.3 |
 | Q30 | Known UX pain points in v1 and the Flutter admin | I draft a list from reading the code, at the top of V2_UX.md. You correct it and add what operators complain about. | before the first screen brief |
 
+## Delta 6 (2026-11-23)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q28 | The per-screen loop is accepted as proposed (D5.3): brief in [V2_UX.md](V2_UX.md) → your approval → build → you try it → revision rounds in the same file. | ✅ |
+| Q29 | The order is accepted as proposed (D5.3): foundations first in parallel (T6.15a, T7.1–T7.2), then client screens by daily use, alternating with admin screens. | ✅ |
+| Q30 | Started: the draft problem list is in V2_UX.md §1. You correct it before the first screen brief (T6.15b Inbound). | ❓ (your review) |
+
 ---
 
 ## Open questions and things to revisit
@@ -297,6 +305,6 @@ without it), **before device day** (it decides what the first APK must contain),
 | Q25 | Review the Shopee sync flow and its optimizations (4–5 s today, on the request path) | Later: trace `sync_shopee_orders` end to end (SYSTEM_REFERENCE §7.1), measure each stage, and weigh moving it off the request path (backlog). | later | 📌 |
 | ~~Q26~~ | ~~Port or rebuild the Flutter screens~~ | Rebuild iteratively for better UX (D5) | – | ✅ |
 | ~~Q27~~ | ~~Device day before parity?~~ | Postponed; parity for client and admin first (D5) | – | ✅ |
-| Q28 | Per-screen design loop | Brief in V2_UX.md → approve → build → try → revise (D5.3) | before the first screen | ❓ |
-| Q29 | Client vs admin order | Foundations in parallel (T6.15a, T7.1–T7.2), then alternate by daily use (D5.3) | before T6.15b / T7.3 | ❓ |
-| Q30 | v1 / Flutter admin UX pain points | I draft from code; you correct (D5.3) | before the first screen brief | ❓ |
+| ~~Q28~~ | ~~Per-screen design loop~~ | Accepted (D6) | – | ✅ |
+| ~~Q29~~ | ~~Client vs admin order~~ | Accepted (D6) | – | ✅ |
+| Q30 | v1 / Flutter admin UX pain points | Draft in V2_UX.md §1; you correct it (D6) | before T6.15b | ❓ |
