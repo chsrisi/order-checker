@@ -706,3 +706,4 @@ Test restoration regularly. Restoring the database without key files forces all 
 | Shopee sync repeats/fails | Partner/shop credentials, admin token screen, cache reset endpoint, upstream request IDs |
 | Browser CORS rejection | Exact scheme/host/port in `CORS_ORIGINS` |
 | Detailed logs missing in stdout | Stdout defaults to `WARNING`. Detailed `DEBUG` logs are recorded in `logs/backend.log` or set `LOG_LEVEL_CONSOLE=DEBUG` |
+| `PermissionError: ... '/app/logs/backend.log'` at startup | The container runs as `appuser` (UID 10001) and writes to the bind-mounted `LOGS_VOLUME` (`./logs`). If that host folder didn't exist, rootful Docker created it owned by `root`, mode 755. Fix: `sudo chown 10001:10001 backend/logs`, or for a throwaway run set `LOG_TO_FILE=false`. Create the folder before the first `up` on a new host. |

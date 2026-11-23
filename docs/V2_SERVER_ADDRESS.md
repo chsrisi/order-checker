@@ -220,8 +220,8 @@ admin. Values marked **VERIFY** must be checked against the Cloudflare dashboard
   - the address-switch rule of §4.2, including an Access block page counting as unreachable;
   - the service-token headers on every request and on the WS upgrade.
 - **Backend:**
-  - an opt-in `backend/compose.tunnel.yaml` override with the `cloudflared` service (template in
-    step A3), so stage 1 deployments are unaffected;
+  - ~~an opt-in `backend/compose.tunnel.yaml` override with the `cloudflared` service~~ done
+    (2026-11-23), so stage 1 deployments are unaffected;
   - Uvicorn `--proxy-headers --forwarded-allow-ips=<cloudflared network>`, and the request log
     taking `CF-Connecting-IP`.
 
@@ -230,23 +230,12 @@ admin. Values marked **VERIFY** must be checked against the Cloudflare dashboard
 1. In Cloudflare: make sure `<domain>` is an active zone (nameservers point at Cloudflare). Open
    **Zero Trust** (the free plan is enough).
 2. **Networks → Tunnels → Create a tunnel** → type *Cloudflared*, name `order-checker`. Copy the
-   tunnel token into `backend/.secrets/cloudflared_token` (`chmod 600`), like the other file
+   tunnel token into `backend/.secrets/cloudflared_token` (one line), like the other file
    secrets. Do not install a connector on the host: the container below is the connector.
-3. Template for `backend/compose.tunnel.yaml` (pin the image tag to the version current then):
-   ```yaml
-   services:
-     cloudflared:
-       image: cloudflare/cloudflared:<pinned-version>
-       restart: unless-stopped
-       # VERIFY: recent versions accept --token-file. If the pinned one doesn't, pass
-       # TUNNEL_TOKEN through an env file instead (the image has no shell).
-       command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/cloudflared_token"]
-       secrets: [cloudflared_token]
-       depends_on: [server, admin-web]
-   secrets:
-     cloudflared_token:
-       file: ./.secrets/cloudflared_token
-   ```
+3. The override is in [`backend/compose.tunnel.yaml`](../backend/compose.tunnel.yaml) (image pinned to
+   2026.10.7, `--token-file` checked). The image runs as UID 65532 and Compose bind-mounts file
+   secrets with their host owner, so give the token file to that UID:
+   `sudo chown 65532:65532 .secrets/cloudflared_token && sudo chmod 400 .secrets/cloudflared_token`.
    Deploy with `docker compose -f compose.yaml -f compose.prod.yaml -f compose.tunnel.yaml up -d`.
    The tunnel shows **Healthy** in the dashboard.
 4. In the tunnel, under **Public hostnames** (VERIFY the menu name; it is also called *Published
