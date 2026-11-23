@@ -588,6 +588,13 @@ user deletion/reset uses code 1008. A failed send drops that socket.
 - `GET /admin/history/outbound`, `/admin/history/shopee/orders`: `limit` 1–2000 (default
   500), `offset`; total in `X-Total-Count`; the body stays a list. Order history is sorted
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
+  Optional server-side filters (`queries/history.py`, V2_DELTA D9): `closed_from`/`closed_to`
+  on the close time (`closed_at` / `done_at`, inclusive), `closed_at` for one exact close, and
+  `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number
+  and pickup code.
+- `GET /admin/history/closes`: one row per distinct close time across scans and orders
+  (`close_outbound_items` stamps both with the same `now`), newest first, with counts and the
+  scans' tags. Rows without a close time (before v0.4) are left out.
 
 ---
 

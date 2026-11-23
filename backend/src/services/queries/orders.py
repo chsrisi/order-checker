@@ -13,6 +13,7 @@ from ...models import (
 )
 from ... import config
 from .engine import get_db
+from .history import NO_FILTER, HistoryFilter, order_conditions
 from .bom import get_marketplace_bom_node, get_standard_bom_node_internal
 
 logger = logging.getLogger("backend.services.queries.orders")
@@ -78,15 +79,20 @@ def get_all_shopee_order_data() -> List[ShopeeOrder]:
 
 
 def get_shopee_orders_history(
-    limit: Optional[int] = None, offset: int = 0
+    limit: Optional[int] = None, offset: int = 0, f: HistoryFilter = NO_FILTER
 ) -> tuple[List[ShopeeOrder], int]:
-    """Completed orders, most recently completed first, one page at a time (T5.2)."""
-    done = ShopeeOrder.done == True  # noqa: E712
+    """Completed orders, most recently completed first, one page at a time (T5.2).
+
+    ``f`` narrows by completion (close) time and search on the server (Delta 9, Q40).
+    """
+    conditions = order_conditions(f)
     with get_db() as db:
-        total = db.execute(select(func.count()).select_from(ShopeeOrder).filter(done)).scalar_one()
+        total = db.execute(
+            select(func.count()).select_from(ShopeeOrder).filter(*conditions)
+        ).scalar_one()
         query = (
             select(ShopeeOrder)
-            .filter(done)
+            .filter(*conditions)
             .order_by(
                 ShopeeOrder.done_at.desc().nulls_last(),
                 ShopeeOrder.ship_by.desc(),

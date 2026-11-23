@@ -7,6 +7,11 @@ class FakeSocket {
   onmessage: ((e: { data: unknown }) => void) | null = null
   onclose: (() => void) | null = null
   closed = false
+  readyState = 0
+  sent: string[] = []
+  send(data: string) {
+    this.sent.push(data)
+  }
   constructor(readonly url: string) {}
   close() {
     this.closed = true
@@ -81,5 +86,33 @@ describe('ws', () => {
     })
     client.start()
     await vi.waitFor(() => expect(scheduled).toHaveLength(1))
+  })
+
+  it('sends commands only while open and calls onOpen after each connect', async () => {
+    const sockets: FakeSocket[] = []
+    const opened = vi.fn()
+    const client = new WsClient({
+      ticket: async () => 't',
+      open: (url) => {
+        const s = new FakeSocket(url)
+        sockets.push(s)
+        return s as unknown as WebSocket
+      },
+      url: (t) => t,
+      onFrame: vi.fn(),
+      onState: vi.fn(),
+      onOpen: opened,
+      schedule: vi.fn(),
+    })
+    expect(client.send('get_users')).toBe(false)
+    client.start()
+    await vi.waitFor(() => expect(sockets).toHaveLength(1))
+    expect(client.send('get_users')).toBe(false) // still connecting
+    sockets[0]!.readyState = 1
+    sockets[0]!.onopen!()
+    expect(opened).toHaveBeenCalledTimes(1)
+    expect(client.send('get_users')).toBe(true)
+    expect(sockets[0]!.sent).toEqual(['{"command":"get_users"}'])
+    client.stop()
   })
 })

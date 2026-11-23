@@ -144,6 +144,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/history/closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List period closes
+         * @description One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range.
+         */
+        get: operations["get_close_history_admin_history_closes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/history/outbound": {
         parameters: {
             query?: never;
@@ -153,7 +173,7 @@ export interface paths {
         };
         /**
          * Get closed outbound history
-         * @description Returns only scans that have been closed by an administrator.
+         * @description Returns only scans that have been closed by an administrator. Optional filters: close time range or one exact close, and `q` over label, worker and tags.
          */
         get: operations["get_outbound_history_admin_history_outbound_get"];
         put?: never;
@@ -173,7 +193,7 @@ export interface paths {
         };
         /**
          * Get completed Shopee order history
-         * @description Returns only orders marked complete by outbound period closure.
+         * @description Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range or one exact close, and `q` over order SN, worker, tracking number and pickup code.
          */
         get: operations["get_shopee_orders_history_admin_history_shopee_orders_get"];
         put?: never;
@@ -500,6 +520,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AdminCloseResponse
+         * @description One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``.
+         */
+        AdminCloseResponse: {
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /**
+             * Orders Done
+             * @description Orders marked complete.
+             */
+            orders_done: number;
+            /**
+             * Outbound
+             * @description Scans closed.
+             */
+            outbound: number;
+            /**
+             * Tags
+             * @description Distinct tags of the closed scans.
+             */
+            tags: string[];
+        };
         /**
          * AdminDeviceResponse
          * @description Admin listing: the device plus whether one of its sessions has a live socket now
@@ -1096,6 +1142,51 @@ export interface operations {
             };
         };
     };
+    get_close_history_admin_history_closes_get: {
+        parameters: {
+            query?: {
+                /** @description Page size (newest first). */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+                /** @description Closed at or after this time (inclusive). */
+                closed_from?: string | null;
+                /** @description Closed at or before this time (inclusive). */
+                closed_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCloseResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_outbound_history_admin_history_outbound_get: {
         parameters: {
             query?: {
@@ -1103,6 +1194,14 @@ export interface operations {
                 limit?: number;
                 /** @description Rows to skip. */
                 offset?: number;
+                /** @description Closed at or after this time (inclusive). */
+                closed_from?: string | null;
+                /** @description Closed at or before this time (inclusive). */
+                closed_to?: string | null;
+                /** @description Exactly this close (a `closed_at` from /admin/history/closes). */
+                closed_at?: string | null;
+                /** @description Case-insensitive substring search. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -1144,6 +1243,14 @@ export interface operations {
                 limit?: number;
                 /** @description Rows to skip. */
                 offset?: number;
+                /** @description Closed at or after this time (inclusive). */
+                closed_from?: string | null;
+                /** @description Closed at or before this time (inclusive). */
+                closed_to?: string | null;
+                /** @description Exactly this close (a `closed_at` from /admin/history/closes). */
+                closed_at?: string | null;
+                /** @description Case-insensitive substring search. */
+                q?: string | null;
             };
             header?: never;
             path?: never;

@@ -118,6 +118,31 @@ def test_admin_history_and_exports(monkeypatch):
     assert admin.export_stocks(admin_user).media_type == "text/csv"
 
 
+def test_admin_history_filters_reach_the_queries(monkeypatch):
+    from datetime import UTC, datetime
+
+    from fastapi import Response
+
+    seen = {}
+
+    def fake(name, result):
+        def call(**kwargs):
+            seen[name] = kwargs["f"]
+            return result
+
+        return call
+
+    monkeypatch.setattr(admin.queries, "get_outbound_history", fake("outbound", ([], 0)))
+    monkeypatch.setattr(admin.queries, "get_close_history", fake("closes", ([], 3)))
+    when = datetime(2026, 11, 24, tzinfo=UTC)
+    admin.get_outbound_history(Response(), 500, 0, actor("admin", "admin"), when, None, None, "x")
+    assert seen["outbound"] == admin.queries.HistoryFilter(closed_from=when, q="x")
+    response = Response()
+    admin.get_close_history(response, 50, 0, actor("admin", "admin"), None, when)
+    assert seen["closes"] == admin.queries.HistoryFilter(closed_to=when)
+    assert response.headers["X-Total-Count"] == "3"
+
+
 def test_item_and_stock_reads(monkeypatch):
     monkeypatch.setattr(items.queries, "find_warehouse_items", lambda query: [query])
     assert items.find_warehouse_items("cake", actor()) == ["cake"]

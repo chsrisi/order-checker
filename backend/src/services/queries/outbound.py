@@ -5,6 +5,7 @@ from sqlalchemy import delete, func, or_, select, update
 
 from ...models import OutboundItem, ShopeeOrder, ShopeeOrderInfo
 from .engine import get_db
+from .history import NO_FILTER, HistoryFilter, outbound_conditions
 
 logger = logging.getLogger("backend.services.queries.outbound")
 
@@ -30,17 +31,20 @@ def get_all_outbound_data() -> List[OutboundItem]:
 
 
 def get_outbound_history(
-    limit: Optional[int] = None, offset: int = 0
+    limit: Optional[int] = None, offset: int = 0, f: HistoryFilter = NO_FILTER
 ) -> tuple[List[OutboundItem], int]:
-    """Closed scans, newest first, one page at a time (T5.2). Returns ``(page, total)``."""
-    closed = OutboundItem.closed == True  # noqa: E712
+    """Closed scans, newest first, one page at a time (T5.2). Returns ``(page, total)``.
+
+    ``f`` narrows by close time and search on the server (Delta 9, Q40).
+    """
+    conditions = outbound_conditions(f)
     with get_db() as db:
         total = db.execute(
-            select(func.count()).select_from(OutboundItem).filter(closed)
+            select(func.count()).select_from(OutboundItem).filter(*conditions)
         ).scalar_one()
         query = (
             select(OutboundItem)
-            .filter(closed)
+            .filter(*conditions)
             .order_by(OutboundItem.created_at.desc(), OutboundItem.id.desc())
             .offset(offset)
             .limit(limit)

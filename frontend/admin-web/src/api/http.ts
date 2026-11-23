@@ -37,8 +37,9 @@ export class HttpClient {
     private readonly fetchFn: FetchFn = (input, init) => fetch(input, init),
   ) {}
 
-  async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
-    const send = () => {
+  /** Sends with the bearer token, refreshing once on 401; throws [ApiError] unless 2xx. */
+  async send(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> {
+    const attempt = () => {
       const token = this.tokens.accessToken()
       return this.fetchFn(path, {
         method,
@@ -50,9 +51,14 @@ export class HttpClient {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       })
     }
-    let response = await send()
-    if (response.status === 401 && (await this.tokens.refresh())) response = await send()
+    let response = await attempt()
+    if (response.status === 401 && (await this.tokens.refresh())) response = await attempt()
     if (!response.ok) throw new ApiError(response.status, await errorDetail(response))
+    return response
+  }
+
+  async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+    const response = await this.send(method, path, body, headers)
     if (response.status === 204) return undefined as T
     const type = response.headers.get('Content-Type') ?? ''
     return (type.includes('application/json') ? await response.json() : await response.text()) as T
@@ -65,4 +71,34 @@ export class HttpClient {
   post<T>(path: string, body?: unknown, headers?: Record<string, string>) {
     return this.request<T>('POST', path, body, headers)
   }
+
+  delete<T>(path: string) {
+    return this.request<T>('DELETE', path)
+  }
+
+  /** A history page: the rows plus `X-Total-Count` (T5.2). */
+  async page<T>(path: string): Promise<{ items: T[]; total: number }> {
+    const response = await this.send('GET', path)
+    const items = (await response.json()) as T[]
+    const total = Number(response.headers.get('X-Total-Count'))
+    return { items, total: Number.isFinite(total) && response.headers.has('X-Total-Count') ? total : items.length }
+  }
+
+  /** Downloads a file (CSV exports) with the server's file name when it sends one. */
+  async file(path: string): Promise<{ blob: Blob; name: string | null }> {
+    const response = await this.send('GET', path)
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null
+    return { blob: await response.blob(), name }
+  }
+}
+
+/** Builds `path?k=v` from the defined, non-empty values. */
+export function withQuery(path: string, params: Record<string, string | number | null | undefined>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+  }
+  const text = query.toString()
+  return text ? `${path}?${text}` : path
 }
