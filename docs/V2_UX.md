@@ -44,14 +44,14 @@ problem), **+** (added by you).
 
 | # | Where | Problem | Status |
 |---|---|---|---|
-| A1 | Layout (`main.dart`) | Desktop-first: a navigation rail and a 50/50 split on Orders. Is the admin ever used on a phone or tablet? | draft, **question** |
+| A1 | Layout (`main.dart`) | Desktop-first: a navigation rail and a 50/50 split on Orders. | **confirmed:** the console must work on **mobile and desktop** (D7) |
 | A2 | Orders · Ongoing (`orders_view.dart:86`) | **"Reset State"** (`POST /shopee/reset-cache-state`) sits next to Sync, styled like a normal action, with no confirmation and no explanation of what it resets. | draft |
 | A3 | Orders · Ongoing filter | "Hide checked" mixes outbound matches with orders ticked by hand, and the hand-ticked set is lost on reload. The filters live in a dialog, so the active ones are not visible at a glance. | draft |
 | A4 | Scan history / close period (`:869`) | The red button reads **"Close Period (All)"** when nothing is selected, so the default closes everything. It sits next to Export CSV. | draft |
 | A5 | Orders · History (`:1086`) | The "From" date filters orders by `ship_by` but "To" filters by `done_at` (inconsistent). Filters run in the browser over loaded pages only ("Load older history"), so results depend on how far you scrolled. The default range is "since yesterday". | draft (A5 date mismatch looks like a bug) |
 | A6 | Orders · History | "Show previous close" guesses the period from the first tag of the newest item. | draft |
 | A7 | Users | No "log out everywhere" (backend since v0.6.0). The role is shown raw ("Role: client"). | draft |
-| A8 | Stocks | Read-only table with search and CSV export. Stock changes need an operator device. | draft, **question**: should admins adjust stock? |
+| A8 | Stocks | Read-only table with search and CSV export. Stock changes need an operator device. | **confirmed as intended:** admins do **not** change stock (D7). Stock info and the finder merge into one area |
 | A9 | Config | Shopee tokens are pasted by hand behind a second password (`X-Config-Token`); a lock expiry shows a "Session Expired" dialog. | draft |
 | A10 | Global | A refresh button in the app bar *and* per-view refresh/sync buttons, and different loading indicators per view. | draft |
 | A11 | Devices | No view yet (T7.10, read-only list). | known |
@@ -87,8 +87,11 @@ in between.
 - **Feedback:** a short inline status line under the field (ok / warning / error) instead of
   modal dialogs (C5). Optional vibration on error.
 - **Screens using it:** Inbound, Outbound, Stocks, Item finder (from T6.15b on).
+- **Operations note (D7):** the scanners are configured with the **Enter** suffix, because v1's
+  text fields used Enter to jump to the next field. v2 keeps Enter as the default, and a screen
+  may reuse it the same way (scan → next field); changing the suffix is possible per device.
 
-**Round 1 — built (2026-11-23).** `ui/scan/ScanField`, plus a scanner test in the hidden
+**Round 1: built (2026-11-23).** `ui/scan/ScanField`, plus a scanner test in the hidden
 settings (Scanner: suffix setting and a live log of what the scanner sends).
 
 - **Change from the brief:** while scanning, the field is **read-only** and takes characters from
@@ -100,3 +103,95 @@ settings (Scanner: suffix setting and a live log of what the scanner sends).
   confirms it with the scanner test.
 - **Your check:** open the hidden settings → Scanner on the emulator (or a device) and type or
   scan a few values.
+
+### 2.2 Client app shell: home and device info (D7)
+
+- **Goal:** one obvious start screen instead of v1's drawer + bottom tabs (C1), and a place
+  that says who is logged in on which device (C16).
+- **Home:** three large buttons, **Orders**, **Stockkeeping**, **Finder**. Big enough to hit
+  with a glove; nothing else on the screen.
+- **Top bar:** the screen title on the left, the **current username** on the right. Tapping the
+  username opens **Device info**: the username, the server facts from `/v2/meta` (API version,
+  environment, stock location mode, contracts), the app version, the device id and
+  registration status, live-update state, and a **Log out** button. The PIN-protected settings
+  stay hidden behind the 5 s press as today.
+- **Screens behind the buttons (scaffold):** copied from v1 for now so the app is usable
+  end to end, then rebuilt one by one through the loop (Q28). Orders = v1 Inbound + Outbound;
+  Stockkeeping = v1 Stocks; Finder = v1 Item finder. See Q31.
+- **Later (not near):** the Finder gets an optional interactive warehouse map (D7).
+- **Backend change:** none.
+
+```text
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ Order Checker        op_ana ▸│      │ ← Device info                │
+├──────────────────────────────┤      ├──────────────────────────────┤
+│  ┌────────────────────────┐  │      │ Logged in as   op_ana        │
+│  │        Orders          │  │      │ Device         3f2a91c0 · pending
+│  └────────────────────────┘  │      │ App            v2.0.0 (1)    │
+│  ┌────────────────────────┐  │      │ Server         0.6.0 · production
+│  │      Stockkeeping      │  │      │ Stock mode     multi         │
+│  └────────────────────────┘  │      │ Live updates   connected     │
+│  ┌────────────────────────┐  │      │                              │
+│  │         Finder         │  │      │ [         Log out          ] │
+│  └────────────────────────┘  │      └──────────────────────────────┘
+│ v2.0.0 (1)                   │
+└──────────────────────────────┘
+```
+
+### 2.3 Admin console shell and dashboard (D7)
+
+- **Goal:** a console that works on desktop and mobile (A1), grouped by what the admin manages.
+- **Navigation groups** (categorised bars):
+  1. **People & devices:** Workers (operator accounts; v1 "Users"), Devices.
+  2. **Orders:** ongoing orders, scan history, period close (rebuilt later, T7.x).
+  3. **Stock info & finder:** stock levels and item finder together (A8: read-only), later
+     with the optional interactive map (D7).
+- **Desktop:** a left sidebar with the three groups as section headers and their pages under
+  them; Dashboard on top.
+- **Mobile (my choice for round 1):** the same menu in a slide-in drawer from a ☰ button in
+  the header, so both layouts share one menu definition. A bottom tab bar can come in a later
+  round if the drawer feels slow.
+- **Dashboard (home):**
+  - **Device status cards**, one per device: label or model, status (`pending` / `active` /
+    `revoked`), the logged-in worker, app version, and "last seen" in words (see Q35).
+  - **Shortcut buttons** to the groups: Workers, Devices, Orders, Stock info & finder.
+- **Backend change:** none for round 1 (`GET /admin/devices` exists). An "online now" flag
+  would be an additive admin field (Q35).
+- **Not in the three groups yet:** Shopee configuration and BOM inspection (Q37).
+
+```text
+Desktop                                         Mobile
+┌────────────┬───────────────────────────────┐  ┌──────────────────────────┐
+│ Dashboard  │ Devices                       │  │ ☰  Dashboard     admin ▸ │
+│            │ ┌───────────┐ ┌───────────┐   │  ├──────────────────────────┤
+│ PEOPLE &   │ │ MT67 #1   │ │ MT67 #2   │   │  │ ┌──────────────────────┐ │
+│ DEVICES    │ │ ● active  │ │ ○ pending │   │  │ │ MT67 #1  ● active    │ │
+│  Workers   │ │ op_ana    │ │ —         │   │  │ │ op_ana · v2.0.1 (2)  │ │
+│  Devices   │ │ v2.0.1(2) │ │ v2.0.0(1) │   │  │ │ seen 1 min ago       │ │
+│ ORDERS     │ │ 1 min ago │ │ 2 h ago   │   │  │ └──────────────────────┘ │
+│  Ongoing   │ └───────────┘ └───────────┘   │  │ [Workers ] [Devices  ]   │
+│  History   │                               │  │ [Orders  ] [Stock    ]   │
+│ STOCK      │ [Workers] [Devices] [Orders]  │  └──────────────────────────┘
+│  Stock &   │ [Stock info & finder]         │
+│  finder    │                               │
+└────────────┴───────────────────────────────┘
+```
+
+## 3. Later (not scheduled)
+
+- **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
+  info & finder" (D7). Not near; it is why stock info and the finder share one admin area.
+
+## 4. Questions for this round (D7)
+
+| Ref | Question | Working default |
+|---|---|---|
+| Q31 | "Copy the screens as a scaffold": a working copy of v1's behaviour, or empty placeholders? | **Working copy**: v1's operations and rules in Compose, using `ScanField`, with a plain layout. Fixed while copying, because they are bugs or cheap: modal pop-ups become the status line (C5), Enter in Stocks no longer runs "Set" (C11), deletes ask for confirmation (C8), the selected order survives leaving the screen (C4). Everything else waits for the per-screen rebuild. |
+| Q32 | Client **Orders**: how do Inbound (picking) and Outbound (label scan) sit inside it? | Two tabs at the top, **Picking** and **Outbound**. v1's Input/History sub-tabs become sections of each tab. |
+| Q33 | **Device info** contents | As in §2.2: username, server facts, app version, device id and status, live state, Log out. Read-only; no settings. |
+| Q34 | Admin naming: "Workers" for operator accounts | Yes, in the console. Admin accounts are not listed there (as in v1). |
+| Q35 | What "status" means on the dashboard | Round 1 shows the registration status plus "last seen" (updated at most once a minute, **only when the app makes an HTTP request**, so an idle but connected device looks stale). Better: an additive `online` flag on `GET /admin/devices` from the open live connections. Recommended as a small backend task. |
+| Q36 | Dashboard "buttons" | Shortcuts to the four areas. No actions (like Sync Shopee) on the dashboard yet. |
+| Q37 | Where Shopee configuration and BOM inspection go | A fourth, smaller group **Settings** (Shopee config) at the bottom of the sidebar; BOM under **Stock info & finder**. |
+| Q38 | Mobile navigation | Drawer (§2.3) for round 1. |
+

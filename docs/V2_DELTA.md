@@ -269,6 +269,20 @@ your go-ahead, beginning with T6.0.
 | Q29 | The order is accepted as proposed (D5.3): foundations first in parallel (T6.15a, T7.1–T7.2), then client screens by daily use, alternating with admin screens. | ✅ |
 | Q30 | Started: the draft problem list is in V2_UX.md §1. You correct it before the first screen brief (T6.15b Inbound). | ❓ (your review) |
 
+## Delta 7 (2026-11-23)
+
+| Ref | Decision | Status |
+|---|---|---|
+| A1 (V2_UX) | The admin console must be usable on **mobile and desktop**. | ✅ |
+| A8 (V2_UX) | Admins do **not** change stock; stock stays read-only in the console. | ✅ |
+| – | Client: a **home screen** with three buttons (Orders, Stockkeeping, Finder); the current username top right opens a **device info** screen (meta, username) with Log out. v1 screens may be **copied as a scaffold** first. | ✅ (scope: Q31–Q33) |
+| – | Admin: a **dashboard** with device statuses and buttons; navigation in categorised groups: people & devices (workers, devices) · orders · stock info & finder. Sidebar on desktop; mobile layout is the agent's choice for round 1. | ✅ (details: Q34–Q38) |
+| – | **Later, not near:** an optional interactive warehouse map in the client Finder and the admin stock info & finder (that is why stock info and finder are combined). | 📌 |
+| – | Operations: the scanners are set to the **Enter** suffix (v1 used Enter to jump fields); v2 keeps Enter as default and may reuse it. | ✅ |
+
+Briefs: [V2_UX.md](V2_UX.md) §2.2 (client shell) and §2.3 (admin shell and dashboard), with
+questions Q31–Q38 in V2_UX §4. Their working defaults apply unless you change them.
+
 ---
 
 ## Open questions and things to revisit
@@ -307,4 +321,5 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q27~~ | ~~Device day before parity?~~ | Postponed; parity for client and admin first (D5) | – | ✅ |
 | ~~Q28~~ | ~~Per-screen design loop~~ | Accepted (D6) | – | ✅ |
 | ~~Q29~~ | ~~Client vs admin order~~ | Accepted (D6) | – | ✅ |
-| Q30 | v1 / Flutter admin UX pain points | Draft in V2_UX.md §1; you correct it (D6) | before T6.15b | ❓ |
+| Q30 | v1 / Flutter admin UX pain points | Draft in V2_UX.md §1; you correct it (D6). A1, A8 answered (D7) | before T6.15b | ❓ |
+| Q31–Q38 | Client shell scope, admin naming, device status, nav (V2_UX §4) | Working defaults in V2_UX §4 (D7) | before building the shells | ❓ |
