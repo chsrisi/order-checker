@@ -8,10 +8,14 @@ import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
 import com.bakingholic.orderchecker.net.ServerUnreachableException
 import com.bakingholic.orderchecker.net.UpgradeRequiredException
+import com.bakingholic.orderchecker.scan.ScanSuffix
+import com.bakingholic.orderchecker.ui.ops.OpsController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -38,13 +42,19 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val meta = graph.meta.meta
     val updateState = graph.updates.state
     val deviceStatus = graph.device.status
+    val scanSuffix: StateFlow<ScanSuffix> =
+        graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
     private var registration: Job? = null
+    val ops = OpsController(graph.ops, viewModelScope)
 
     init {
         viewModelScope.launch {
             graph.events.collect { event ->
                 when (event) {
-                    is AppEvent.LoggedOut -> _screen.value = Screen.Login(error = "Session ended. Please log in again.")
+                    is AppEvent.LoggedOut -> {
+                        ops.selectOrder(null)
+                        _screen.value = Screen.Login(error = "Session ended. Please log in again.")
+                    }
                     is AppEvent.UpgradeRequired -> {
                         _screen.value = Screen.UpdateRequired(event.minSupportedVersionCode)
                         viewModelScope.launch { graph.updates.check() }
@@ -89,6 +99,7 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
 
     fun logout() {
         registration?.cancel()
+        ops.selectOrder(null)
         viewModelScope.launch {
             graph.session.logout()
             _screen.value = Screen.Login()
@@ -111,6 +122,10 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
 
     fun closeSettings() {
         _settingsOpen.value = false
+    }
+
+    fun setScanSuffix(suffix: ScanSuffix) {
+        viewModelScope.launch { graph.scanPrefs.setSuffix(suffix) }
     }
 
     fun saveProfile(profile: ServerProfile, onResult: (String?) -> Unit) {

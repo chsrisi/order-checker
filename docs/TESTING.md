@@ -111,6 +111,17 @@ cd frontend/client-android
 ./gradlew assembleRelease -Poc.unsignedRelease=true   # without a key; signed: see its README
 ```
 
+Vue admin console (`frontend/admin-web`, Node 24):
+
+```bash
+cd frontend/admin-web
+npm ci && npm run check:api && npm run typecheck && npm test && npm run build
+```
+
+`check:api` compares the committed `src/api/schema.d.ts` with `backend/openapi/admin.json`;
+after an admin API change run `npm run gen:api`. Vitest covers the HTTP refresh-once rule, the
+session store (token placement, shared refresh, revocation) and the WS client.
+
 The API models are generated from `backend/openapi/v2.json` at build time, so a contract
 change shows up as a compile error or a failing model test. Emulator checks use an API 30
 image (Android 11, like the MT67).
@@ -150,6 +161,7 @@ production rows into fixtures.
 | `backend` | Ruff, `requirements.txt` in sync with `uv.lock` (`--no-dev`), the full pytest suite (unit + contract v1 + PostgreSQL integration) |
 | `migrations` | `backend/scripts/ci_migration_gate.sh`: empty → head, and previous `v*` tag → head |
 | `android (client-android)` | Gradle `lint`, unit tests, debug build, unsigned release build |
+| `admin-web (Vue console)` | API types in sync with `admin.json`, `vue-tsc`, Vitest, Vite build |
 | `flutter (client/admin)` | `flutter analyze` and `flutter test` (with `.env` copied from `.env.example`) |
 
 Run the migration gate locally against a disposable database:

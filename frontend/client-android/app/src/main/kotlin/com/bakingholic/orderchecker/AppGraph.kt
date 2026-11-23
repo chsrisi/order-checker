@@ -19,6 +19,7 @@ import com.bakingholic.orderchecker.net.AddressSelector
 import com.bakingholic.orderchecker.net.ApiClient
 import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
+import com.bakingholic.orderchecker.scan.ScanPrefs
 import com.bakingholic.orderchecker.settings.PinGate
 import com.bakingholic.orderchecker.settings.ProfileStore
 import com.bakingholic.orderchecker.updater.AndroidPackageInspector
@@ -26,6 +27,7 @@ import com.bakingholic.orderchecker.updater.ApkVerifier
 import com.bakingholic.orderchecker.updater.PackageInstallerApkInstaller
 import com.bakingholic.orderchecker.updater.UpdateChecker
 import com.bakingholic.orderchecker.updater.UpdateManager
+import com.bakingholic.orderchecker.ops.OpsRepository
 import com.bakingholic.orderchecker.ws.WsClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -74,7 +76,9 @@ class AppGraph(context: Context) {
     )
     val meta = MetaRepository(api)
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
+    val ops = OpsRepository(session, ws, scope)
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
+    val scanPrefs = ScanPrefs(context.settingsStore)
 
     // Device identity (T6.13): Keystore key, registered after every login.
     val device = DeviceRegistrar(
@@ -105,8 +109,9 @@ class AppGraph(context: Context) {
         )
     }
 
-    /** Orders, picks and other per-operator caches are dropped on logout (filled by later tasks). */
+    /** Orders, picks and other per-operator caches are dropped on logout. */
     private fun clearCaches() {
         ws.stop()
+        ops.clear()
     }
 }

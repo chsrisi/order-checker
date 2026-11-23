@@ -589,6 +589,19 @@ docker compose --env-file .env up -d --build admin-web
 ```
 By default, the web interface is exposed on `http://localhost:${WEB_PORT:-3000}`.
 
+### Vue console at `/console/` (v2 admin, in progress)
+
+The same image also serves the new Vue admin (`frontend/admin-web`) at `/console/`. The Dockerfile
+builds it in a Node stage from the named build context `admin-web`, which `compose.yaml` passes as
+`additional_contexts` (Docker Compose 2.17 or newer). A plain build needs
+`docker build --build-context admin-web=../admin-web .` from `frontend/admin`.
+
+nginx serves `/console/assets/*` (content-hashed by Vite) as `immutable` for a year, and
+`/console/index.html` with `no-cache`, so a redeploy shows up on the next page load without a
+hard reload. Other `/console/...` paths fall back to the console's `index.html`. The console
+uses the same proxied API paths and `/ws` as the Flutter admin. The rebuild steps below rebuild
+both apps.
+
 ### Rebuilding the Admin Web After a Code Change
 
 The admin bundle is compiled **inside the image** (`frontend/admin/Dockerfile`, builder stage).

@@ -58,6 +58,13 @@ one-line pointer here.
 2. `docs/SYSTEM_REFERENCE.md` for current behaviour, §15 for the change checklist.
 3. Task-specific guides via `docs/PROJECT.md`. `docs/archive/` is history, not current state.
 
+### Current focus (temporary, remove when the device day happens)
+
+The v2 device day (T6.14 MT67 part, T6.16) is **postponed**. Current work is feature parity for
+the Android client (T6.15) and the Vue admin (step 7), **rebuilt for better UX, not ported**
+from Flutter (`docs/V2_DELTA.md` Delta 5). The maintainer's device checklist:
+`docs/V2_DEVICE_DAY_TODO.md`.
+
 ### Working agreement
 
 - Branches: feature branch off `dev` → PR to `dev` → release PR to `master` + tag

@@ -89,26 +89,3 @@ fun LoginScreen(state: Screen.Login, onLogin: (String, String) -> Unit) {
         }
     }
 }
-
-@Composable
-fun HomeScreen(
-    user: String?,
-    connection: String,
-    onFallback: Boolean,
-    stockMode: String?,
-    onLogout: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(user ?: "", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            if (onFallback) AssistChip(onClick = {}, label = { Text("LAN") })
-        }
-        Text("Live updates: $connection", modifier = Modifier.testTag("ws_state"))
-        stockMode?.let { Text("Stock locations: $it") }
-        Spacer(Modifier.height(24.dp))
-        OutlinedButton(onClick = onLogout, modifier = Modifier.testTag("logout")) { Text("Log out") }
-    }
-}

@@ -22,7 +22,18 @@ RUN if [ ! -f .env ]; then cp .env.example .env; fi
 # Build production web bundle
 RUN flutter build web --release
 
-# Stage 2: Serve with NGINX
+# Stage 2: Build the Vue console (frontend/admin-web), served at /console/ (V2_DELTA D1, T7.1).
+# Its source comes from the named build context "admin-web" (compose: additional_contexts; plain
+# docker: --build-context admin-web=../admin-web). The API types are committed, so the backend
+# is not needed here.
+FROM node:24-alpine AS console
+WORKDIR /console
+COPY --from=admin-web package.json package-lock.json ./
+RUN npm ci
+COPY --from=admin-web . .
+RUN npm run build
+
+# Stage 3: Serve with NGINX
 FROM nginx:alpine AS runner
 
 # Remove default nginx html files
@@ -30,6 +41,7 @@ RUN rm -rf /usr/share/nginx/html/*
 
 # Copy built web artifacts from builder
 COPY --from=builder /app/build/web /usr/share/nginx/html
+COPY --from=console /console/dist /usr/share/nginx/html/console
 
 # Copy custom nginx configuration template (processed by official nginx envsubst)
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template

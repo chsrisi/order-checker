@@ -113,7 +113,7 @@ that applies unless you say otherwise.
 | P-14 | Kotlin API models (T6.10) | `openapi-generator` Gradle plugin, **build-time only**, models only (kotlinx.serialization), from `backend/openapi/v2.json`. | Hand-written models plus a test against the JSON file. |
 | P-15 | APK storage and rollback (T6.5) | `data/releases/client/` mounted like `data/keys`; old APKs kept; a rollback is a new, higher `versionCode` built from old code. | Delete old APKs on publish. |
 | P-16 | `last_seen_at` writes (T6.2, T6.6) | At most once per 60 s per session/device. | Every request. |
-| P-17 | Vue admin timing | Step 7, after the device day; not a v0.6.0 gate. | Start T7.1 in parallel with T6.10. |
+| P-17 | Vue admin timing | ~~Step 7, after the device day; not a v0.6.0 gate.~~ **Superseded (V2_DELTA Delta 5, Q27):** step 7 starts now, alongside T6.15. | Start T7.1 in parallel with T6.10. |
 | P-18 | Expired sessions | Removed by the existing refresh-cleanup task. | A separate task. |
 | P-19 | Admin "log out everywhere" (T6.2) | `POST /admin/users/{username}/logout`, client accounts only (like reset and delete). | Also for the admin account itself. |
 | P-20 | Vue admin token storage (T7.2) | Access token in memory, refresh token in `sessionStorage`: closing the tab logs out, with less XSS exposure. | `localStorage` (survives browser restarts). |
@@ -583,8 +583,8 @@ flowchart TD
   T66 --> T614
   T614 --> DD["T6.16 device day (maintainer)"]
   T67 --> DD
-  T611 --> T615["T6.15 feature parity (before or after DD, via OTA)"]
-  DD --> S7["Step 7: Vue admin"]
+  T611 --> T615["T6.15 client parity, rebuilt (Delta 5)"]
+  T67 --> S7["Step 7: Vue admin, rebuilt (Delta 5)"]
   DD --> S8["Step 8: device control"]
 ```
 
@@ -597,6 +597,9 @@ Hard ordering constraints:
   (T6.14).
 - Feature parity (T6.15) is not a device-day gate (V2-7). Whatever is missing on the day ships
   later over OTA, and operators use v1 for it meanwhile.
+- **Delta 5 (2026-11-23):** the device day is postponed. Client parity (T6.15) and the Vue
+  admin (step 7) come first, and both are **rebuilt for better UX, not ported** from Flutter
+  (Q26, Q27). The per-screen loop and the order between them are Q28/Q29.
 
 ### Step 6: dual-contract backend v0.6.0 and the first v2 client (`dev`)
 
@@ -884,9 +887,16 @@ Hard ordering constraints:
      - note model and Android build.
 - Accept: every step passes on both targets, and the results are recorded in §7.
 
-**T6.15 Feature parity (W4, spec §4.3, KNOWN_LIMITATIONS #4)** — may ship after the device day
-over OTA. One sub-task per screen, each with unit tests and a short manual check on the
-emulator:
+**T6.15 Feature parity, rebuilt (W4, spec §4.3, KNOWN_LIMITATIONS #4, V2_DELTA Delta 5)** —
+before the device day (Q27). Screens are designed for better UX, not copied from Flutter (Q26).
+Each sub-task:
+- starts with a screen brief in `docs/V2_UX.md` that you approve (Q28);
+- has unit tests;
+- is **done** when its functional checklist below is covered and you have accepted the UX on
+  the emulator.
+
+Later UX rounds ship over OTA. The lists below are the **v1 functional inventory**: what must
+stay possible. They are not a layout.
 - T6.15a scan input component: keyboard wedge, a focused field that submits on the configured
   suffix, focus restored after every action; no soft keyboard.
 - T6.15b Orders · Inbound:
@@ -900,7 +910,9 @@ emulator:
 - T6.15e Stocks: set, add, transfer, with location suggestions.
 - T6.15f Account and the connection banner.
 
-**T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)*
+**T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)* — **postponed**
+(Delta 5). Checklist: [V2_DEVICE_DAY_TODO.md](V2_DEVICE_DAY_TODO.md). This round pilots one
+device (Q20).
 1. Back up the devices' state (nothing to keep apart from v1, which stays installed).
 2. Per device:
    1. `adb install` the published 2.0.0 (or newer) APK;
@@ -911,7 +923,7 @@ emulator:
 4. Record per device: model, Android build, wedge suffix, Play Protect behaviour.
 5. Operators keep v1 for anything v2 can't do yet (pilot order: Q20, pinned).
 
-### Step 7: Vue admin at `/console/` (V2-3, V2-6, D1, Q13) — after the device day
+### Step 7: Vue admin at `/console/` (V2-3, V2-6, D1, Q13) — now, alongside T6.15 (Delta 5)
 
 - **T7.1 Skeleton and hosting.**
   - `frontend/admin-web/`: Vue 3 + Vite (`base: '/console/'`), Vue Router, Pinia, Naive UI.
@@ -925,7 +937,7 @@ emulator:
   - `POST /auth/admin`; the access token lives in memory and the refresh token in
     `sessionStorage` (P-20).
   - 401 → one refresh. The WS client uses v1-framed `/ws`.
-- **T7.3–T7.9 Screens, ported one at a time in spec §5 order:**
+- **T7.3–T7.9 Screens, rebuilt one at a time (Q26). The order follows Q29; the list is spec §5's:**
   - users (plus "log out everywhere", T6.2);
   - orders and scan history (`limit`/`offset`, `X-Total-Count`);
   - inventory;
@@ -933,10 +945,11 @@ emulator:
   - BOM inspection;
   - Shopee config (`X-Config-Token`);
   - CSV exports (Blob download).
-  - Each task is done when it matches the Flutter screen. During the overlap the admin API only
-    changes additively (spec §5).
+  - Each starts with a brief in `docs/V2_UX.md` (Q28). It is done when every operation the
+    Flutter screen offers is covered and tested, and you have accepted the UX on the dev
+    server. During the overlap the admin API only changes additively (spec §5).
 - **T7.10 Devices view:** the read-only list from `GET /admin/devices`.
-- **T7.11 Retire the Flutter admin** once every screen is ported and used for 2 weeks (Q8,
+- **T7.11 Retire the Flutter admin** once every v1 admin operation is covered in Vue and used for 2 weeks (Q8,
   pinned): Vue moves to `/` and `frontend/admin/` is removed.
 
 ### Step 8: device control (spec §4A, W5(b)–(d), Q9) — later
@@ -1046,6 +1059,7 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | Q15 no device owner, Q16 `adb`, Q17 rehearsal | T6.14, T6.16 |
 | KNOWN_LIMITATIONS #10 (release manifest) | T6.10, T6.14 |
 | Pinned: Q8 retirement, Q20 pilot, Q21 Google registration, Q25 sync review | T7.11 / T6.16 / your task / backlog |
+| Delta 5: Q26 rebuild not port, Q27 device day postponed, Q28–Q30 per-screen loop | T6.15, T7.3–T7.9 (`docs/V2_UX.md`); T6.14 step 6 and T6.16 wait |
 
 ---
 
@@ -1121,13 +1135,13 @@ same change as the task.
 | T6.11 | done | Checked on the API 30 emulator against a local backend: login, `/v2/ws` connected, `/v2/meta` read, admin "log out everywhere" returns the device to the login screen within seconds, hidden settings unlock. **Additions:** Access block pages (`cf-mitigated`, redirect to `*.cloudflareaccess.com`) count as unreachable (V2_SERVER_ADDRESS F5); WS close 1008 handled like 4401; build-time `oc.defaultServer` override for emulator rehearsal. Manual DI (`AppGraph`), no Navigation dependency yet |
 | T6.12 | done | **Accept met** on the API 30 emulator: build 1 updated itself to build 2 published with `scripts.publish_client_release` (permission grant restarts the app on Android 11; one confirm tap). Negative check on device: an APK published under a higher code but really older is refused ("not newer") through the real PackageManager. **Finding:** Google Play Protect may show "App scan recommended" for the first sideloaded update → "Install without scanning"; check whether the MT67 has Play services (device day). Downloads are cleared at the next start, since a successful install kills the process first |
 | T6.13 | done | Emulator registered as `pending` (model, Android 11, versionCode) with a real Keystore signature verified by the backend; a second login reuses the device and binds the new session. Registration is skipped when the stored record already matches the current `sid`. Accept for the second device (spare MT67) belongs to T6.16 |
-| T6.14 | in progress | **Emulator part done (2026-11-22, API 30 image with Play services)**, signed R8 release builds (`rehearsal` build type = release + cleartext to `10.0.2.2`, throwaway key; production release rules unchanged): 1–2 install 1, `appops` grant, login, device `pending` ✅; 3 update 1→2, then 3 with `--min-supported 3` → blocking screen → update ✅; 4 logged out, update to 4 from the login screen ✅; 5 tampered `sha256` → "damaged", APK with another key → "not signed with this app's key", app stays on 4 ✅. **Finding:** Play Protect shows "App scan recommended" on **every** update (new APK hash), passed with More details → Install without scanning: one extra step per update on Play-services devices. **Open:** the MT67 part (step 6) with the real key, on the device day |
-| T6.15 | todo | |
-| T6.16 | todo | |
-| T7.1 | todo | |
-| T7.2 | todo | |
-| T7.3–T7.9 | todo | |
-| T7.10 | todo | |
+| T6.14 | in progress | **Emulator part done (2026-11-22, API 30 image with Play services)**, signed R8 release builds (`rehearsal` build type = release + cleartext to `10.0.2.2`, throwaway key; production release rules unchanged): 1–2 install 1, `appops` grant, login, device `pending` ✅; 3 update 1→2, then 3 with `--min-supported 3` → blocking screen → update ✅; 4 logged out, update to 4 from the login screen ✅; 5 tampered `sha256` → "damaged", APK with another key → "not signed with this app's key", app stays on 4 ✅. **Finding:** Play Protect shows "App scan recommended" on **every** update (new APK hash), passed with More details → Install without scanning: one extra step per update on Play-services devices. **Open:** the MT67 part (step 6) with the real key, on the device day, which is postponed (Delta 5 Q27; V2_DEVICE_DAY_TODO.md) |
+| T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds |
+| T6.16 | postponed | Delta 5 Q27. v0.6.0 tagged and deployed (2026-11-22). Still to do: v1 and laptop smoke tests, then publishing 2.0.0. Checklist: V2_DEVICE_DAY_TODO.md. One device this round (Q20) |
+| T7.1 | done | `frontend/admin-web` (Vue 3.5, Vite 8, Vue Router 5, Pinia 4, Naive UI 2.45, openapi-typescript 7). **Deviations:** TypeScript 5.9, not 7 (`openapi-typescript` needs 5); `schema.d.ts` is **committed** with a CI freshness check (`check:api`), since the Docker build context has no `backend/`; no ESLint (not on the Q13 list; `vue-tsc` strict is the lint); `@vue/test-utils` left out (its `js-beautify` chain had 5 moderate audit findings; logic tests need only Vitest). Docker: `console` stage from the named context `admin-web` (Compose `additional_contexts`), so the Flutter context is unchanged. nginx: `^~ /console/` (else the static-file regex wins), `absolute_redirect off` for `/console` → `/console/` (nginx put its internal port 80 into the Location), no `always` on the `immutable` header so 404s are not cached. Checked: `nginx -t`, routes and headers with `nginx:alpine` + the template |
+| T7.2 | done | Session store (access token in memory, refresh token in `sessionStorage`, one shared refresh, logout with server revoke), HTTP refresh-once, `/ws` client with endless backoff. Checked in headless Firefox (WebDriver BiDi) against a local v0.6.0 backend through the Vite proxy: wrong password message, login, reload keeps the session, access token stored nowhere, unknown path → overview, live updates connected; a server-side logout of the session returns the console to the login screen with "Session ended" in 1.5 s (socket closed → ticket 401 → refresh refused) |
+| T7.3–T7.9 | todo | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35) |
+| T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
 | T8.1 | todo | |
 | T8.2 | todo | |
