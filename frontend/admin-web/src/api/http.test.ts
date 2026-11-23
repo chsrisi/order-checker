@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, HttpClient, type TokenSource } from './http'
+import { ApiError, HttpClient, withQuery, type TokenSource } from './http'
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -47,5 +47,18 @@ describe('HttpClient', () => {
     const client = new HttpClient({ accessToken: () => null, refresh: async () => false }, fetchFn)
     await expect(client.post('/x', { a: 1 })).rejects.toEqual(new ApiError(422, 'too long; missing'))
     expect(fetchFn).toHaveBeenCalledWith('/x', expect.objectContaining({ body: '{"a":1}', headers: { 'Content-Type': 'application/json' } }))
+  })
+
+  it('reads history pages with X-Total-Count', async () => {
+    const fetchFn = vi.fn(async () => new Response('[1,2]', { status: 200, headers: { 'X-Total-Count': '9' } }))
+    const client = new HttpClient({ accessToken: () => 't', refresh: async () => false }, fetchFn)
+    expect(await client.page('/admin/history/outbound')).toEqual({ items: [1, 2], total: 9 })
+    const bare = vi.fn(async () => new Response('[1]', { status: 200 }))
+    expect(await new HttpClient({ accessToken: () => 't', refresh: async () => false }, bare).page('/x')).toEqual({ items: [1], total: 1 })
+  })
+
+  it('builds query strings from the set values only', () => {
+    expect(withQuery('/h', { q: 'a b', limit: 50, closed_from: null, x: '' })).toBe('/h?q=a+b&limit=50')
+    expect(withQuery('/h', {})).toBe('/h')
   })
 })

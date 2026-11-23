@@ -22,6 +22,7 @@ from .users import (
     revoke_session,
     revoke_user_sessions,
 )
+from .history import HistoryFilter, get_close_history
 from .outbound import (
     get_outbounds_data,
     get_all_outbound_data,
@@ -98,6 +99,8 @@ __all__ = [
     "get_outbounds_data",
     "get_all_outbound_data",
     "get_outbound_history",
+    "get_close_history",
+    "HistoryFilter",
     "create_outbound_item",
     "close_outbound_items",
     "clear_all_outbound_items",

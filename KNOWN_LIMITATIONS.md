@@ -162,3 +162,22 @@ This document tracks known architectural, library, and system limitations within
   its main manifest, and its OTA rehearsal uses the **signed release** APK.
 - **Code References**: `frontend/client/android/app/src/main/AndroidManifest.xml`,
   `frontend/client/android/app/build.gradle.kts`
+
+### 11. Console Sends a Wrong Shopee-Config Password Twice
+- **Issue**: In the Vue console (Settings), one wrong admin password at "Unlock" reaches
+  `POST /admin/shopee-config/unlock` **twice**, so the backend logs two failed unlock attempts
+  (`Shopee config unlock failed: Incorrect password ...`) for one try. The user sees one
+  "Incorrect password".
+- **Cause**: The unlock endpoint answers a wrong password with **401**, the same status as an
+  expired access token. The console's `HttpClient.send` treats every 401 as an expired session:
+  it refreshes the tokens once and retries the request, which fails again with 401.
+- **Impact**: Harmless today: no lockout counts unlock attempts, and the refresh succeeds.
+  Keep it in mind when reading the logs, or before adding a lockout or rate limit to the unlock
+  endpoint, since each wrong password would count double.
+- **Countermeasure (not applied)**: either let the client skip the refresh-and-retry for this
+  call (for example a per-request flag), or have the backend answer a wrong password with
+  another status such as 403. The second is an admin API change: the Flutter admin
+  (`config_view.dart`) would need checking too.
+- **Code References**: `frontend/admin-web/src/api/http.ts` (`send`),
+  `frontend/admin-web/src/stores/shopeeConfig.ts` (`unlock`),
+  `backend/src/routers/admin_shopee.py` (`unlock_shopee_config`)

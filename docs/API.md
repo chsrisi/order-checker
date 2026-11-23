@@ -37,8 +37,9 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
-| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
-| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
+| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`). Optional filters (since 2026-11-24): `closed_from`/`closed_to` (close time, inclusive; ISO 8601, UTC without an offset), `closed_at` (one exact close), `q` (label, worker or tag, case-insensitive) |
+| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total. Same optional filters on `done_at`; `q` matches SN, worker, tracking number or pickup code |
+| GET | `/admin/history/closes` | Admin | One row per period close, newest first: `{closed_at, outbound, orders_done, tags}` (a close stamps its scans and orders with one time). `limit` 1–500 (default 50), `offset`, `closed_from`/`closed_to`; `X-Total-Count` |
 | GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |

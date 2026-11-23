@@ -5,6 +5,9 @@ import { allPages } from '../nav'
 const views: Record<string, () => Promise<unknown>> = {
   dashboard: () => import('../views/DashboardView.vue'),
   devices: () => import('../views/DevicesView.vue'),
+  workers: () => import('../views/WorkersView.vue'),
+  orders: () => import('../views/OrdersView.vue'),
+  settings: () => import('../views/SettingsView.vue'),
 }
 
 const pageRoutes: RouteRecordRaw[] = allPages.map((page) => ({

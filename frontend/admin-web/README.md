@@ -41,12 +41,18 @@ fails when the committed file is stale.
 
 - `src/api/`: `http.ts` (fetch + refresh-once), `ws.ts` + `backoff.ts`, `schema.d.ts`
   (generated), `index.ts` (app-wide client).
-- `src/stores/`: `session.ts` (tokens, login/logout/refresh), `live.ts` (WS state and frames).
+- `src/stores/`: `session.ts` (tokens, login/logout/refresh), `live.ts` (WS state and frames;
+  `snapshot(command)` re-requests a list on every reconnect), `workers.ts`, `orders.ts`
+  (ongoing orders, picks and open scans from live frames; hand-ticks in `localStorage`).
+- `src/lib/`: tested pure helpers (`orders.ts` progress/packed/filters, `workers.ts`,
+  `time.ts`) and composables (`usePaged.ts` for `X-Total-Count` history pages, `usePolling.ts`).
 - `src/nav.ts`: the one menu definition (Dashboard; Administration, Orders, Warehouse groups) for
   the desktop sidebar and the mobile drawer (below 768 px); pages not rebuilt yet route to
   `PlaceholderView` with a link to the classic admin.
 - `src/components/AppShell.vue` (header, sidebar/drawer), `src/views/` (one per screen),
   `src/router/` (routes generated from `nav.ts`), `src/stores/devices.ts` (polled every 30 s).
+  Built pages: Dashboard, Workers, Devices, Settings (Shopee connection; config token in memory
+  only), Orders (`src/components/orders/`).
 
 ## Hosting
 

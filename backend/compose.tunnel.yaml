@@ -1,0 +1,43 @@
+# Cloudflare Tunnel override (opt-in, stage 2 of docs/V2_SERVER_ADDRESS.md §7).
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml -f compose.tunnel.yaml up -d
+#
+# Outbound only: no host port is published for cloudflared, and the LAN port 8000 stays as it is
+# (v1 devices and the v2 fallback). The tunnel is remotely managed: its routes are set in the
+# Cloudflare dashboard (Zero Trust → Networks → Tunnels → order-checker → Public hostnames),
+# pointing at compose service names on this network:
+#
+#   ops.<domain>  →  http://admin-web:80     (Access: e-mail one-time PIN, Q6b)
+#   api.<domain>  →  http://server:8000      (Access: service token, Q6a)
+#
+# Create both Access applications before the hostnames, or both are public in between.
+#
+# Required file (never committed; backend/.gitignore covers .secrets/):
+#   .secrets/cloudflared_token   the tunnel token from the dashboard, one line
+#
+# Compose (without Swarm) bind-mounts file secrets with their host owner and mode; `mode:` is
+# not applied. The image runs as UID 65532, so a token file that is 600 and owned by you is
+# unreadable inside the container. Hand it to that UID:
+#   sudo chown 65532:65532 .secrets/cloudflared_token && sudo chmod 400 .secrets/cloudflared_token
+#
+# Image: pinned; `--token-file` checked with `tunnel run --help` on 2026.10.7. Bump on purpose.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token-file
+      - /run/secrets/cloudflared_token
+    secrets:
+      - cloudflared_token
+    depends_on:
+      - server
+      - admin-web
+
+secrets:
+  cloudflared_token:
+    file: ./.secrets/cloudflared_token

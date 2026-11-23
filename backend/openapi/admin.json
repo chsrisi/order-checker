@@ -1,6 +1,44 @@
 {
   "components": {
     "schemas": {
+      "AdminCloseResponse": {
+        "description": "One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``.",
+        "properties": {
+          "closed_at": {
+            "format": "date-time",
+            "title": "Closed At",
+            "type": "string"
+          },
+          "orders_done": {
+            "description": "Orders marked complete.",
+            "minimum": 0.0,
+            "title": "Orders Done",
+            "type": "integer"
+          },
+          "outbound": {
+            "description": "Scans closed.",
+            "minimum": 0.0,
+            "title": "Outbound",
+            "type": "integer"
+          },
+          "tags": {
+            "description": "Distinct tags of the closed scans.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "closed_at",
+          "outbound",
+          "orders_done",
+          "tags"
+        ],
+        "title": "AdminCloseResponse",
+        "type": "object"
+      },
       "AdminDeviceResponse": {
         "description": "Admin listing: the device plus whether one of its sessions has a live socket now\n(V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected\ndevice would otherwise look stale.",
         "properties": {
@@ -1265,9 +1303,120 @@
         ]
       }
     },
+    "/admin/history/closes": {
+      "get": {
+        "description": "One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range.",
+        "operationId": "get_close_history_admin_history_closes_get",
+        "parameters": [
+          {
+            "description": "Page size (newest first).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size (newest first).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Closed at or after this time (inclusive).",
+            "in": "query",
+            "name": "closed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or after this time (inclusive).",
+              "title": "Closed From"
+            }
+          },
+          {
+            "description": "Closed at or before this time (inclusive).",
+            "in": "query",
+            "name": "closed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or before this time (inclusive).",
+              "title": "Closed To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCloseResponse"
+                  },
+                  "title": "Response Get Close History Admin History Closes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List period closes",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/history/outbound": {
       "get": {
-        "description": "Returns only scans that have been closed by an administrator.",
+        "description": "Returns only scans that have been closed by an administrator. Optional filters: close time range or one exact close, and `q` over label, worker and tags.",
         "operationId": "get_outbound_history_admin_history_outbound_get",
         "parameters": [
           {
@@ -1295,6 +1444,82 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Closed at or after this time (inclusive).",
+            "in": "query",
+            "name": "closed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or after this time (inclusive).",
+              "title": "Closed From"
+            }
+          },
+          {
+            "description": "Closed at or before this time (inclusive).",
+            "in": "query",
+            "name": "closed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or before this time (inclusive).",
+              "title": "Closed To"
+            }
+          },
+          {
+            "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+            "in": "query",
+            "name": "closed_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+              "title": "Closed At"
+            }
+          },
+          {
+            "description": "Case-insensitive substring search.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring search.",
+              "title": "Q"
             }
           }
         ],
@@ -1340,7 +1565,7 @@
     },
     "/admin/history/shopee/orders": {
       "get": {
-        "description": "Returns only orders marked complete by outbound period closure.",
+        "description": "Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range or one exact close, and `q` over order SN, worker, tracking number and pickup code.",
         "operationId": "get_shopee_orders_history_admin_history_shopee_orders_get",
         "parameters": [
           {
@@ -1368,6 +1593,82 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Closed at or after this time (inclusive).",
+            "in": "query",
+            "name": "closed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or after this time (inclusive).",
+              "title": "Closed From"
+            }
+          },
+          {
+            "description": "Closed at or before this time (inclusive).",
+            "in": "query",
+            "name": "closed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or before this time (inclusive).",
+              "title": "Closed To"
+            }
+          },
+          {
+            "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+            "in": "query",
+            "name": "closed_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+              "title": "Closed At"
+            }
+          },
+          {
+            "description": "Case-insensitive substring search.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring search.",
+              "title": "Q"
             }
           }
         ],

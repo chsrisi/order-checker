@@ -294,6 +294,37 @@ questions Q31–Q38 in V2_UX §4. Their working defaults apply unless you change
 | Q36 | Accepted: shortcuts only; dashboard actions noted for a later iteration. | ✅ 📌 |
 | Q37 | Groups: **Administration** (Workers, Devices, Settings = Shopee config) · **Orders** · **Warehouse** (stock info & finder, BOM). | ✅ |
 
+## Delta 9 (2026-11-24)
+
+You asked for the console's **Workers** and **Orders** pages. Workers needed no decisions.
+For Orders, four v1 behaviours were asked about (Q39–Q42); every answer was the recommended
+default. Briefs: [V2_UX.md](V2_UX.md) §2.4 (Workers) and §2.5 (Orders).
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q39 | Hand-ticks on ongoing orders **stay, saved in this browser** (they survive a reload), shown apart from **Packed** (the label was scanned at outbound). No backend change. | ✅ |
+| Q40 | Order history filters **on the server, by close time**, for completed orders and closed scans alike (v1 mixed ship-by and done date and filtered only loaded pages). Additive query parameters on the two `/admin/history` endpoints. | ✅ |
+| Q41 | Period close with nothing selected is an **explicit "Close all N scans…"** that opens a review (scans per tag, how many orders become done) before anything is closed. | ✅ |
+| Q42 | "Show previous close" is replaced by **history grouped by close**: one row per close, expandable to its scans and the orders it completed. Additive `GET /admin/history/closes`. | ✅ |
+
+Consequences:
+
+- Backend (admin API, additive): `closed_from`, `closed_to`, `closed_at` and `q` on
+  `GET /admin/history/outbound` and `/admin/history/shopee/orders`; new
+  `GET /admin/history/closes`. Operator contracts v1 and v2 are unchanged.
+- **Finding (v1 behaviour, unchanged):** deleting a worker also deletes **all** their outbound
+  scans, closed history included, and removes their name from completed orders. The console
+  now says so in the delete dialog and points to a password reset as the way to stop someone
+  without losing history. Whether delete should keep history is Q43.
+
+## Delta 10 (2026-11-24)
+
+| Ref | Decision | Status |
+|---|---|---|
+| D9 | Workers and Orders round 1 **accepted**. | ✅ |
+| Q43 | Deleting a worker keeps its v1 behaviour for now (the dialog warns). A **"disable worker"** that keeps history is pinned for later. | ✅ 📌 |
+| – | Next: the console's **Settings** page (Shopee connection), brief in [V2_UX.md](V2_UX.md) §2.6. No backend change. | ✅ |
+
 ---
 
 ## Open questions and things to revisit
@@ -334,3 +365,5 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q29~~ | ~~Client vs admin order~~ | Accepted (D6) | – | ✅ |
 | ~~Q30~~ | ~~v1 / Flutter admin UX pain points~~ | Kept as a shared reference, answered in later iterations (D8) | – | ✅ |
 | ~~Q31–Q38~~ | ~~Client shell scope, admin naming, device status, nav~~ | Decided (D8) | – | ✅ |
+| ~~Q39–Q42~~ | ~~Admin Orders: hand-ticks, history filters, close all, previous close~~ | Decided (D9) | – | ✅ |
+| Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |

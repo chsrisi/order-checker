@@ -24,15 +24,15 @@ export const groups: NavGroup[] = [
     key: 'administration',
     label: 'Administration',
     pages: [
-      { name: 'workers', path: '/workers', label: 'Workers', ready: false, classic: 'Users' },
+      { name: 'workers', path: '/workers', label: 'Workers', ready: true },
       { name: 'devices', path: '/devices', label: 'Devices', ready: true },
-      { name: 'settings', path: '/settings', label: 'Settings', ready: false, classic: 'Config' },
+      { name: 'settings', path: '/settings', label: 'Settings', ready: true },
     ],
   },
   {
     key: 'orders',
     label: 'Orders',
-    pages: [{ name: 'orders', path: '/orders', label: 'Orders', ready: false, classic: 'Orders' }],
+    pages: [{ name: 'orders', path: '/orders', label: 'Orders', ready: true }],
   },
   {
     key: 'warehouse',

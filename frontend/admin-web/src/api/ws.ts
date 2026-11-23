@@ -25,6 +25,8 @@ export interface WsDeps {
   url(ticket: string): string
   onFrame(frame: WsFrame): void
   onState(state: WsState): void
+  /** Called after each (re)connect, e.g. to request snapshots. */
+  onOpen?(): void
   schedule?(fn: () => void, ms: number): unknown
 }
 
@@ -52,6 +54,14 @@ export class WsClient {
     this.deps.onState('offline')
   }
 
+  /** Sends a v1 command (`{"command": ...}`) when connected; false when it could not. */
+  send(command: string): boolean {
+    const socket = this.socket
+    if (!socket || socket.readyState !== 1) return false
+    socket.send(JSON.stringify({ command }))
+    return true
+  }
+
   private async connect() {
     if (!this.running) return
     this.deps.onState('connecting')
@@ -68,6 +78,7 @@ export class WsClient {
     socket.onopen = () => {
       this.attempt = 0
       this.deps.onState('connected')
+      this.deps.onOpen?.()
     }
     socket.onmessage = (event: MessageEvent) => {
       const frame = typeof event.data === 'string' ? parseFrame(event.data) : null

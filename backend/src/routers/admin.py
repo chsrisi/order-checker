@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.responses import StreamingResponse
 
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
+    AdminCloseResponse,
     AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
@@ -151,13 +152,29 @@ async def delete_user(
 # T5.2: history pages, newest first; X-Total-Count carries the full size.
 HISTORY_LIMIT = Query(500, ge=1, le=2000, description="Page size (newest first).")
 HISTORY_OFFSET = Query(0, ge=0, description="Rows to skip.")
+# Delta 9 (Q40): server-side filters. Times are ISO 8601; without an offset they are UTC.
+CLOSED_FROM = Query(None, description="Closed at or after this time (inclusive).")
+CLOSED_TO = Query(None, description="Closed at or before this time (inclusive).")
+CLOSED_AT = Query(
+    None, description="Exactly this close (a `closed_at` from /admin/history/closes)."
+)
+SEARCH = Query(None, max_length=100, description="Case-insensitive substring search.")
+
+
+def _history_filter(closed_from, closed_to, closed_at, q) -> queries.HistoryFilter:
+    return queries.HistoryFilter(
+        closed_from=closed_from, closed_to=closed_to, closed_at=closed_at, q=q
+    )
 
 
 @router.get(
     "/history/outbound",
     response_model=List[OutboundResponse],
     summary="Get closed outbound history",
-    description="Returns only scans that have been closed by an administrator.",
+    description=(
+        "Returns only scans that have been closed by an administrator. Optional filters: close "
+        "time range or one exact close, and `q` over label, worker and tags."
+    ),
     responses={403: {"description": "Admin scope required"}},
 )
 def get_outbound_history(
@@ -165,8 +182,14 @@ def get_outbound_history(
     limit: int = HISTORY_LIMIT,
     offset: int = HISTORY_OFFSET,
     current_user: User = Depends(require_admin),
+    closed_from: Optional[datetime] = CLOSED_FROM,
+    closed_to: Optional[datetime] = CLOSED_TO,
+    closed_at: Optional[datetime] = CLOSED_AT,
+    q: Optional[str] = SEARCH,
 ):
-    items, total = queries.get_outbound_history(limit=limit, offset=offset)
+    items, total = queries.get_outbound_history(
+        limit=limit, offset=offset, f=_history_filter(closed_from, closed_to, closed_at, q)
+    )
     response.headers["X-Total-Count"] = str(total)
     return items
 
@@ -175,7 +198,11 @@ def get_outbound_history(
     "/history/shopee/orders",
     response_model=List[ShopeeOrderResponse],
     summary="Get completed Shopee order history",
-    description="Returns only orders marked complete by outbound period closure.",
+    description=(
+        "Returns only orders marked complete by outbound period closure. Optional filters: "
+        "completion (close) time range or one exact close, and `q` over order SN, worker, "
+        "tracking number and pickup code."
+    ),
     responses={403: {"description": "Admin scope required"}},
 )
 def get_shopee_orders_history(
@@ -183,10 +210,43 @@ def get_shopee_orders_history(
     limit: int = HISTORY_LIMIT,
     offset: int = HISTORY_OFFSET,
     current_user: User = Depends(require_admin),
+    closed_from: Optional[datetime] = CLOSED_FROM,
+    closed_to: Optional[datetime] = CLOSED_TO,
+    closed_at: Optional[datetime] = CLOSED_AT,
+    q: Optional[str] = SEARCH,
 ):
-    orders, total = queries.get_shopee_orders_history(limit=limit, offset=offset)
+    orders, total = queries.get_shopee_orders_history(
+        limit=limit, offset=offset, f=_history_filter(closed_from, closed_to, closed_at, q)
+    )
     response.headers["X-Total-Count"] = str(total)
     return shopee_service.build_shopee_order_responses(orders)
+
+
+@router.get(
+    "/history/closes",
+    response_model=List[AdminCloseResponse],
+    summary="List period closes",
+    description=(
+        "One row per period close, newest first: its time, the scans it closed, the orders it "
+        "marked complete and the scans' tags. Optional close time range."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_close_history(
+    response: Response,
+    limit: int = Query(50, ge=1, le=500, description="Page size (newest first)."),
+    offset: int = HISTORY_OFFSET,
+    _admin: User = Depends(require_admin),
+    closed_from: Optional[datetime] = CLOSED_FROM,
+    closed_to: Optional[datetime] = CLOSED_TO,
+):
+    closes, total = queries.get_close_history(
+        limit=limit,
+        offset=offset,
+        f=queries.HistoryFilter(closed_from=closed_from, closed_to=closed_to),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return closes
 
 
 @router.get(

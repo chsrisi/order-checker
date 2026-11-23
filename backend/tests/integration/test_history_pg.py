@@ -33,3 +33,71 @@ def test_outbound_history_pagination(pg_session_factory):
     queries.close_outbound_items(contents=[f"LABEL-{i}" for i in range(3)], admin_username="a")
     page, total = queries.get_outbound_history(limit=2)
     assert total == 3 and len(page) == 2
+
+
+# Delta 9 (Q40/Q42): server-side filters and the list of closes.
+
+
+def _close(labels, *, user="op", tags=()):
+    for label in labels:
+        queries.create_outbound_item(content=label, owner_username=user, tags_in=list(tags))
+    return queries.close_outbound_items(contents=list(labels), admin_username="a")
+
+
+def _seed_two_closes(pg_session_factory):
+    from .factories import add_user
+
+    with pg_session_factory() as db:
+        add_user(db, "op")
+        add_user(db, "other")
+        add_order(db, "251101AAA", owner="op", tracking="SPX-111")
+        add_order(db, "251101BBB", owner="other")
+        db.commit()
+    _close(["SPX-111", "LOOSE-1"], tags=["Morning"])
+    first = queries.get_close_history()[0][0]["closed_at"]
+    _close(["251101BBB"], user="other", tags=["Evening"])
+    return first
+
+
+def test_close_history_lists_one_row_per_close_with_counts_and_tags(pg_session_factory):
+    _seed_two_closes(pg_session_factory)
+    closes, total = queries.get_close_history()
+    assert total == 2
+    newest, oldest = closes
+    assert newest["closed_at"] > oldest["closed_at"]
+    # The order whose tracking number was scanned is completed by the first close.
+    assert (oldest["outbound"], oldest["orders_done"], oldest["tags"]) == (2, 1, ["Morning"])
+    assert (newest["outbound"], newest["orders_done"], newest["tags"]) == (1, 1, ["Evening"])
+
+
+def test_history_filters_by_one_close_and_by_range(pg_session_factory):
+    from datetime import timedelta
+
+    first = _seed_two_closes(pg_session_factory)
+    one = queries.HistoryFilter(closed_at=first)
+    scans, total = queries.get_outbound_history(f=one)
+    assert total == 2 and {s.content for s in scans} == {"SPX-111", "LOOSE-1"}
+    orders, total = queries.get_shopee_orders_history(f=one)
+    assert total == 1 and orders[0].order_sn == "251101AAA"
+
+    # Range bounds are inclusive and aware times are converted to the naive UTC columns.
+    aware = first.replace(tzinfo=UTC)
+    until_first = queries.HistoryFilter(closed_to=aware)
+    assert queries.get_outbound_history(f=until_first)[1] == 2
+    after_first = queries.HistoryFilter(closed_from=aware + timedelta(microseconds=1))
+    assert [o.order_sn for o in queries.get_shopee_orders_history(f=after_first)[0]] == [
+        "251101BBB"
+    ]
+    assert queries.get_close_history(f=after_first)[1] == 1
+
+
+def test_history_search_runs_on_the_server(pg_session_factory):
+    _seed_two_closes(pg_session_factory)
+    by_tag = queries.get_outbound_history(f=queries.HistoryFilter(q="evening"))
+    assert [s.content for s in by_tag[0]] == ["251101BBB"]
+    by_worker = queries.get_outbound_history(f=queries.HistoryFilter(q="OTHER"))
+    assert by_worker[1] == 1
+    by_tracking = queries.get_shopee_orders_history(f=queries.HistoryFilter(q="spx-1"))
+    assert [o.order_sn for o in by_tracking[0]] == ["251101AAA"]
+    # LIKE wildcards are matched literally.
+    assert queries.get_outbound_history(f=queries.HistoryFilter(q="%"))[1] == 0

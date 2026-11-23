@@ -825,6 +825,15 @@ class ShopeeConfigResponse(BaseModel):
     current_ip: str
 
 
+class AdminCloseResponse(BaseModel):
+    """One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``."""
+
+    closed_at: datetime
+    outbound: int = Field(ge=0, description="Scans closed.")
+    orders_done: int = Field(ge=0, description="Orders marked complete.")
+    tags: List[str] = Field(description="Distinct tags of the closed scans.")
+
+
 class OutboundCloseResponse(BaseModel):
     outbound: int = Field(ge=0, description="Scans closed.")
     unknown: int = Field(ge=0, description="Submitted values without an open scan.")

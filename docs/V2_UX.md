@@ -190,6 +190,97 @@ classic admin. Notes for you to try:
   them in the list.
 - Typing a quantity or location opens the soft keyboard; the scan fields do not.
 
+### 2.4 Admin Workers (D9)
+
+- **Goal:** manage operator accounts in the console; see who is on which device.
+- **v1 checklist** (`users_view.dart`): list, create (username + password, confirmed), reset
+  password, delete with a confirmation. **Added:** log out everywhere (A7, backend since
+  v0.6.0).
+- **v1 problems addressed:** A7 (no log-out-everywhere; raw "Role: client").
+- **Flow:** search plus **New worker**. Desktop: a table (worker, *devices now*, actions).
+  Mobile: cards with a ⋯ menu. *Devices now* comes from `GET /admin/devices`
+  (`current_username`, `online`).
+  - **Reset password:** signs the worker out everywhere (backend behaviour), and the dialog says
+    so.
+  - **Delete:** the dialog lists everything it removes (picks with their stock restored, *all*
+    outbound scans including closed history, claimed orders released, sessions) and suggests a
+    reset instead (Q43).
+  - Username rule as the backend (letters, digits, `_`, ≤ 64), checked inline.
+- **Backend change:** none.
+
+**Round 1: built (2026-11-24).**
+
+### 2.5 Admin Orders (D9)
+
+- **Goal:** follow the ongoing orders next to the outbound scans, close a period safely, and
+  look up what was closed.
+- **v1 checklist** (`orders_view.dart`):
+  - Ongoing: Sync Shopee, Reset State, filter (category, courier, hide checked), orders grouped
+    by status and collapsible, each order with its SKU lines; hand-ticks.
+  - Outbound: scans with tag filter and selection, Export CSV, Close period, last close counts.
+  - History: inbound and outbound, date range, search, load more, previous close.
+- **v1 problems addressed:**
+  - A2: Reset moves to a ⋯ menu with a confirmation that explains it.
+  - A3: filters are inline and always visible; Packed and hand-ticked are shown apart; ticks
+    persist (Q39).
+  - A4: an explicit, reviewed close (Q41).
+  - A5: server-side filters on close time (Q40).
+  - A6: history grouped by close (Q42).
+  - C9 for the admin: status in words ("Picking · 1/3 SKUs") as well as colour.
+  - C10: padded times with month names.
+- **Flow:**
+  - **Desktop:** tabs *Ongoing* · *History*. Ongoing is v1's split: orders on the left,
+    outbound scans on the right, each scrolling on its own (Q32).
+  - **Mobile:** tabs *Orders* · *Outbound (n)* · *History*.
+  - **Order card:**
+    - SN, pickup code, state and SKU progress, Packed or Ticked, worker, ship-by, courier,
+      recipient;
+    - tap to expand the SKU lines (picked/required, location);
+    - the checkbox is a hand-tick; a packed order's box is ticked and locked.
+    - Within a status group, the soonest ship-by comes first.
+  - **Scans:**
+    - each scan shows which ongoing order it packs, or "no ongoing order";
+    - the whole row toggles selection;
+    - the close button reads *Close all N scans…*, *Close all N "tag"…* or *Close N selected…*;
+    - the review lists scans per tag and how many orders become done.
+  - **History:**
+    - views *By close* · *Orders done* · *Closed scans*;
+    - a date range on close time, with a *Last 7 days* shortcut;
+    - search (orders: SN, worker, tracking, pickup code; scans: label, worker, tag);
+    - *Load more* with the remaining count.
+- **Backend change:** additive admin filters and `GET /admin/history/closes` (D9).
+
+**Round 1: built (2026-11-24).** Notes for you to try:
+
+- Hand-ticks live in this browser only. Another admin or browser does not see them.
+- A close closes every open scan with the same label, also one hidden by the tag filter (v1
+  behaviour; the server closes by label).
+- The close review's "orders become done" is a preview from the ongoing list; the server's
+  count is shown afterwards.
+- Scans and orders closed before v0.4 have no close time and do not appear in *By close*.
+
+### 2.6 Admin Settings: Shopee connection (D10)
+
+- **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.
+- **v1 checklist** (`config_view.dart`):
+  - unlock with the admin password (a short server window, `X-Config-Token`);
+  - show the last refused IP;
+  - edit and save the access and refresh tokens;
+  - lock now.
+- **v1 problems addressed:** A9. When the window ended, v1 opened a "Session Expired" dialog,
+  and the edits were lost on re-unlock.
+- **Flow:**
+  - One card with the status (*Locked* / *Unlocked · 42 s*).
+  - Locked: the admin password, inline. Unlocked: the IP with a copy button, both tokens
+    (masked, with a show toggle), *Undo changes*, *Lock now*, *Save tokens* (enabled only when
+    something changed).
+  - When the window ends, the form stays with its edits, and the password is asked in place.
+  - Leaving the page locks the window and drops the values from memory.
+  - The IP is the one in Shopee's last "source IP undeclared" error ("unknown" before one).
+- **Backend change:** none.
+
+**Round 1: built (2026-11-24).**
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
