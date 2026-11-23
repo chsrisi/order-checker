@@ -1,0 +1,30 @@
+{
+  "name": "order-checker-admin-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "gen:api": "openapi-typescript ../../backend/openapi/admin.json -o src/api/schema.d.ts",
+    "check:api": "openapi-typescript ../../backend/openapi/admin.json -o /tmp/oc-admin-schema.d.ts && diff -q /tmp/oc-admin-schema.d.ts src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "naive-ui": "^2.45.3",
+    "pinia": "^4.1.0",
+    "vue": "^3.5.46",
+    "vue-router": "^5.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitejs/plugin-vue": "^6.0.11",
+    "jsdom": "^31.0.1",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
+    "vue-tsc": "^3.3.14"
+  }
+}

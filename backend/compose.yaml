@@ -89,6 +89,8 @@ services:
   admin-web:
     build:
       context: ../frontend/admin
+      additional_contexts:
+        admin-web: ../frontend/admin-web
       dockerfile: Dockerfile
     container_name: ${ADMIN_WEB_CONTAINER_NAME:-admin-web-1}
     restart: always
