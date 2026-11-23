@@ -213,6 +213,56 @@ your go-ahead, beginning with T6.0.
 
 ---
 
+## Delta 5 (2026-11-23)
+
+### D5.1 Decisions received
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q26 | Feature parity is **rebuilt, not ported**. The Flutter screens are not copied: their UX and usability are questionable in places. The v2 client and the Vue admin are designed and built **iteratively** for better UX. | ✅ |
+| Q27 | The **device day is postponed** (T6.14 MT67 part, T6.16). Next: feature parity for **both** the client (T6.15) and the admin (step 7). Step 7 no longer waits for the device day; this supersedes P-17. | ✅ |
+| Q20 | The first pilot round moves **one device** to v2. | ✅ (second device 📌) |
+| – | v0.6.0 is tagged and deployed. Still to do: the v1 and laptop smoke tests, and publishing 2.0.0. Maintainer checklist: [V2_DEVICE_DAY_TODO.md](V2_DEVICE_DAY_TODO.md). | ✅ |
+
+### D5.2 Consequences
+
+- **Parity means capability parity.**
+  - Every v1 operation and business rule stays reachable in v2: the inventory in
+    SYSTEM_REFERENCE §10, the T6.15 sub-task list, and the backlog items in V2_SPEC §4.3.
+  - Layout, flow, navigation and wording are free.
+  - The Flutter code is the reference for **rules and edge cases**, not for UX. Examples of
+    rules: the order-number pattern, 404 → sync and retry once, over-quantity on resolved
+    SKUs, and stock coming back on delete.
+- **New definition of "done"** for T6.15b–f and T7.3–T7.9. A screen is done when:
+  1. its functional checklist is covered and tested;
+  2. the maintainer has accepted the UX after trying it (emulator for the client, dev server
+     for the admin).
+
+  This replaces "matches the Flutter screen".
+- **Iterative.** A first version ships, then revisions follow, through OTA for the client and a
+  redeploy for the admin. Later rounds can reorganise screens without a plan change, as long as
+  the functional checklist holds.
+- **Backend.** A better flow may need new fields or endpoints:
+  - they go into `/v2` deliberately, with the snapshot (P-11), or into the admin API
+    additively;
+  - contract v1 stays frozen;
+  - a UX change that would change business rules or order states is a delta decision, not a
+    UX tweak (spec §3.3: v1 must still make sense of what v2 does).
+- **Q8 retirement draft:** "every screen is ported" now reads "every v1 admin operation is
+  covered in the Vue admin". It stays pinned.
+- **Device day:** when it happens, the pilot device gets whatever parity has shipped by then. It
+  keeps getting updates over OTA.
+
+### D5.3 New questions
+
+| Ref | Question | Working default | When |
+|---|---|---|---|
+| Q28 | How each screen is designed | A brief per screen in `docs/V2_UX.md` (a side discussion, created with the first brief). The brief covers: the user's goal, the v1 functional checklist, v1 UX problems, the proposed flow as a wireframe, and any backend change. You reply or approve; I build; you try it; revisions are later rounds in the same file. One screen at a time. | before the first screen |
+| Q29 | Order between client and admin | Foundations first, in parallel, because they need no UX debate: T6.15a scan input and T7.1–T7.2 (Vue skeleton, login). Then the client screens by daily use (Inbound, Outbound, Stocks, Item finder, Account), with admin screens alternating (Orders and scan history, Users, Inventory, then the rest). | before T6.15b / T7.3 |
+| Q30 | Known UX pain points in v1 and the Flutter admin | I draft a list from reading the code, at the top of V2_UX.md. You correct it and add what operators complain about. | before the first screen brief |
+
+---
+
 ## Open questions and things to revisit
 
 "When" says by when an answer is needed: **before planning** (the plan step can't be written
@@ -227,7 +277,7 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q5~~ | ~~Update endpoints: auth? metadata?~~ | No user token; `latest.json` beside the APK (D4) | – | ✅ |
 | ~~Q6~~ | ~~Client server address~~ | Option C, stage 1 now; stage 2 runbook in V2_SERVER_ADDRESS §7 (D4) | – | ✅ |
 | ~~Q7~~ | ~~Directory names~~ | `frontend/client-android/`, `frontend/admin-web/` (D3) | – | ✅ |
-| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every screen is ported and used for 2 weeks; then one major backend release removes v1. | later | 📌 |
+| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every v1 admin operation is covered in Vue (D5) and used for 2 weeks; then one major backend release removes v1. | later | 📌 |
 | ~~Q9~~ | ~~Device credential~~ | Device token issued at enrollment (D3) | – | ✅ |
 | ~~Q10~~ | ~~Instant revocation for v1~~ | Yes, by design of Q19 + Q24; conditions in D4.2 | – | ✅ |
 | ~~Q11~~ | ~~Local JWKS verification in v2~~ | Dropped (D3) | – | ✅ |
@@ -239,9 +289,14 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q17~~ | ~~Rehearsal target~~ | Emulator **and** spare handset (D2) | – | ✅ |
 | ~~Q18~~ | ~~`applicationId` and keystore~~ | `com.bakingholic.orderchecker`; your keystore; guide spec §12 (D2) | – | ✅ (⚠️ CI signing later, §12.7) |
 | ~~Q19~~ | ~~Session store~~ | PostgreSQL (D3.2, D4) | – | ✅ |
-| Q20 | Pilot order | Move one device to v2 first; the second follows after a full day on v2 without falling back. | later | 📌 |
+| Q20 | Pilot order | First round: one device (D5). The second follows after a full day on v2 without falling back. | later | ✅ / 📌 |
 | Q21 | Google developer registration before the 2027 global enforcement (spec §12.6) | Register the package (full distribution) once the key exists; fallback: the per-device advanced flow. | before 2027 | 📌 |
 | Q22 | Newland broadcast scan API (`nlscan.action.SCANNER_RESULT`) | Later and optional; verify the names on the spare MT67 first. Wedge stays the default. | later | 📌 |
 | ~~Q23~~ | ~~Fix the v1 release build~~ | Skip (D4) | – | ✅ |
 | ~~Q24~~ | ~~`sid` rollout~~ | Required at once, one planned relogin (D4) | – | ✅ |
 | Q25 | Review the Shopee sync flow and its optimizations (4–5 s today, on the request path) | Later: trace `sync_shopee_orders` end to end (SYSTEM_REFERENCE §7.1), measure each stage, and weigh moving it off the request path (backlog). | later | 📌 |
+| ~~Q26~~ | ~~Port or rebuild the Flutter screens~~ | Rebuild iteratively for better UX (D5) | – | ✅ |
+| ~~Q27~~ | ~~Device day before parity?~~ | Postponed; parity for client and admin first (D5) | – | ✅ |
+| Q28 | Per-screen design loop | Brief in V2_UX.md → approve → build → try → revise (D5.3) | before the first screen | ❓ |
+| Q29 | Client vs admin order | Foundations in parallel (T6.15a, T7.1–T7.2), then alternate by daily use (D5.3) | before T6.15b / T7.3 | ❓ |
+| Q30 | v1 / Flutter admin UX pain points | I draft from code; you correct (D5.3) | before the first screen brief | ❓ |
