@@ -2,6 +2,7 @@ from .engine import get_db, SessionLocal
 from .devices import (
     DeviceRevoked,
     register_device,
+    device_ids_for_sessions,
     list_devices,
     get_device,
 )
@@ -75,6 +76,7 @@ from .csv_export import (
 __all__ = [
     "DeviceRevoked",
     "register_device",
+    "device_ids_for_sessions",
     "list_devices",
     "get_device",
     "get_db",

@@ -141,11 +141,12 @@ settings (Scanner: suffix setting and a live log of what the scanner sends).
 ### 2.3 Admin console shell and dashboard (D7)
 
 - **Goal:** a console that works on desktop and mobile (A1), grouped by what the admin manages.
-- **Navigation groups** (categorised bars):
-  1. **People & devices:** Workers (operator accounts; v1 "Users"), Devices.
+- **Navigation groups** (categorised bars; names per D8 / Q37):
+  1. **Administration:** Workers (operator accounts; v1 "Users"), Devices, Settings (Shopee
+     configuration).
   2. **Orders:** ongoing orders, scan history, period close (rebuilt later, T7.x).
-  3. **Stock info & finder:** stock levels and item finder together (A8: read-only), later
-     with the optional interactive map (D7).
+  3. **Warehouse:** stock info and the item finder together (A8: read-only), BOM; later the
+     optional interactive map (D7).
 - **Desktop:** a left sidebar with the three groups as section headers and their pages under
   them; Dashboard on top.
 - **Mobile (my choice for round 1):** the same menu in a slide-in drawer from a ☰ button in
@@ -157,7 +158,6 @@ settings (Scanner: suffix setting and a live log of what the scanner sends).
   - **Shortcut buttons** to the groups: Workers, Devices, Orders, Stock info & finder.
 - **Backend change:** none for round 1 (`GET /admin/devices` exists). An "online now" flag
   would be an additive admin field (Q35).
-- **Not in the three groups yet:** Shopee configuration and BOM inspection (Q37).
 
 ```text
 Desktop                                         Mobile
@@ -177,6 +177,19 @@ Desktop                                         Mobile
 └────────────┴───────────────────────────────┘
 ```
 
+**Round 1: built (2026-11-23).** Client (§2.2): home, Device info, and the scaffold screens.
+Orders has **Picking** (main) and **Outbound** tabs (D8 / Q32); Picking keeps v1's Order/Item
+modes, the selected order card with progress and Unassign, unassigned picks with Assign and
+Delete (now confirmed), and the order search. v1's pop-ups stay (Q31). Console (§2.3): the
+shell, the dashboard and the Devices page; the other pages are placeholders linking to the
+classic admin. Notes for you to try:
+
+- The over-quantity warning now comes **after** the pick, on the SKU the server stored, so a
+  scan that resolves to another SKU is checked correctly (v1 checked the raw scan before).
+- Order labels must still start with YYMMDD (v1 rule); orders can also be selected by tapping
+  them in the list.
+- Typing a quantity or location opens the soft keyboard; the scan fields do not.
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
@@ -192,6 +205,6 @@ Desktop                                         Mobile
 | Q34 | Admin naming: "Workers" for operator accounts | Yes, in the console. Admin accounts are not listed there (as in v1). |
 | Q35 | What "status" means on the dashboard | Round 1 shows the registration status plus "last seen" (updated at most once a minute, **only when the app makes an HTTP request**, so an idle but connected device looks stale). Better: an additive `online` flag on `GET /admin/devices` from the open live connections. Recommended as a small backend task. |
 | Q36 | Dashboard "buttons" | Shortcuts to the four areas. No actions (like Sync Shopee) on the dashboard yet. |
-| Q37 | Where Shopee configuration and BOM inspection go | A fourth, smaller group **Settings** (Shopee config) at the bottom of the sidebar; BOM under **Stock info & finder**. |
+| Q37 | Where Shopee configuration and BOM inspection go | A fourth, smaller group **Settings** (Shopee config) at the bottom of the sidebar; BOM under **Stock info & finder**. **Decided (D8):** Settings under Administration; BOM under Warehouse. |
 | Q38 | Mobile navigation | Drawer (§2.3) for round 1. |
 

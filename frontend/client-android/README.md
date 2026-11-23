@@ -131,13 +131,19 @@ deletes the key: the device then registers as a new `pending` device.
 - `updater/`: update policy, APK verification, download, PackageInstaller, periodic worker.
 - `device/`: Keystore device key, registration with retry.
 - `scan/` + `ui/scan/`: the wedge scan input (T6.15a): `ScanField`, suffix setting, scanner test.
+- `ops/` + `ui/ops/`: the logged-in app (V2_UX §2.2): `OpsRepository` (orders, picks, outbound
+  history and stock from `/v2/ws` snapshots, requested on every connect; actions over `/v2`),
+  `OrderLogic` (progress, search, over-quantity), `OpsController` (actions with v1's messages;
+  holds the selected order), `MainShell` (home with Orders / Stockkeeping / Finder, username →
+  Device info with Log out) and the scaffold screens copied from v1.
 
 ## Scanning (keyboard wedge)
 
 Every scanning screen uses `ui/scan/ScanField`. While scanning, the field is **read-only**: it
 opens no input session, so the soft keyboard stays closed, and the characters are taken from the
 key events. The configured suffix (Enter by default, or Tab) submits; the field clears itself and
-keeps focus. The same value twice within 300 ms (a double fire) is dropped. To type by hand, tap
+keeps focus (a screen can move on instead, e.g. SKU → quantity, with `refocusAfterScan`; it
+comes back after a pop-up closes). The same value twice within 300 ms (a double fire) is dropped. To type by hand, tap
 the field or press **Type**; the keyboard opens and closes again after the submit.
 
 The suffix is set per device in the hidden settings → **Scanner**. The scanner test there

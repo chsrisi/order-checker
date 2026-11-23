@@ -9,6 +9,7 @@ import com.bakingholic.orderchecker.net.ServerProfile
 import com.bakingholic.orderchecker.net.ServerUnreachableException
 import com.bakingholic.orderchecker.net.UpgradeRequiredException
 import com.bakingholic.orderchecker.scan.ScanSuffix
+import com.bakingholic.orderchecker.ui.ops.OpsController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,12 +45,16 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val scanSuffix: StateFlow<ScanSuffix> =
         graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
     private var registration: Job? = null
+    val ops = OpsController(graph.ops, viewModelScope)
 
     init {
         viewModelScope.launch {
             graph.events.collect { event ->
                 when (event) {
-                    is AppEvent.LoggedOut -> _screen.value = Screen.Login(error = "Session ended. Please log in again.")
+                    is AppEvent.LoggedOut -> {
+                        ops.selectOrder(null)
+                        _screen.value = Screen.Login(error = "Session ended. Please log in again.")
+                    }
                     is AppEvent.UpgradeRequired -> {
                         _screen.value = Screen.UpdateRequired(event.minSupportedVersionCode)
                         viewModelScope.launch { graph.updates.check() }
@@ -94,6 +99,7 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
 
     fun logout() {
         registration?.cancel()
+        ops.selectOrder(null)
         viewModelScope.launch {
             graph.session.logout()
             _screen.value = Screen.Login()

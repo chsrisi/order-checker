@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -85,6 +85,22 @@ def list_devices() -> List[Device]:
         for device in devices:
             db.expunge(device)
         return list(devices)
+
+
+def device_ids_for_sessions(sids: Iterable[str]) -> set[str]:
+    """Devices bound to any of these live (not revoked) sessions."""
+    sids = list(sids)
+    if not sids:
+        return set()
+    with get_db() as db:
+        rows = db.execute(
+            select(AuthSession.device_id).where(
+                AuthSession.id.in_(sids),
+                AuthSession.revoked_at.is_(None),
+                AuthSession.device_id.is_not(None),
+            )
+        )
+        return {row[0] for row in rows}
 
 
 def get_device(device_id: str) -> Optional[Device]:

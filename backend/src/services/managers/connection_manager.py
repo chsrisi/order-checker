@@ -111,6 +111,10 @@ class ConnectionManager:
             logger.info(f"Closed {len(targets)} WebSocket session(s) of a revoked session")
         return len(targets)
 
+    def live_session_ids(self) -> set[str]:
+        """Sessions with at least one open socket (admin device listing, V2_DELTA Q35)."""
+        return set(list(self.socket_sessions.values()))
+
     # Payloads identical for every recipient: built once per broadcast (T4.5).
     SCOPE_INDEPENDENT = frozenset({WSMessageType.USERS, WSMessageType.STOCKS})
 

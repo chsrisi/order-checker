@@ -658,7 +658,10 @@ committed export `backend/openapi/v2.json`.
   `request.state.client_version`; `get_current_principal` passes it to
   `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
   the 60 s throttle, `app_version_code` at once when it changed. Root (v1) requests never touch
-  devices. `GET /admin/devices` lists them.
+  devices. `GET /admin/devices` lists them (`AdminDeviceResponse`: the device plus `online`,
+  true when a live session of the device has an open WebSocket right now, from
+  `conn_mgr.live_session_ids()` → `queries.device_ids_for_sessions`; V2_DELTA Q35). `last_seen_at`
+  moves only on HTTP requests, so `online` is what the console shows as status.
 
 ---
 

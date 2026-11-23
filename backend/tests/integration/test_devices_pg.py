@@ -167,7 +167,27 @@ def test_admin_lists_devices(client, operator):
     (device,) = listing.json()
     assert device["status"] == "pending" and device["current_username"] == "alice"
     assert "public_key" not in device and "token_hash" not in device
+    assert device["online"] is False  # no open socket
     assert client.get("/admin/devices", headers=headers).status_code == 403
+
+
+def test_admin_device_listing_marks_devices_with_a_live_socket_online(
+    client, operator, monkeypatch
+):
+    """V2_DELTA Q35: online = a live session of the device has an open socket."""
+    from src.services.managers import conn_mgr
+
+    headers, sid = operator()
+    key, pub = keypair()
+    device_id = _register(client, headers, key, pub, sid).json()["id"]
+    admin_headers, _ = operator("boss")
+    monkeypatch.setattr(conn_mgr, "socket_sessions", {object(): sid})
+    (device,) = client.get("/admin/devices", headers=admin_headers).json()
+    assert device["id"] == device_id and device["online"] is True
+    # A revoked session no longer counts, even if its socket were still in the registry.
+    queries.revoke_session(sid)
+    (device,) = client.get("/admin/devices", headers=admin_headers).json()
+    assert device["online"] is False
 
 
 def test_deleting_the_operator_keeps_the_device(client, operator, pg_session_factory):

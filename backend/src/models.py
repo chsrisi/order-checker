@@ -181,6 +181,14 @@ class DeviceResponse(BaseModel):
     last_seen_at: Optional[datetime] = None
 
 
+class AdminDeviceResponse(DeviceResponse):
+    """Admin listing: the device plus whether one of its sessions has a live socket now
+    (V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected
+    device would otherwise look stale."""
+
+    online: bool = False
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     __table_args__ = {"schema": "auth"}

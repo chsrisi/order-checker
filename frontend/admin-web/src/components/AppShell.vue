@@ -1,52 +1,112 @@
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { NButton, NLayout, NLayoutContent, NLayoutHeader, NLayoutSider, NMenu, NSpace, NTag, NText, type MenuOption } from 'naive-ui'
+import {
+  NButton,
+  NDrawer,
+  NDrawerContent,
+  NDropdown,
+  NLayout,
+  NLayoutContent,
+  NLayoutHeader,
+  NLayoutSider,
+  NMenu,
+  NTag,
+  NText,
+  type MenuOption,
+} from 'naive-ui'
 import { useSession } from '../stores/session'
 import { useLive } from '../stores/live'
+import { dashboard, groups, type NavPage } from '../nav'
+import { useIsMobile } from '../lib/useIsMobile'
 
 const session = useSession()
 const live = useLive()
 const route = useRoute()
 const router = useRouter()
+const mobile = useIsMobile()
+const drawer = ref(false)
 
-// Screens are added here as they are rebuilt (T7.3–T7.10, V2_UX.md).
-const menu: MenuOption[] = [{ key: 'home', label: () => h(RouterLink, { to: { name: 'home' } }, { default: () => 'Overview' }) }]
-const active = computed(() => String(route.name ?? 'home'))
+const item = (page: NavPage): MenuOption => ({
+  key: page.name,
+  label: () => h(RouterLink, { to: page.path }, { default: () => page.label }),
+})
+const menu: MenuOption[] = [
+  item(dashboard),
+  ...groups.map((g) => ({ type: 'group' as const, key: g.key, label: g.label, children: g.pages.map(item) })),
+]
+const active = computed(() => String(route.name ?? 'dashboard'))
+const title = computed(() => String(route.meta.title ?? 'Console'))
+watch(() => route.fullPath, () => (drawer.value = false))
+
 const liveTag = computed(() =>
   live.state === 'connected'
     ? { type: 'success' as const, text: 'Live' }
     : live.state === 'connecting'
       ? { type: 'warning' as const, text: 'Connecting…' }
-      : { type: 'error' as const, text: 'Offline, retrying' },
+      : { type: 'error' as const, text: 'Offline' },
 )
-
-async function logout() {
-  await session.logout()
-  await router.push({ name: 'login' })
+const accountMenu = [
+  { key: 'about', label: 'Server info' },
+  { key: 'classic', label: 'Classic admin' },
+  { key: 'logout', label: 'Log out' },
+]
+async function onAccount(key: string) {
+  if (key === 'about') await router.push({ name: 'about' })
+  else if (key === 'classic') window.location.href = '/'
+  else {
+    await session.logout()
+    await router.push({ name: 'login' })
+  }
 }
 </script>
 
 <template>
   <NLayout style="height: 100%">
-    <NLayoutHeader bordered style="padding: 8px 16px">
-      <NSpace justify="space-between" align="center">
-        <NText strong>Order Checker Console</NText>
-        <NSpace align="center">
-          <NTag :type="liveTag.type" size="small" round>{{ liveTag.text }}</NTag>
-          <NText depth="3">{{ session.username }}</NText>
-          <NButton size="small" tag="a" href="/" quaternary>Classic admin</NButton>
-          <NButton size="small" @click="logout">Log out</NButton>
-        </NSpace>
-      </NSpace>
+    <NLayoutHeader bordered class="header">
+      <div class="header-left">
+        <NButton v-if="mobile" quaternary size="small" aria-label="Menu" @click="drawer = true">☰</NButton>
+        <NText strong>{{ mobile ? title : 'Order Checker Console' }}</NText>
+      </div>
+      <div class="header-right">
+        <NTag :type="liveTag.type" size="small" round>{{ liveTag.text }}</NTag>
+        <NDropdown :options="accountMenu" trigger="click" @select="onAccount">
+          <NButton size="small" quaternary>{{ session.username }} ▾</NButton>
+        </NDropdown>
+      </div>
     </NLayoutHeader>
-    <NLayout has-sider style="height: calc(100% - 49px)">
-      <NLayoutSider bordered collapse-mode="width" :collapsed-width="0" :width="200" show-trigger="bar" breakpoint="md">
+    <NLayout has-sider class="body">
+      <NLayoutSider v-if="!mobile" bordered :width="210">
         <NMenu :options="menu" :value="active" />
       </NLayoutSider>
-      <NLayoutContent content-style="padding: 16px">
+      <NLayoutContent :content-style="{ padding: mobile ? '12px' : '20px' }">
         <slot />
       </NLayoutContent>
     </NLayout>
+    <NDrawer v-model:show="drawer" placement="left" :width="260">
+      <NDrawerContent title="Order Checker" body-content-style="padding: 0">
+        <NMenu :options="menu" :value="active" />
+      </NDrawerContent>
+    </NDrawer>
   </NLayout>
 </template>
+
+<style scoped>
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  height: 48px;
+  box-sizing: border-box;
+}
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.body {
+  height: calc(100% - 48px);
+}
+</style>

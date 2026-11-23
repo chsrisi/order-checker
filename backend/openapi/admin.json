@@ -1,6 +1,103 @@
 {
   "components": {
     "schemas": {
+      "AdminDeviceResponse": {
+        "description": "Admin listing: the device plus whether one of its sessions has a live socket now\n(V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected\ndevice would otherwise look stale.",
+        "properties": {
+          "android_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Android Version"
+          },
+          "app_version_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version Code"
+          },
+          "current_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Username"
+          },
+          "enrolled_at": {
+            "format": "date-time",
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "online": {
+            "default": false,
+            "title": "Online",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "enrolled_at"
+        ],
+        "title": "AdminDeviceResponse",
+        "type": "object"
+      },
       "AdminPasswordReset": {
         "properties": {
           "password": {
@@ -233,97 +330,6 @@
           "deleted"
         ],
         "title": "DeleteCountResponse",
-        "type": "object"
-      },
-      "DeviceResponse": {
-        "properties": {
-          "android_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Android Version"
-          },
-          "app_version_code": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "App Version Code"
-          },
-          "current_username": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Username"
-          },
-          "enrolled_at": {
-            "format": "date-time",
-            "title": "Enrolled At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Label"
-          },
-          "last_seen_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Seen At"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "enrolled_at"
-        ],
-        "title": "DeviceResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1175,7 +1181,7 @@
     },
     "/admin/devices": {
       "get": {
-        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode and last contact. Read-only until step 8.",
+        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now). Read-only until step 8.",
         "operationId": "list_devices_admin_devices_get",
         "responses": {
           "200": {
@@ -1183,7 +1189,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/DeviceResponse"
+                    "$ref": "#/components/schemas/AdminDeviceResponse"
                   },
                   "title": "Response List Devices Admin Devices Get",
                   "type": "array"

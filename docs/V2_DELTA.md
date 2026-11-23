@@ -283,6 +283,17 @@ your go-ahead, beginning with T6.0.
 Briefs: [V2_UX.md](V2_UX.md) §2.2 (client shell) and §2.3 (admin shell and dashboard), with
 questions Q31–Q38 in V2_UX §4. Their working defaults apply unless you change them.
 
+## Delta 8 (2026-11-23)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q30 | The V2_UX §1 drafts stay as a **shared reference**; some items are intended behaviour or unrelated. They get answered implicitly in later iterations, not up front. | ✅ |
+| Q31 | Working copy of v1. **Keep the pop-ups** (intended behaviour). The other fixes go in: Enter in Stockkeeping no longer runs "Set", deletes ask for confirmation, the selected order survives leaving the screen. | ✅ |
+| Q32 | **Picking is the main** Orders view. Outbound stays a separate view: it was split so an admin can match a packed order (outbound done) to its picking (inbound). | ✅ |
+| Q33–Q35, Q38 | Accepted as proposed (Q35: additive `online` flag on `GET /admin/devices`). | ✅ |
+| Q36 | Accepted: shortcuts only; dashboard actions noted for a later iteration. | ✅ 📌 |
+| Q37 | Groups: **Administration** (Workers, Devices, Settings = Shopee config) · **Orders** · **Warehouse** (stock info & finder, BOM). | ✅ |
+
 ---
 
 ## Open questions and things to revisit
@@ -321,5 +332,5 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q27~~ | ~~Device day before parity?~~ | Postponed; parity for client and admin first (D5) | – | ✅ |
 | ~~Q28~~ | ~~Per-screen design loop~~ | Accepted (D6) | – | ✅ |
 | ~~Q29~~ | ~~Client vs admin order~~ | Accepted (D6) | – | ✅ |
-| Q30 | v1 / Flutter admin UX pain points | Draft in V2_UX.md §1; you correct it (D6). A1, A8 answered (D7) | before T6.15b | ❓ |
-| Q31–Q38 | Client shell scope, admin naming, device status, nav (V2_UX §4) | Working defaults in V2_UX §4 (D7) | before building the shells | ❓ |
+| ~~Q30~~ | ~~v1 / Flutter admin UX pain points~~ | Kept as a shared reference, answered in later iterations (D8) | – | ✅ |
+| ~~Q31–Q38~~ | ~~Client shell scope, admin naming, device status, nav~~ | Decided (D8) | – | ✅ |

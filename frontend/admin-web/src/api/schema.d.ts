@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * List v2 devices
-         * @description Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode and last contact. Read-only until step 8.
+         * @description Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now). Read-only until step 8.
          */
         get: operations["list_devices_admin_devices_get"];
         put?: never;
@@ -500,6 +500,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AdminDeviceResponse
+         * @description Admin listing: the device plus whether one of its sessions has a live socket now
+         *     (V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected
+         *     device would otherwise look stale.
+         */
+        AdminDeviceResponse: {
+            /** Android Version */
+            android_version?: string | null;
+            /** App Version Code */
+            app_version_code?: number | null;
+            /** Current Username */
+            current_username?: string | null;
+            /**
+             * Enrolled At
+             * Format: date-time
+             */
+            enrolled_at: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label?: string | null;
+            /** Last Seen At */
+            last_seen_at?: string | null;
+            /** Model */
+            model?: string | null;
+            /**
+             * Online
+             * @default false
+             */
+            online: boolean;
+            /** Status */
+            status: string;
+        };
         /** AdminPasswordReset */
         AdminPasswordReset: {
             /**
@@ -585,30 +619,6 @@ export interface components {
             deleted: number;
             /** Message */
             message: string;
-        };
-        /** DeviceResponse */
-        DeviceResponse: {
-            /** Android Version */
-            android_version?: string | null;
-            /** App Version Code */
-            app_version_code?: number | null;
-            /** Current Username */
-            current_username?: string | null;
-            /**
-             * Enrolled At
-             * Format: date-time
-             */
-            enrolled_at: string;
-            /** Id */
-            id: string;
-            /** Label */
-            label?: string | null;
-            /** Last Seen At */
-            last_seen_at?: string | null;
-            /** Model */
-            model?: string | null;
-            /** Status */
-            status: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1020,7 +1030,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DeviceResponse"][];
+                    "application/json": components["schemas"]["AdminDeviceResponse"][];
                 };
             };
             /** @description Admin scope required */

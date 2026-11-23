@@ -10,7 +10,7 @@ const session = useSession()
 </script>
 
 <template>
-  <NConfigProvider :theme="theme">
+  <NConfigProvider :theme="theme" abstract>
     <NMessageProvider>
       <NDialogProvider>
         <AppShell v-if="session.status === 'loggedIn'"><RouterView /></AppShell>

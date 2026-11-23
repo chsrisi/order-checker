@@ -19,8 +19,8 @@ onMounted(async () => {
 
 <template>
   <NSpace vertical size="large" style="max-width: 720px">
-    <NAlert type="info" title="New console (preview)">
-      Screens arrive here one at a time. Until then, use the classic admin for daily work.
+    <NAlert type="info" title="Server">
+      The backend this console talks to.
     </NAlert>
     <NCard title="Server">
       <NAlert v-if="error" type="error">{{ error }}</NAlert>

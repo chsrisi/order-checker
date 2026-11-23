@@ -20,7 +20,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bakingholic.orderchecker.device.DeviceStatus
 import com.bakingholic.orderchecker.ui.AppViewModel
-import com.bakingholic.orderchecker.ui.HomeScreen
+import com.bakingholic.orderchecker.ui.ops.InfoRow
+import com.bakingholic.orderchecker.ui.ops.MainShell
 import com.bakingholic.orderchecker.ui.LoginScreen
 import com.bakingholic.orderchecker.ui.Screen
 import com.bakingholic.orderchecker.ui.SettingsScreen
@@ -71,14 +72,7 @@ private fun App(vm: AppViewModel) {
                         pinGate = graph.pinGate,
                         profile = graph.profile,
                         appVersion = graph.appInfo.label,
-                        deviceInfo = "Device: " + when (val d = device) {
-                            DeviceStatus.Unregistered -> "not registered (log in first)"
-                            DeviceStatus.Registering -> "registering…"
-                            is DeviceStatus.Retrying -> "registration pending (${d.reason}); retrying"
-                            is DeviceStatus.Registered -> "${d.deviceId.take(8)} · ${d.status}"
-                            DeviceStatus.Revoked -> "REVOKED by the admin"
-                            is DeviceStatus.Rejected -> "registration refused (${d.reason})"
-                        },
+                        deviceInfo = "Device: " + deviceLine(device),
                         onSave = vm::saveProfile,
                         onCheckUpdate = { vm.checkForUpdate() },
                         onClose = vm::closeSettings,
@@ -88,16 +82,30 @@ private fun App(vm: AppViewModel) {
                     update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     screen is Screen.Login -> LoginScreen(screen as Screen.Login, vm::login)
-                    screen is Screen.Home -> HomeScreen(
-                        user = user,
-                        connection = when (ws) {
-                            WsClient.State.CONNECTED -> "connected"
-                            WsClient.State.CONNECTING -> "connecting…"
-                            WsClient.State.DISCONNECTED -> "offline"
-                        },
+                    screen is Screen.Home -> MainShell(
+                        ops = vm.ops,
+                        username = user,
+                        scanSuffix = scanSuffix,
                         onFallback = onFallback,
-                        stockMode = meta?.stockLocationMode,
+                        deviceInfo = listOfNotNull(
+                            InfoRow("Logged in as", user ?: "—"),
+                            InfoRow("Device", deviceLine(device)),
+                            InfoRow("App", graph.appInfo.label),
+                            meta?.let { InfoRow("Server", "${it.apiVersion} · ${it.appEnv}") },
+                            meta?.let { InfoRow("Stock mode", it.stockLocationMode) },
+                            meta?.let { InfoRow("Contract", "${it.clientContract.min}–${it.clientContract.max}") },
+                            InfoRow(
+                                "Live updates",
+                                when (ws) {
+                                    WsClient.State.CONNECTED -> "connected"
+                                    WsClient.State.CONNECTING -> "connecting…"
+                                    WsClient.State.DISCONNECTED -> "offline"
+                                },
+                            ),
+                            InfoRow("Network", if (onFallback) "LAN fallback" else "primary"),
+                        ),
                         onLogout = vm::logout,
+                        footer = { },
                     )
                     screen is Screen.UpdateRequired -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                 }
@@ -107,4 +115,13 @@ private fun App(vm: AppViewModel) {
             }
         }
     }
+}
+
+private fun deviceLine(device: DeviceStatus): String = when (device) {
+    DeviceStatus.Unregistered -> "not registered (log in first)"
+    DeviceStatus.Registering -> "registering…"
+    is DeviceStatus.Retrying -> "registration pending (${device.reason}); retrying"
+    is DeviceStatus.Registered -> "${device.deviceId.take(8)} · ${device.status}"
+    DeviceStatus.Revoked -> "REVOKED by the admin"
+    is DeviceStatus.Rejected -> "registration refused (${device.reason})"
 }

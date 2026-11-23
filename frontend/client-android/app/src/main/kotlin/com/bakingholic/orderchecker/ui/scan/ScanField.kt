@@ -70,6 +70,7 @@ fun rememberScanFieldState(): ScanFieldState = remember { ScanFieldState() }
  * The input every scanning screen uses (T6.15a, V2_UX §2.1): a focused field that submits on the
  * configured wedge [suffix], clears itself and keeps focus, and does not open the soft keyboard
  * unless asked ("Type" button or a tap on the field). [acceptAnySuffix] is for the scanner test.
+ * [refocusAfterScan] returns false when the screen moved focus elsewhere in [onScan].
  */
 @Composable
 fun ScanField(
@@ -80,6 +81,7 @@ fun ScanField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     acceptAnySuffix: Boolean = false,
+    refocusAfterScan: () -> Boolean = { true },
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val haptics = LocalHapticFeedback.current
@@ -89,8 +91,9 @@ fun ScanField(
     fun submit(raw: String, ending: ScanEnding, keep: String = "") {
         state.text = TextFieldValue(keep, TextRange(keep.length))
         state.typing = false
-        state.gate.accept(raw)?.let { onScan(Scan(it, ending)) }
-        state.refocus()
+        val accepted = state.gate.accept(raw)?.also { onScan(Scan(it, ending)) }
+        // A screen may move on to another field after a scan (v1: SKU → quantity).
+        if (accepted == null || refocusAfterScan()) state.refocus()
     }
 
     LaunchedEffect(state.focusTick) { runCatching { state.focus.requestFocus() } }

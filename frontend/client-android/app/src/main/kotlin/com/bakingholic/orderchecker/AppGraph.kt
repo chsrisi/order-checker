@@ -27,6 +27,7 @@ import com.bakingholic.orderchecker.updater.ApkVerifier
 import com.bakingholic.orderchecker.updater.PackageInstallerApkInstaller
 import com.bakingholic.orderchecker.updater.UpdateChecker
 import com.bakingholic.orderchecker.updater.UpdateManager
+import com.bakingholic.orderchecker.ops.OpsRepository
 import com.bakingholic.orderchecker.ws.WsClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -75,6 +76,7 @@ class AppGraph(context: Context) {
     )
     val meta = MetaRepository(api)
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
+    val ops = OpsRepository(session, ws, scope)
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
     val scanPrefs = ScanPrefs(context.settingsStore)
 
@@ -107,8 +109,9 @@ class AppGraph(context: Context) {
         )
     }
 
-    /** Orders, picks and other per-operator caches are dropped on logout (filled by later tasks). */
+    /** Orders, picks and other per-operator caches are dropped on logout. */
     private fun clearCaches() {
         ws.stop()
+        ops.clear()
     }
 }
