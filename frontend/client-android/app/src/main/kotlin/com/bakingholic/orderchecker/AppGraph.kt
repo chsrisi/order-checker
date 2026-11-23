@@ -19,6 +19,7 @@ import com.bakingholic.orderchecker.net.AddressSelector
 import com.bakingholic.orderchecker.net.ApiClient
 import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
+import com.bakingholic.orderchecker.scan.ScanPrefs
 import com.bakingholic.orderchecker.settings.PinGate
 import com.bakingholic.orderchecker.settings.ProfileStore
 import com.bakingholic.orderchecker.updater.AndroidPackageInspector
@@ -75,6 +76,7 @@ class AppGraph(context: Context) {
     val meta = MetaRepository(api)
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
+    val scanPrefs = ScanPrefs(context.settingsStore)
 
     // Device identity (T6.13): Keystore key, registered after every login.
     val device = DeviceRegistrar(

@@ -130,3 +130,16 @@ deletes the key: the device then registers as a new `pending` device.
   Regenerated on every build; never edit or commit them.
 - `updater/`: update policy, APK verification, download, PackageInstaller, periodic worker.
 - `device/`: Keystore device key, registration with retry.
+- `scan/` + `ui/scan/`: the wedge scan input (T6.15a): `ScanField`, suffix setting, scanner test.
+
+## Scanning (keyboard wedge)
+
+Every scanning screen uses `ui/scan/ScanField`. While scanning, the field is **read-only**: it
+opens no input session, so the soft keyboard stays closed, and the characters are taken from the
+key events. The configured suffix (Enter by default, or Tab) submits; the field clears itself and
+keeps focus. The same value twice within 300 ms (a double fire) is dropped. To type by hand, tap
+the field or press **Type**; the keyboard opens and closes again after the submit.
+
+The suffix is set per device in the hidden settings → **Scanner**. The scanner test there
+accepts both suffixes and shows each value, its length and the key that ended it, and warns
+when the scanner sends a different suffix from the setting.

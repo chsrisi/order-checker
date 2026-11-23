@@ -8,10 +8,13 @@ import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
 import com.bakingholic.orderchecker.net.ServerUnreachableException
 import com.bakingholic.orderchecker.net.UpgradeRequiredException
+import com.bakingholic.orderchecker.scan.ScanSuffix
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -38,6 +41,8 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val meta = graph.meta.meta
     val updateState = graph.updates.state
     val deviceStatus = graph.device.status
+    val scanSuffix: StateFlow<ScanSuffix> =
+        graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
     private var registration: Job? = null
 
     init {
@@ -111,6 +116,10 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
 
     fun closeSettings() {
         _settingsOpen.value = false
+    }
+
+    fun setScanSuffix(suffix: ScanSuffix) {
+        viewModelScope.launch { graph.scanPrefs.setSuffix(suffix) }
     }
 
     fun saveProfile(profile: ServerProfile, onResult: (String?) -> Unit) {

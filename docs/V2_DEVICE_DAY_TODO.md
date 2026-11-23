@@ -73,8 +73,10 @@ device.
 
 ## E. Scanner and session checks (T6.14 step 6)
 
-- [ ] **Wedge suffix:** focus the v2 username field, scan a barcode; note Enter, Tab or nothing.
-      Same in v1 for comparison (T6.15a needs this)
+- [ ] **Wedge suffix:** hidden settings → **Scanner** → scan a barcode into "Scan a test barcode".
+      It shows the value, its length and the key that ended it (Enter or Tab); a warning means the
+      Suffix setting differs. Set it to match. If nothing appears, the scanner sends no suffix:
+      configure Enter in the scanner settings. Also note whether the soft keyboard pops up.
 - [ ] **Revocation, v2:** admin → "log out everywhere" on the test operator → v2 returns to login
       with "Session ended" within seconds
 - [ ] **Revocation, v1** (open since T6.2): log the test operator into v1 on the pilot device,

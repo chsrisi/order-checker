@@ -87,3 +87,16 @@ in between.
 - **Feedback:** a short inline status line under the field (ok / warning / error) instead of
   modal dialogs (C5). Optional vibration on error.
 - **Screens using it:** Inbound, Outbound, Stocks, Item finder (from T6.15b on).
+
+**Round 1 — built (2026-11-23).** `ui/scan/ScanField`, plus a scanner test in the hidden
+settings (Scanner: suffix setting and a live log of what the scanner sends).
+
+- **Change from the brief:** while scanning, the field is **read-only** and takes characters from
+  the key events. An editable field asked Android for the soft keyboard on every hardware key
+  (emulator). Hiding it per key reordered characters (`SKU-0001` → `SK-U0001`). Read-only means
+  no input session, so no keyboard. A tap or **Type** switches to normal typing.
+- **Consequence:** the MT67 scanner must be in keystroke ("simulate keyboard") mode, which is
+  today's setting (Q1). A "fill text into the edit box" mode needs typing mode. The device day
+  confirms it with the scanner test.
+- **Your check:** open the hidden settings → Scanner on the emulator (or a device) and type or
+  scan a few values.

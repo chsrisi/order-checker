@@ -60,6 +60,7 @@ private fun App(vm: AppViewModel) {
     val meta by vm.meta.collectAsStateWithLifecycle()
     val update by vm.updateState.collectAsStateWithLifecycle()
     val device by vm.deviceStatus.collectAsStateWithLifecycle()
+    val scanSuffix by vm.scanSuffix.collectAsStateWithLifecycle()
     val graph = vm.graph
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column {
@@ -81,6 +82,8 @@ private fun App(vm: AppViewModel) {
                         onSave = vm::saveProfile,
                         onCheckUpdate = { vm.checkForUpdate() },
                         onClose = vm::closeSettings,
+                        scanSuffix = scanSuffix,
+                        onScanSuffixChange = vm::setScanSuffix,
                     )
                     update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
