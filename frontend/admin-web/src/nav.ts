@@ -26,7 +26,7 @@ export const groups: NavGroup[] = [
     pages: [
       { name: 'workers', path: '/workers', label: 'Workers', ready: true },
       { name: 'devices', path: '/devices', label: 'Devices', ready: true },
-      { name: 'settings', path: '/settings', label: 'Settings', ready: false, classic: 'Config' },
+      { name: 'settings', path: '/settings', label: 'Settings', ready: true },
     ],
   },
   {

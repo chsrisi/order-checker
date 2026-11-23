@@ -317,6 +317,14 @@ Consequences:
   now says so in the delete dialog and points to a password reset as the way to stop someone
   without losing history. Whether delete should keep history is Q43.
 
+## Delta 10 (2026-11-24)
+
+| Ref | Decision | Status |
+|---|---|---|
+| D9 | Workers and Orders round 1 **accepted**. | ✅ |
+| Q43 | Deleting a worker keeps its v1 behaviour for now (the dialog warns). A **"disable worker"** that keeps history is pinned for later. | ✅ 📌 |
+| – | Next: the console's **Settings** page (Shopee connection), brief in [V2_UX.md](V2_UX.md) §2.6. No backend change. | ✅ |
+
 ---
 
 ## Open questions and things to revisit
@@ -358,4 +366,4 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q30~~ | ~~v1 / Flutter admin UX pain points~~ | Kept as a shared reference, answered in later iterations (D8) | – | ✅ |
 | ~~Q31–Q38~~ | ~~Client shell scope, admin naming, device status, nav~~ | Decided (D8) | – | ✅ |
 | ~~Q39–Q42~~ | ~~Admin Orders: hand-ticks, history filters, close all, previous close~~ | Decided (D9) | – | ✅ |
-| Q43 | Deleting a worker erases their outbound scan history (closed included) and their name on completed orders (v1 behaviour). Keep, or make delete keep history (e.g. a disabled flag instead of a delete)? | Keep for now; the dialog warns and suggests a password reset. A "disable worker" would need an additive column and a contract check. | later | ❓ |
+| Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |

@@ -51,7 +51,8 @@ fails when the committed file is stale.
   `PlaceholderView` with a link to the classic admin.
 - `src/components/AppShell.vue` (header, sidebar/drawer), `src/views/` (one per screen),
   `src/router/` (routes generated from `nav.ts`), `src/stores/devices.ts` (polled every 30 s).
-  Built pages: Dashboard, Workers, Devices, Orders (`src/components/orders/`).
+  Built pages: Dashboard, Workers, Devices, Settings (Shopee connection; config token in memory
+  only), Orders (`src/components/orders/`).
 
 ## Hosting
 

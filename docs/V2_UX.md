@@ -259,6 +259,28 @@ classic admin. Notes for you to try:
   count is shown afterwards.
 - Scans and orders closed before v0.4 have no close time and do not appear in *By close*.
 
+### 2.6 Admin Settings: Shopee connection (D10)
+
+- **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.
+- **v1 checklist** (`config_view.dart`):
+  - unlock with the admin password (a short server window, `X-Config-Token`);
+  - show the last refused IP;
+  - edit and save the access and refresh tokens;
+  - lock now.
+- **v1 problems addressed:** A9. When the window ended, v1 opened a "Session Expired" dialog,
+  and the edits were lost on re-unlock.
+- **Flow:**
+  - One card with the status (*Locked* / *Unlocked · 42 s*).
+  - Locked: the admin password, inline. Unlocked: the IP with a copy button, both tokens
+    (masked, with a show toggle), *Undo changes*, *Lock now*, *Save tokens* (enabled only when
+    something changed).
+  - When the window ends, the form stays with its edits, and the password is asked in place.
+  - Leaving the page locks the window and drops the values from memory.
+  - The IP is the one in Shopee's last "source IP undeclared" error ("unknown" before one).
+- **Backend change:** none.
+
+**Round 1: built (2026-11-24).**
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
