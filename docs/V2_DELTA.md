@@ -350,7 +350,7 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q5~~ | ~~Update endpoints: auth? metadata?~~ | No user token; `latest.json` beside the APK (D4) | – | ✅ |
 | ~~Q6~~ | ~~Client server address~~ | Option C, stage 1 now; stage 2 runbook in V2_SERVER_ADDRESS §7 (D4) | – | ✅ |
 | ~~Q7~~ | ~~Directory names~~ | `frontend/client-android/`, `frontend/admin-web/` (D3) | – | ✅ |
-| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every v1 admin operation is covered in Vue (D5) and used for 2 weeks; then one major backend release removes v1. | later | 📌 |
+| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every v1 admin operation is covered in Vue (D5) and used for 2 weeks; then one major backend release removes v1. Picking clean-up for that release: [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md) R1.4. | later | 📌 |
 | ~~Q9~~ | ~~Device credential~~ | Device token issued at enrollment (D3) | – | ✅ |
 | ~~Q10~~ | ~~Instant revocation for v1~~ | Yes, by design of Q19 + Q24; conditions in D4.2 | – | ✅ |
 | ~~Q11~~ | ~~Local JWKS verification in v2~~ | Dropped (D3) | – | ✅ |

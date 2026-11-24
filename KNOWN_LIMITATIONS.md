@@ -84,7 +84,7 @@ This document tracks known architectural, library, and system limitations within
   - Row locks, per-bin allocations (`orders.pick_stock_allocations`) and a structured
     `stocks_log`.
   - A delete restores exactly what was deducted.
-  - Shortfalls still never block a pick (HTTP 200, logged `pick_shortfall`). See OPERATIONS
+  - Shortfalls still never block a pick (HTTP 200, logged `pick_shortfall`; see #14). See OPERATIONS
     "Inventory".
 - **Remaining limits**:
   - Stock is *deducted* at pick time, not reserved until outbound close (stock Q6). Revisit
@@ -210,3 +210,37 @@ This document tracks known architectural, library, and system limitations within
   for an admin to close, or allow picks on done orders.
 - **Code References**: `backend/src/services/queries/outbound.py` (`close_shipped_outbound`),
   `backend/src/services/queries/pick_items.py` (`OrderClosedError`)
+
+### 14. Picks Can Exceed Recorded Stock (Shortfall)
+- **Issue**: A pick never fails for lack of stock. What is available is deducted; the rest is
+  logged as `pick_shortfall` and has no allocation, so it is never restored. An order can
+  therefore show more picked than was deducted, and a mistyped quantity can empty every bin of a SKU.
+- **Impact**: By design: recorded counts can be behind the shelf, and picking should not stop.
+  There is no shortfall report (#5); use the `stocks_log` rows with `reason = pick_shortfall`.
+- **Countermeasure (planned, not implemented)**: a `STOCK_STRICT` setting that rejects such picks
+  (`docs/V2_PICKING_DELTA.md` R1.5), and v2 unassign removing the shortfall first (Q62).
+- **Code References**: `backend/src/services/queries/stocks.py` (`deduct_for_pick`,
+  `move_pick_quantity`, `restore_for_pick`)
+
+### 15. Picks of a Cancelled Order Keep Their Stock Deducted
+- **Issue**: An order cancelled on Shopee leaves the operator's list with its picks still on it.
+  The stock stays deducted, and neither client shows those picks, so nobody can return them there.
+- **Impact**: Recorded stock is too low once the goods are back on the shelf. An operator can
+  correct the count in Stockkeeping. Deleting the pick afterwards would count it twice.
+- **Countermeasure (not applied)**: a list of cancelled orders with picks, where the operator
+  unassigns them (`docs/V2_PICKING_DELTA.md` Q65). Not automatic: only a person knows whether the
+  goods are back.
+- **Code References**: `backend/src/services/queries/orders.py` (`active_orders_query`),
+  `backend/src/services/queries/pick_items.py` (`_active_order`)
+
+### 16. The Bin of a Pick Is Assumed, Not Recorded (`multi` Mode)
+- **Issue**: The operator never says which bin an item came from. The server deducts by location
+  name, unlocated stock last, and stores that as the pick's allocation. Deleting a pick, and the
+  planned v2 unassign, return stock to that **assumed** bin.
+- **Impact**: If the item came from, or goes back to, another bin, the per-bin counts drift from
+  the shelf. The SKU's total stays right. `single` mode is not affected.
+- **Countermeasure**: transfer the stock in Stockkeeping. For future reference, not planned:
+  (a) determine the bin when picking (scan or choose it), or (b) have the operator choose the bin
+  when unassigning (`docs/V2_PICKING_DELTA.md` Round 2, Q68).
+- **Code References**: `backend/src/services/queries/stocks.py` (`deduction_order`,
+  `deduct_for_pick`, `restore_target`)

@@ -910,6 +910,52 @@ stay possible. They are not a layout.
 - T6.15e Stocks: set, add, transfer, with location suggestions.
 - T6.15f Account and the connection banner.
 
+#### Picking simplification (T6.17–T6.20, V2_PICKING_SPEC, V2_PICKING_DELTA)
+
+Picks go straight into an order, and unassigning returns stock. Precedence: V2_PICKING_DELTA >
+this plan > V2_PICKING_SPEC. Replaces "assign, unassign, delete" in T6.15b. Order: T6.17 → T6.18 →
+T6.19 → T6.20. v1 routes and `client_v1.json` stay unchanged.
+
+**T6.17 Stock engine: partial restore, order lock, strict stock**
+- Goal: pick into and remove from an order with correct stock under concurrency.
+- Refs: SPEC §4.2–4.3, P2–P7; Q62, Q64, Q73; DELTA R1.5.
+- Change: `restore_pick_quantity` (shortfall first, newest allocation first); `pick_for_order` and
+  `unassign_from_order` that lock the order row first and merge duplicate rows (P6);
+  `delete_user_by_username` locks the worker's orders first; `STOCK_STRICT` (default `0`) for
+  every pick, v1 included; `/meta` `features.strict_stock`.
+- Tests: SPEC §8 engine and races, in both location modes × both strict values.
+- Docs: `.env.example`, OPERATIONS, SYSTEM_REFERENCE §7.5–7.6, KNOWN_LIMITATIONS #14.
+- Accept: no migration; v1 tests unchanged; PostgreSQL races pass.
+
+**T6.18 `/v2` order picks and operator-only order work**
+- Goal: the v2 API of SPEC §4.1, closed to admins.
+- Refs: Q59–Q61, Q69, Q75.
+- Change: `POST /v2/shopee/orders/{order_sn}/picks` and `…/picks/unassign`; the four `/v2/pick-items`
+  operations removed; claim, pick, unassign and outbound answer 403 to admins in v2;
+  `client_v2.json` and `openapi/v2.json` regenerated.
+- Tests: every row of SPEC §4.2 over HTTP; 404 on the removed paths; 403; v1 unassign still moves
+  to the pool.
+- Docs: API, SYSTEM_REFERENCE §6, §10A.
+- Accept: `client_v1.json` byte-identical.
+
+**T6.19 Release script and seed scenario**
+- Goal: free pool rows at v1 retirement, and test the app with realistic data.
+- Refs: SPEC §4.5, §6; Q66, Q72.
+- Change: `scripts.release_unassigned_picks` (count, `--confirm`); `seed_dev --scenario picking`.
+- Tests: the script restores pool rows only; the scenario is idempotent and removable.
+- Docs: OPERATIONS, SYSTEM_REFERENCE §11.
+
+**T6.20 Android: Picking (Input, List) and Outbound screens**
+- Goal: the client of mock r2.
+- Refs: SPEC §5, DELTA rounds 3–5 (Q63, Q70, Q71, Q76–Q79).
+- Change: Home with Picking, Outbound, Stockkeeping, Finder; Input (Order: scan box; Item: SKU,
+  quantity, Submit, the order's card); List (scan/type search incl. tracking number, expanded
+  cards, *Picked · n* collapsed at the bottom); tap a line → select + Remove → Unassign dialog;
+  selection cleared when the order leaves the list; warnings for extra SKUs; pool code removed.
+- Tests: `OrderLogicTest`, a controller test (no order, order leaves, 409, warnings).
+- Docs: V2_UX, SYSTEM_REFERENCE §12, V2_DEVICE_DAY_TODO (rebuild the APKs).
+- Accept: `lint`, unit tests and both builds pass; checked on the emulator against the T6.19 data.
+
 **T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)* — **postponed**
 (Delta 5). Checklist: [V2_DEVICE_DAY_TODO.md](V2_DEVICE_DAY_TODO.md). This round pilots one
 device (Q20).
@@ -1011,6 +1057,8 @@ device (Q20).
   then.
 - Multi-worker readiness: Redis pub/sub fan-out and a distributed sync lock.
 - Admin shortfall/reconciliation report (Q5).
+- Picking (V2_PICKING_DELTA): supplier barcodes in the List search (Q80); cancelled orders with
+  picks (Q65); choosing the bin of a pick or of an unassign (Q68); the v1-retirement clean-up (R1.4).
 - `timestamptz` migration.
 - Promote the structured `StocksLog` to the stock source of truth (only if needed).
 
@@ -1138,6 +1186,10 @@ same change as the task.
 | T6.14 | in progress | **Emulator part done (2026-11-22, API 30 image with Play services)**, signed R8 release builds (`rehearsal` build type = release + cleartext to `10.0.2.2`, throwaway key; production release rules unchanged): 1–2 install 1, `appops` grant, login, device `pending` ✅; 3 update 1→2, then 3 with `--min-supported 3` → blocking screen → update ✅; 4 logged out, update to 4 from the login screen ✅; 5 tampered `sha256` → "damaged", APK with another key → "not signed with this app's key", app stays on 4 ✅. **Finding:** Play Protect shows "App scan recommended" on **every** update (new APK hash), passed with More details → Install without scanning: one extra step per update on Play-services devices. **Open:** the MT67 part (step 6) with the real key, on the device day, which is postponed (Delta 5 Q27; V2_DEVICE_DAY_TODO.md) |
 | T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds |
 | T6.16 | postponed | Delta 5 Q27. v0.6.0 tagged and deployed (2026-11-22). Still to do: v1 and laptop smoke tests, then publishing 2.0.0. Checklist: V2_DEVICE_DAY_TODO.md. One device this round (Q20) |
+| T6.17 | todo | |
+| T6.18 | todo | |
+| T6.19 | todo | |
+| T6.20 | todo | |
 | T7.1 | done | `frontend/admin-web` (Vue 3.5, Vite 8, Vue Router 5, Pinia 4, Naive UI 2.45, openapi-typescript 7). **Deviations:** TypeScript 5.9, not 7 (`openapi-typescript` needs 5); `schema.d.ts` is **committed** with a CI freshness check (`check:api`), since the Docker build context has no `backend/`; no ESLint (not on the Q13 list; `vue-tsc` strict is the lint); `@vue/test-utils` left out (its `js-beautify` chain had 5 moderate audit findings; logic tests need only Vitest). Docker: `console` stage from the named context `admin-web` (Compose `additional_contexts`), so the Flutter context is unchanged. nginx: `^~ /console/` (else the static-file regex wins), `absolute_redirect off` for `/console` → `/console/` (nginx put its internal port 80 into the Location), no `always` on the `immutable` header so 404s are not cached. Checked: `nginx -t`, routes and headers with `nginx:alpine` + the template |
 | T7.2 | done | Session store (access token in memory, refresh token in `sessionStorage`, one shared refresh, logout with server revoke), HTTP refresh-once, `/ws` client with endless backoff. Checked in headless Firefox (WebDriver BiDi) against a local v0.6.0 backend through the Vite proxy: wrong password message, login, reload keeps the session, access token stored nowhere, unknown path → overview, live updates connected; a server-side logout of the session returns the console to the login screen with "Session ended" in 1.5 s (socket closed → ticket 401 → refresh refused) |
 | T7.3–T7.9 | in progress | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35). **Workers and Orders round 1 built (2026-11-24, V2_UX §2.4–2.5, D9):** Workers (create, reset password, log out everywhere, delete with its consequences listed, devices per worker); Orders (ongoing split with outbound scans, inline filters, browser-saved hand-ticks, reviewed period close, CSV export, history by close / orders / scans with server-side filters). Backend: additive history filters and `GET /admin/history/closes`. Workers and Orders accepted (D10). **Settings round 1 built (2026-11-24, V2_UX §2.6):** Shopee connection with in-place re-unlock that keeps edits; no backend change. **Orders round 4 (2026-11-24, V2_ORDERS_SPEC / V2_ORDERS_DELTA):** steps 1–4 built: R4 picking states and the F2 fix in both v2 apps, split orders partly packed, desktop paired rows (two lists deprecated), late orders kept (ship-by cutoff removed, F4), case-insensitive close (Q44), borrowed courier (Q45), History pairs, search and exact lookup (Q49, additive `q` on closes, courier and buyer in order search, `GET /admin/lookup`), server auto-sync (Q48). **Orders rounds 3–4 (2026-11-24):** auto-close of shipped orders on sync (C1), History by day (C2, replaces `/admin/history/closes`), nightly sync pause (C3), timestamptz migration `f6c9a4b2d3e5` (Q54), exact labels (Q57, replaces Q44), frozen close review (F7). Still placeholders: Stock & finder, BOM |
