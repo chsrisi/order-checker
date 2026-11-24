@@ -54,6 +54,7 @@ import com.bakingholic.orderchecker.ops.OrderState
 import com.bakingholic.orderchecker.ops.displayCode
 import com.bakingholic.orderchecker.ops.matchesOrder
 import com.bakingholic.orderchecker.ops.progress
+import com.bakingholic.orderchecker.ops.progressLabel
 import com.bakingholic.orderchecker.ops.unassignDefault
 import com.bakingholic.orderchecker.scan.ScanSuffix
 import com.bakingholic.orderchecker.ui.scan.ScanField
@@ -281,7 +282,7 @@ private fun OrderCard(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(displayCode(order), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("Progress: ${p.doneSkus}/${p.requiredSkus}", color = stateColor)
+                Text(progressLabel(p), color = stateColor)
             }
             Text("${order.orderSn} · ship by ${order.shipBy.take(10)}", style = MaterialTheme.typography.bodySmall)
             if (selected || onUnassign != null) {

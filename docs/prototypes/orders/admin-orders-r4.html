@@ -1,0 +1,4974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Orders Prototype, round 4</title>
+<!--
+  Round 2 (2026-11-24) of the Order Checker admin "Orders" page prototype. Vanilla JS, no deps,
+  mock data inlined (same as mock-orders.json). Actions are simulated in memory.
+  Round-2 changes (see SPEC.md §9):
+    R2.1 order cards are expanded by default; packed and hand-ticked cards collapse by default
+    R4   picking states counted by SKUs touched; split orders are "partly packed" until every package is scanned;
+         History "By close" pairs each order with its scans; one search box across History, with an exact-match answer
+    R3   packed orders sink to the bottom of their status group, under a "Packed" divider (all layouts)
+    R2.3 desktop "Paired rows" layout: each outbound scan sits in the same row as the order it packs;
+         stray scans (no ongoing order) get their own section. "Two lists" keeps the round-1 layout.
+  Resize below 768px for the mobile layout.
+-->
+<style>
+:root {
+  --bg: #f7f7f9; --card: #fff; --text: #1f2225; --muted: #6b7075; --border: rgba(128,128,128,.25);
+  --primary: #18a058; --primary-soft: rgba(24,160,88,.12); --warn: #b7791f; --warn-soft: rgba(240,160,32,.14);
+  --error: #d03050; --error-soft: rgba(208,48,80,.12); --neutral-soft: rgba(128,128,128,.12); --unclaimed: rgba(128,128,128,.08);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101014; --card: #18181c; --text: #e8e8ea; --muted: #9a9ca0; --border: rgba(255,255,255,.12);
+  --primary: #63e2b7; --primary-soft: rgba(99,226,183,.14); --warn: #f2c97d; --warn-soft: rgba(242,201,125,.14);
+  --error: #e88080; --error-soft: rgba(232,128,128,.14); --neutral-soft: rgba(255,255,255,.08); --unclaimed: rgba(255,255,255,.04);
+} }
+:root[data-theme="dark"] {
+  --bg: #101014; --card: #18181c; --text: #e8e8ea; --muted: #9a9ca0; --border: rgba(255,255,255,.12);
+  --primary: #63e2b7; --primary-soft: rgba(99,226,183,.14); --warn: #f2c97d; --warn-soft: rgba(242,201,125,.14);
+  --error: #e88080; --error-soft: rgba(232,128,128,.14); --neutral-soft: rgba(255,255,255,.08); --unclaimed: rgba(255,255,255,.04);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+.shell { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
+nav.side { border-right: 1px solid var(--border); background: var(--card); padding: 14px 10px; }
+nav.side .brand { font-weight: 700; padding: 4px 10px 14px; }
+nav.side a { display: block; padding: 8px 10px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+nav.side a.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+main { padding: 16px 20px; min-width: 0; }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.topbar h1 { font-size: 20px; margin: 0; }
+.live { font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.tabs { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.tablist { display: flex; gap: 18px; }
+.tablist button { all: unset; cursor: pointer; padding: 8px 2px; color: var(--muted); border-bottom: 2px solid transparent; }
+.tablist button.on { color: var(--primary); border-color: var(--primary); }
+.split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+.col { min-width: 0; max-height: calc(100vh - 150px); overflow-y: auto; padding-right: 4px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.title { font-weight: 600; font-size: 16px; }
+.btn { border: 1px solid var(--border); background: var(--card); border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn.danger { background: var(--error); border-color: var(--error); color: #fff; }
+.btn.block { width: 100%; padding: 8px; }
+.btn.sm { padding: 2px 10px; font-size: 13px; }
+.btn.text { border: 0; background: none; color: var(--primary); padding: 2px 4px; }
+.btn.quiet { border: 0; background: none; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 6px; }
+.filters input[type=search], .filters input[type=text] { flex: 1 1 220px; }
+input[type=search], input[type=text], input[type=date], select { border: 1px solid var(--border); background: var(--card); border-radius: 4px; padding: 4px 8px; font-size: 13px; min-width: 0; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.seg button { all: unset; cursor: pointer; padding: 3px 10px; font-size: 13px; background: var(--card); }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--primary-soft); color: var(--primary); }
+.switch { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+.count { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, monospace; word-break: break-all; }
+.tag { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 3px; line-height: 20px; background: var(--neutral-soft); white-space: nowrap; }
+.tag.round { border-radius: 10px; }
+.tag.success { background: var(--primary-soft); color: var(--primary); }
+.tag.warning { background: var(--warn-soft); color: var(--warn); }
+.tag.error { background: var(--error-soft); color: var(--error); }
+.tag.check { cursor: pointer; font-size: 13px; line-height: 24px; }
+.tag.check.on { background: var(--primary); color: #fff; }
+.group { all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between; padding: 8px 4px; font-weight: 600; cursor: pointer; }
+.group.warn { color: var(--warn); }
+.card { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--card); }
+.card.unclaimed { background: var(--unclaimed); }
+.card.done .sn { text-decoration: line-through; }
+.card .head { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.card .main { flex: 1; min-width: 0; }
+.line1 { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; font-size: 13px; }
+.code { color: var(--error); font-weight: 700; }
+.recipient { display: block; font-size: 13px; margin-top: 2px; color: var(--muted); }
+.chev { font-size: 20px; line-height: 1; opacity: .6; transition: transform .15s; }
+.chev.open { transform: rotate(90deg); }
+.lines { border-top: 1px solid var(--border); padding: 8px 12px 10px 44px; }
+.sku { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); margin: 2px 0 0; }
+.scan { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; background: var(--card); }
+.scan.on { border-color: var(--error); }
+.scan .body { flex: 1; min-width: 0; }
+.scan .meta { font-size: 13px; color: var(--muted); }
+.tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
+.select-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px 8px; font-size: 13px; }
+.footer { position: sticky; bottom: 0; padding: 10px 0 0; background: var(--bg); }
+.alert { border-radius: 4px; padding: 8px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.alert.success { background: var(--primary-soft); }
+.alert.warning { background: var(--warn-soft); }
+.empty { text-align: center; color: var(--muted); padding: 28px 0; }
+.close { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--card); }
+.close .head { all: unset; box-sizing: border-box; width: 100%; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 12px; cursor: pointer; }
+.close .when { font-weight: 600; min-width: 140px; }
+.close .body { border-top: 1px solid var(--border); padding: 10px 12px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.row.sm { padding: 3px 0; font-size: 13px; border: 0; }
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.modal { background: var(--card); border-radius: 8px; padding: 18px 20px; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.modal h3 { margin: 0 0 10px; font-size: 17px; }
+.modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.modal td, .modal th { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.menu { position: relative; }
+.menu .pop { position: absolute; right: 0; top: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: 4px; z-index: 5; white-space: nowrap; }
+.menu .pop button { all: unset; display: block; padding: 6px 12px; cursor: pointer; border-radius: 4px; }
+.menu .pop button:hover { background: var(--neutral-soft); }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 6px; font-size: 13px; z-index: 20; }
+.proto-note { font-size: 12px; color: var(--muted); margin: 0 0 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ---- round 2: paired rows ---- */
+.paired { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 520px; }
+.phead, .prow, .pfoot { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 20px; }
+.phead { border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.phead > div { min-width: 0; }
+.pbody { flex: 1; overflow-y: auto; padding-right: 4px; }
+.prow { align-items: stretch; }
+.prow > * { min-width: 0; }
+.prow.span > * { grid-column: 1 / -1; }
+.slot { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.slot .scan { margin-bottom: 0; }
+.slot-notes { display: flex; gap: 6px; flex-wrap: wrap; }
+.slot.empty { border: 1px dashed var(--border); border-radius: 6px; padding: 10px 12px; color: var(--muted); font-size: 13px; justify-content: center; align-self: start; }
+.slot.empty.wait { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.slot.empty.stray { border-color: var(--warn); color: var(--warn); }
+.prow:hover .card, .prow:hover .scan, .prow:hover .slot.empty { border-color: var(--primary); }
+.prow:hover .scan.on { border-color: var(--error); }
+.pdivider { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
+.pdivider::before, .pdivider::after { content: ""; flex: 1; border-top: 1px dashed var(--border); }
+.hsearch input { width: 100%; font-size: 16px; padding: 8px 12px; margin-top: 2px; }
+.answer { border: 1px solid var(--primary); background: var(--primary-soft); border-radius: 6px; padding: 10px 12px; margin: 2px 0 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.answer.neutral { border-color: var(--border); background: var(--card); }
+.hpair { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.hpair.hhead { font-size: 12px; font-weight: 600; color: var(--muted); padding-top: 0; }
+.hpair .meta { font-size: 12px; color: var(--muted); }
+.hscan + .hscan { margin-top: 6px; }
+.hsub { color: var(--warn); font-weight: 600; font-size: 13px; padding: 12px 0 2px; }
+mark { background: var(--warn-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+@media (max-width: 600px) { .hpair { grid-template-columns: 1fr; gap: 2px; } .hpair.hhead { display: none; } }
+.pfoot { border-top: 1px solid var(--border); padding-top: 8px; align-items: end; }
+.foot-note { font-size: 12px; margin-bottom: 6px; }
+.scans-in-card { margin-top: 6px; font-size: 13px; }
+
+@media (max-width: 767px) {
+  .shell { grid-template-columns: 1fr; }
+  nav.side { display: flex; gap: 2px; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--border); }
+  nav.side .brand { display: none; }
+  nav.side a { white-space: nowrap; }
+  main { padding: 12px 16px; }
+  .col { max-height: none; overflow: visible; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="side">
+    <div class="brand">Order Checker</div>
+    <a href="#">Dashboard</a><a href="#" class="on">Orders</a><a href="#">Workers</a><a href="#">Stock &amp; finder</a><a href="#">BOM</a><a href="#">Devices</a><a href="#">Settings</a>
+  </nav>
+  <main>
+    <div class="topbar"><h1>Orders</h1><span class="live">Live</span></div>
+    <p class="proto-note"><span>Prototype, round 4, with mock data. Actions are simulated in memory. Narrow the window below 768 px for the mobile layout.</span>
+      <button class="btn sm" data-a="simscan" title="Adds an open scan the way a live WebSocket frame would">Simulate an outbound scan</button></p>
+    <div id="app"></div>
+  </main>
+</div>
+<script>
+const MOCK = {
+ "_note": "Mock data for brainstorming the admin console Orders page. Shapes follow the real API (ShopeeOrderResponse, OutboundResponse, PickEntry WS rows, AdminCloseResponse). \"now\" = 2026-11-24T09:30:00Z",
+ "now": "2026-11-24T09:30:00Z",
+ "workers": [
+  "andi",
+  "budi",
+  "citra",
+  "dewi",
+  "eko"
+ ],
+ "ongoing_orders": [
+  {
+   "order_sn": "2611234DHRD2DR",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T12:30:00Z",
+   "owner_user": "andi",
+   "shipping_carrier": "GrabExpress Instant",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "TEA-INF-01",
+     "component_name": "Tea infuser",
+     "quantity": 1,
+     "location": "B-04-02"
+    },
+    {
+     "component_sku": "MUG-WHT-350",
+     "component_name": "Ceramic mug white 350 ml",
+     "quantity": 3,
+     "location": "A-01-02"
+    }
+   ],
+   "recipient_address": {
+    "id": 2,
+    "name": "Joko E.",
+    "city": "KOTA SURABAYA"
+   },
+   "info": [
+    {
+     "id": 1,
+     "package_number": "OFG201071364",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "GRB59083016613",
+     "pickup_code": "B664",
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123X660WSNS",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T12:30:00Z",
+   "owner_user": "budi",
+   "shipping_carrier": "GoSend Same Day",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 3,
+     "location": "D-00-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 7,
+    "name": "Ayu V.",
+    "city": "KAB. BEKASI"
+   },
+   "info": [
+    {
+     "id": 6,
+     "package_number": "OFG786028113",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "GSD35181909378",
+     "pickup_code": "G895",
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611236EFU7EDW",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T16:00:00Z",
+   "owner_user": null,
+   "shipping_carrier": "GrabExpress Instant",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 1,
+     "location": "C-01-05"
+    },
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 3,
+     "location": "B-03-01"
+    },
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 2,
+     "location": "D-00-01"
+    },
+    {
+     "component_sku": "MUG-BLK-350",
+     "component_name": "Ceramic mug black 350 ml",
+     "quantity": 1,
+     "location": "A-01-03"
+    }
+   ],
+   "recipient_address": {
+    "id": 10,
+    "name": "Ayu V.",
+    "city": "KOTA TANGERANG"
+   },
+   "info": [
+    {
+     "id": 9,
+     "package_number": "OFG912973887",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "GRB52760189555",
+     "pickup_code": "H693",
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123UJ4U3Z1R",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-26T11:45:00Z",
+   "owner_user": "citra",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BOT-GLS-1L",
+     "component_name": "Glass bottle 1 L",
+     "quantity": 2,
+     "location": "C-01-01"
+    },
+    {
+     "component_sku": "TEA-INF-01",
+     "component_name": "Tea infuser",
+     "quantity": 1,
+     "location": "B-04-02"
+    },
+    {
+     "component_sku": "BRS-STR",
+     "component_name": "Straw cleaning brush",
+     "quantity": 1,
+     "location": "B-03-02"
+    },
+    {
+     "component_sku": "MUG-WHT-350",
+     "component_name": "Ceramic mug white 350 ml",
+     "quantity": 3,
+     "location": "A-01-02"
+    }
+   ],
+   "recipient_address": {
+    "id": 12,
+    "name": "Mega L.",
+    "city": "KOTA JAKARTA SELATAN"
+   },
+   "info": [
+    {
+     "id": 11,
+     "package_number": "OFG225730654",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "SPXID034236671276",
+     "pickup_code": null,
+     "note": "Tolong bubble wrap tebal"
+    }
+   ]
+  },
+  {
+   "order_sn": "2611232G72DPEQ",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-26T12:15:00Z",
+   "owner_user": "citra",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 1,
+     "location": "B-03-01"
+    },
+    {
+     "component_sku": "MUG-WHT-350",
+     "component_name": "Ceramic mug white 350 ml",
+     "quantity": 2,
+     "location": "A-01-02"
+    }
+   ],
+   "recipient_address": {
+    "id": 18,
+    "name": "Fajar N.",
+    "city": "KOTA BANDUNG"
+   },
+   "info": [
+    {
+     "id": 17,
+     "package_number": "OFG674012672",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "SPXID095289078666",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611241KTZ07HH",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T15:15:00Z",
+   "owner_user": "dewi",
+   "shipping_carrier": "J&T Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "TUM-SS-500",
+     "component_name": "Steel tumbler 500 ml",
+     "quantity": 1,
+     "location": "A-02-01"
+    },
+    {
+     "component_sku": "CST-CRK-4",
+     "component_name": "Cork coaster set (4)",
+     "quantity": 3,
+     "location": null
+    },
+    {
+     "component_sku": "MUG-BLK-350",
+     "component_name": "Ceramic mug black 350 ml",
+     "quantity": 1,
+     "location": "A-01-03"
+    }
+   ],
+   "recipient_address": {
+    "id": 22,
+    "name": "Indah C.",
+    "city": "KOTA DEPOK"
+   },
+   "info": [
+    {
+     "id": 21,
+     "package_number": "OFG175500775",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": null,
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261122WFT0MZR9",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-25T12:00:00Z",
+   "owner_user": null,
+   "shipping_carrier": "J&T Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "TUM-SS-500",
+     "component_name": "Steel tumbler 500 ml",
+     "quantity": 3,
+     "location": "A-02-01"
+    },
+    {
+     "component_sku": "CST-CRK-4",
+     "component_name": "Cork coaster set (4)",
+     "quantity": 1,
+     "location": null
+    },
+    {
+     "component_sku": "MUG-WHT-350",
+     "component_name": "Ceramic mug white 350 ml",
+     "quantity": 1,
+     "location": "A-01-02"
+    },
+    {
+     "component_sku": "LID-TUM-500",
+     "component_name": "Tumbler lid 500 ml",
+     "quantity": 3,
+     "location": "A-02-04"
+    },
+    {
+     "component_sku": "",
+     "component_name": "Custom engraving card",
+     "quantity": 1,
+     "location": null
+    }
+   ],
+   "recipient_address": {
+    "id": 28,
+    "name": "Hendra G.",
+    "city": "KOTA BOGOR"
+   },
+   "info": [
+    {
+     "id": 27,
+     "package_number": "OFG129036651",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": null,
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123FRGR7PYQ",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-25T06:15:00Z",
+   "owner_user": "eko",
+   "shipping_carrier": "JNE Reguler",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SPN-BMB",
+     "component_name": "Bamboo spoon",
+     "quantity": 1,
+     "location": "B-04-03"
+    },
+    {
+     "component_sku": "LID-TUM-500",
+     "component_name": "Tumbler lid 500 ml",
+     "quantity": 3,
+     "location": "A-02-04"
+    }
+   ],
+   "recipient_address": {
+    "id": 30,
+    "name": "Teguh Z.",
+    "city": "KOTA BOGOR"
+   },
+   "info": [
+    {
+     "id": 29,
+     "package_number": "OFG629120474",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "JNE00474395755",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261124262FMMJB",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-25T15:45:00Z",
+   "owner_user": "andi",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "MUG-BLK-350",
+     "component_name": "Ceramic mug black 350 ml",
+     "quantity": 1,
+     "location": "A-01-03"
+    },
+    {
+     "component_sku": "BOT-GLS-1L",
+     "component_name": "Glass bottle 1 L",
+     "quantity": 2,
+     "location": "C-01-01"
+    },
+    {
+     "component_sku": "LID-TUM-500",
+     "component_name": "Tumbler lid 500 ml",
+     "quantity": 1,
+     "location": "A-02-04"
+    },
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 1,
+     "location": "C-01-05"
+    }
+   ],
+   "recipient_address": {
+    "id": 35,
+    "name": "Ayu V.",
+    "city": "KOTA DEPOK"
+   },
+   "info": [
+    {
+     "id": 34,
+     "package_number": "OFG959877752",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": null,
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611223JDZ639J",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T13:00:00Z",
+   "owner_user": "dewi",
+   "shipping_carrier": "GoSend Same Day",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BRS-STR",
+     "component_name": "Straw cleaning brush",
+     "quantity": 1,
+     "location": "B-03-02"
+    },
+    {
+     "component_sku": "TUM-SS-500",
+     "component_name": "Steel tumbler 500 ml",
+     "quantity": 1,
+     "location": "A-02-01"
+    },
+    {
+     "component_sku": "CST-CRK-4",
+     "component_name": "Cork coaster set (4)",
+     "quantity": 1,
+     "location": null
+    },
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 1,
+     "location": "D-00-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 37,
+    "name": "Tari W.",
+    "city": "KOTA BOGOR"
+   },
+   "info": [
+    {
+     "id": 36,
+     "package_number": "OFG665412094",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "GSD26330434839",
+     "pickup_code": "F365",
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611237GDSPUCG",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T19:00:00Z",
+   "owner_user": null,
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 3,
+     "location": "D-00-01"
+    },
+    {
+     "component_sku": "MUG-BLK-350",
+     "component_name": "Ceramic mug black 350 ml",
+     "quantity": 1,
+     "location": "A-01-03"
+    }
+   ],
+   "recipient_address": {
+    "id": 44,
+    "name": "Indah C.",
+    "city": "KOTA BOGOR"
+   },
+   "info": [
+    {
+     "id": 43,
+     "package_number": "OFG450020665",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": null,
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611245J3H25XE",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T15:00:00Z",
+   "owner_user": "budi",
+   "shipping_carrier": "JNE Reguler",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BRS-STR",
+     "component_name": "Straw cleaning brush",
+     "quantity": 3,
+     "location": "B-03-02"
+    },
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 3,
+     "location": "D-00-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 46,
+    "name": "Hendra G.",
+    "city": "KOTA DEPOK"
+   },
+   "info": [
+    {
+     "id": 45,
+     "package_number": "OFG649929199",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "JNE47887838483",
+     "pickup_code": null,
+     "note": "Tolong bubble wrap tebal"
+    }
+   ]
+  },
+  {
+   "order_sn": "26112492Y3PZXF",
+   "split_up": false,
+   "status": "PROCESSED",
+   "ship_by": "2026-11-25T14:00:00Z",
+   "owner_user": "andi",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SPN-BMB",
+     "component_name": "Bamboo spoon",
+     "quantity": 1,
+     "location": "B-04-03"
+    }
+   ],
+   "recipient_address": {
+    "id": 50,
+    "name": "Bayu T.",
+    "city": "KOTA BANDUNG"
+   },
+   "info": [
+    {
+     "id": 49,
+     "package_number": "OFG253522529",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "SPXID042731672326",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123BFTFRETH",
+   "split_up": true,
+   "status": "PROCESSED",
+   "ship_by": "2026-11-26T06:15:00Z",
+   "owner_user": "citra",
+   "shipping_carrier": "J&T Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BOX-GIFT-M",
+     "component_name": "Gift box medium",
+     "quantity": 1,
+     "location": "D-00-01"
+    },
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 1,
+     "location": "B-03-01"
+    },
+    {
+     "component_sku": "CST-CRK-4",
+     "component_name": "Cork coaster set (4)",
+     "quantity": 1,
+     "location": null
+    }
+   ],
+   "recipient_address": {
+    "id": 55,
+    "name": "Rina S.",
+    "city": "KAB. BEKASI"
+   },
+   "info": [
+    {
+     "id": 53,
+     "package_number": "OFG212506236",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "JX14402426462",
+     "pickup_code": null,
+     "note": null
+    },
+    {
+     "id": 54,
+     "package_number": "OFG676168666",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "JX89751402614",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261124BTCAB9P9",
+   "split_up": false,
+   "status": "PROCESSED",
+   "ship_by": "2026-11-25T06:15:00Z",
+   "owner_user": "eko",
+   "shipping_carrier": "JNE Reguler",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 1,
+     "location": "B-03-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 61,
+    "name": "Hendra G.",
+    "city": "KOTA DEPOK"
+   },
+   "info": [
+    {
+     "id": 60,
+     "package_number": "OFG294504003",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "JNE34483478245",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261122F19VSVC6",
+   "split_up": false,
+   "status": "RETRY_SHIP",
+   "ship_by": "2026-11-26T05:45:00Z",
+   "owner_user": "budi",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "BOT-GLS-1L",
+     "component_name": "Glass bottle 1 L",
+     "quantity": 1,
+     "location": "C-01-01"
+    },
+    {
+     "component_sku": "CST-CRK-4",
+     "component_name": "Cork coaster set (4)",
+     "quantity": 1,
+     "location": null
+    },
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 1,
+     "location": "B-03-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 64,
+    "name": "Fajar N.",
+    "city": "KAB. BEKASI"
+   },
+   "info": [
+    {
+     "id": 63,
+     "package_number": "OFG313271411",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "SPXID026502014620",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123TFK2C2BW",
+   "split_up": false,
+   "status": "PROCESSED",
+   "ship_by": "2026-11-24T13:00:00Z",
+   "owner_user": "dewi",
+   "shipping_carrier": "GrabExpress Instant",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "STR-SIL-02",
+     "component_name": "Silicone straw pair",
+     "quantity": 1,
+     "location": "B-03-01"
+    }
+   ],
+   "recipient_address": {
+    "id": 70,
+    "name": "Hendra G.",
+    "city": "KOTA BANDUNG"
+   },
+   "info": [
+    {
+     "id": 69,
+     "package_number": "OFG482879064",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "GRB20561748338",
+     "pickup_code": "A193",
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261122KC949J9B",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T20:00:00Z",
+   "owner_user": "eko",
+   "shipping_carrier": "J&T Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SPN-BMB",
+     "component_name": "Bamboo spoon",
+     "quantity": 1,
+     "location": "B-04-03"
+    },
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 1,
+     "location": "C-01-05"
+    }
+   ],
+   "recipient_address": {
+    "id": 72,
+    "name": "Ayu V.",
+    "city": "KOTA SURABAYA"
+   },
+   "info": [
+    {
+     "id": 71,
+     "package_number": "OFG877556340",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": null,
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611249FE7TETS",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T15:00:00Z",
+   "owner_user": null,
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "TEA-INF-01",
+     "component_name": "Tea infuser",
+     "quantity": 1,
+     "location": "B-04-02"
+    }
+   ],
+   "recipient_address": {
+    "id": 76,
+    "name": "Lia K.",
+    "city": "KOTA JAKARTA SELATAN"
+   },
+   "info": [
+    {
+     "id": 75,
+     "package_number": "OFG212653207",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "SPXID078008374071",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "2611227D8UGQ8V",
+   "split_up": false,
+   "status": "PROCESSED",
+   "ship_by": "2026-11-26T14:00:00Z",
+   "owner_user": "andi",
+   "shipping_carrier": "SPX Express",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "MUG-BLK-350",
+     "component_name": "Ceramic mug black 350 ml",
+     "quantity": 1,
+     "location": "A-01-03"
+    },
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 1,
+     "location": "C-01-05"
+    }
+   ],
+   "recipient_address": {
+    "id": 78,
+    "name": "Siska D.",
+    "city": "KAB. BEKASI"
+   },
+   "info": [
+    {
+     "id": 77,
+     "package_number": "OFG762470807",
+     "logistics_status": "LOGISTICS_REQUEST_CREATED",
+     "tracking_number": "SPXID031925449920",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123T0J9UH0R",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-25T06:15:00Z",
+   "owner_user": "citra",
+   "shipping_carrier": "JNE Reguler",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 1,
+     "location": "C-01-05"
+    }
+   ],
+   "recipient_address": {
+    "id": 83,
+    "name": "Wawan B.",
+    "city": "KOTA DEPOK"
+   },
+   "info": [
+    {
+     "id": 82,
+     "package_number": "OFG410943694",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "JNE87463319128",
+     "pickup_code": null,
+     "note": null
+    }
+   ]
+  },
+  {
+   "order_sn": "261123PAVT0E21",
+   "split_up": false,
+   "status": "READY_TO_SHIP",
+   "ship_by": "2026-11-24T12:00:00Z",
+   "owner_user": null,
+   "shipping_carrier": "GoSend Same Day",
+   "done": false,
+   "done_at": null,
+   "item_list": [
+    {
+     "component_sku": "SLV-NEO-1L",
+     "component_name": "Neoprene sleeve 1 L",
+     "quantity": 2,
+     "location": "C-01-05"
+    }
+   ],
+   "recipient_address": {
+    "id": 85,
+    "name": "Mega L.",
+    "city": "KAB. BEKASI"
+   },
+   "info": [
+    {
+     "id": 84,
+     "package_number": "OFG535315694",
+     "logistics_status": "LOGISTICS_READY",
+     "tracking_number": "GSD42656515055",
+     "pickup_code": "G222",
+     "note": null
+    }
+   ]
+  }
+ ],
+ "pick_entries": [
+  {
+   "id": 3,
+   "sku": "TEA-INF-01",
+   "qty": 1,
+   "order_sn": "2611234DHRD2DR",
+   "timestamp": "2026-11-24T08:17:00Z",
+   "owner_user": "andi",
+   "item_name": "Tea infuser"
+  },
+  {
+   "id": 4,
+   "sku": "MUG-WHT-350",
+   "qty": 3,
+   "order_sn": "2611234DHRD2DR",
+   "timestamp": "2026-11-24T06:57:00Z",
+   "owner_user": "andi",
+   "item_name": "Ceramic mug white 350 ml"
+  },
+  {
+   "id": 8,
+   "sku": "BOX-GIFT-M",
+   "qty": 2,
+   "order_sn": "261123X660WSNS",
+   "timestamp": "2026-11-24T04:57:00Z",
+   "owner_user": "budi",
+   "item_name": "Gift box medium"
+  },
+  {
+   "id": 13,
+   "sku": "BOT-GLS-1L",
+   "qty": 2,
+   "order_sn": "261123UJ4U3Z1R",
+   "timestamp": "2026-11-24T08:08:00Z",
+   "owner_user": "citra",
+   "item_name": "Glass bottle 1 L"
+  },
+  {
+   "id": 14,
+   "sku": "TEA-INF-01",
+   "qty": 1,
+   "order_sn": "261123UJ4U3Z1R",
+   "timestamp": "2026-11-24T07:27:00Z",
+   "owner_user": "citra",
+   "item_name": "Tea infuser"
+  },
+  {
+   "id": 15,
+   "sku": "BRS-STR",
+   "qty": 1,
+   "order_sn": "261123UJ4U3Z1R",
+   "timestamp": "2026-11-24T07:26:00Z",
+   "owner_user": "citra",
+   "item_name": "Straw cleaning brush"
+  },
+  {
+   "id": 16,
+   "sku": "MUG-WHT-350",
+   "qty": 3,
+   "order_sn": "261123UJ4U3Z1R",
+   "timestamp": "2026-11-24T09:19:00Z",
+   "owner_user": "citra",
+   "item_name": "Ceramic mug white 350 ml"
+  },
+  {
+   "id": 19,
+   "sku": "STR-SIL-02",
+   "qty": 1,
+   "order_sn": "2611232G72DPEQ",
+   "timestamp": "2026-11-24T06:31:00Z",
+   "owner_user": "citra",
+   "item_name": "Silicone straw pair"
+  },
+  {
+   "id": 20,
+   "sku": "MUG-WHT-350",
+   "qty": 1,
+   "order_sn": "2611232G72DPEQ",
+   "timestamp": "2026-11-24T08:59:00Z",
+   "owner_user": "citra",
+   "item_name": "Ceramic mug white 350 ml"
+  },
+  {
+   "id": 23,
+   "sku": "TUM-SS-500",
+   "qty": 1,
+   "order_sn": "2611241KTZ07HH",
+   "timestamp": "2026-11-24T05:18:00Z",
+   "owner_user": "dewi",
+   "item_name": "Steel tumbler 500 ml"
+  },
+  {
+   "id": 24,
+   "sku": "CST-CRK-4",
+   "qty": 3,
+   "order_sn": "2611241KTZ07HH",
+   "timestamp": "2026-11-24T06:46:00Z",
+   "owner_user": "dewi",
+   "item_name": "Cork coaster set (4)"
+  },
+  {
+   "id": 25,
+   "sku": "MUG-BLK-350",
+   "qty": 1,
+   "order_sn": "2611241KTZ07HH",
+   "timestamp": "2026-11-24T08:42:00Z",
+   "owner_user": "dewi",
+   "item_name": "Ceramic mug black 350 ml"
+  },
+  {
+   "id": 31,
+   "sku": "SPN-BMB",
+   "qty": 1,
+   "order_sn": "261123FRGR7PYQ",
+   "timestamp": "2026-11-24T09:25:00Z",
+   "owner_user": "eko",
+   "item_name": "Bamboo spoon"
+  },
+  {
+   "id": 32,
+   "sku": "LID-TUM-500",
+   "qty": 3,
+   "order_sn": "261123FRGR7PYQ",
+   "timestamp": "2026-11-24T05:20:00Z",
+   "owner_user": "eko",
+   "item_name": "Tumbler lid 500 ml"
+  },
+  {
+   "id": 33,
+   "sku": "SPN-BMB",
+   "qty": 1,
+   "order_sn": "261123FRGR7PYQ",
+   "timestamp": "2026-11-24T08:50:00Z",
+   "owner_user": "eko",
+   "item_name": "Bamboo spoon"
+  },
+  {
+   "id": 38,
+   "sku": "BRS-STR",
+   "qty": 1,
+   "order_sn": "2611223JDZ639J",
+   "timestamp": "2026-11-24T05:04:00Z",
+   "owner_user": "dewi",
+   "item_name": "Straw cleaning brush"
+  },
+  {
+   "id": 39,
+   "sku": "TUM-SS-500",
+   "qty": 1,
+   "order_sn": "2611223JDZ639J",
+   "timestamp": "2026-11-24T09:16:00Z",
+   "owner_user": "dewi",
+   "item_name": "Steel tumbler 500 ml"
+  },
+  {
+   "id": 40,
+   "sku": "CST-CRK-4",
+   "qty": 1,
+   "order_sn": "2611223JDZ639J",
+   "timestamp": "2026-11-24T05:40:00Z",
+   "owner_user": "dewi",
+   "item_name": "Cork coaster set (4)"
+  },
+  {
+   "id": 41,
+   "sku": "BOX-GIFT-M",
+   "qty": 1,
+   "order_sn": "2611223JDZ639J",
+   "timestamp": "2026-11-24T07:52:00Z",
+   "owner_user": "dewi",
+   "item_name": "Gift box medium"
+  },
+  {
+   "id": 47,
+   "sku": "BRS-STR",
+   "qty": 4,
+   "order_sn": "2611245J3H25XE",
+   "timestamp": "2026-11-24T08:48:00Z",
+   "owner_user": "budi",
+   "item_name": "Straw cleaning brush"
+  },
+  {
+   "id": 48,
+   "sku": "BOX-GIFT-M",
+   "qty": 3,
+   "order_sn": "2611245J3H25XE",
+   "timestamp": "2026-11-24T07:37:00Z",
+   "owner_user": "budi",
+   "item_name": "Gift box medium"
+  },
+  {
+   "id": 51,
+   "sku": "SPN-BMB",
+   "qty": 1,
+   "order_sn": "26112492Y3PZXF",
+   "timestamp": "2026-11-24T06:32:00Z",
+   "owner_user": "andi",
+   "item_name": "Bamboo spoon"
+  },
+  {
+   "id": 56,
+   "sku": "BOX-GIFT-M",
+   "qty": 1,
+   "order_sn": "261123BFTFRETH",
+   "timestamp": "2026-11-24T04:42:00Z",
+   "owner_user": "citra",
+   "item_name": "Gift box medium"
+  },
+  {
+   "id": 57,
+   "sku": "STR-SIL-02",
+   "qty": 1,
+   "order_sn": "261123BFTFRETH",
+   "timestamp": "2026-11-24T05:52:00Z",
+   "owner_user": "citra",
+   "item_name": "Silicone straw pair"
+  },
+  {
+   "id": 58,
+   "sku": "CST-CRK-4",
+   "qty": 1,
+   "order_sn": "261123BFTFRETH",
+   "timestamp": "2026-11-24T07:08:00Z",
+   "owner_user": "citra",
+   "item_name": "Cork coaster set (4)"
+  },
+  {
+   "id": 62,
+   "sku": "STR-SIL-02",
+   "qty": 1,
+   "order_sn": "261124BTCAB9P9",
+   "timestamp": "2026-11-24T08:31:00Z",
+   "owner_user": "eko",
+   "item_name": "Silicone straw pair"
+  },
+  {
+   "id": 65,
+   "sku": "BOT-GLS-1L",
+   "qty": 1,
+   "order_sn": "261122F19VSVC6",
+   "timestamp": "2026-11-24T05:37:00Z",
+   "owner_user": "budi",
+   "item_name": "Glass bottle 1 L"
+  },
+  {
+   "id": 66,
+   "sku": "CST-CRK-4",
+   "qty": 1,
+   "order_sn": "261122F19VSVC6",
+   "timestamp": "2026-11-24T09:24:00Z",
+   "owner_user": "budi",
+   "item_name": "Cork coaster set (4)"
+  },
+  {
+   "id": 67,
+   "sku": "STR-SIL-02",
+   "qty": 1,
+   "order_sn": "261122F19VSVC6",
+   "timestamp": "2026-11-24T07:11:00Z",
+   "owner_user": "budi",
+   "item_name": "Silicone straw pair"
+  },
+  {
+   "id": 73,
+   "sku": "SPN-BMB",
+   "qty": 1,
+   "order_sn": "261122KC949J9B",
+   "timestamp": "2026-11-24T07:28:00Z",
+   "owner_user": "eko",
+   "item_name": "Bamboo spoon"
+  },
+  {
+   "id": 74,
+   "sku": "SLV-NEO-1L",
+   "qty": 1,
+   "order_sn": "261122KC949J9B",
+   "timestamp": "2026-11-24T08:42:00Z",
+   "owner_user": "eko",
+   "item_name": "Neoprene sleeve 1 L"
+  },
+  {
+   "id": 79,
+   "sku": "MUG-BLK-350",
+   "qty": 1,
+   "order_sn": "2611227D8UGQ8V",
+   "timestamp": "2026-11-24T05:28:00Z",
+   "owner_user": "andi",
+   "item_name": "Ceramic mug black 350 ml"
+  },
+  {
+   "id": 80,
+   "sku": "SLV-NEO-1L",
+   "qty": 1,
+   "order_sn": "2611227D8UGQ8V",
+   "timestamp": "2026-11-24T05:27:00Z",
+   "owner_user": "andi",
+   "item_name": "Neoprene sleeve 1 L"
+  },
+  {
+   "id": 86,
+   "sku": "MUG-WHT-350",
+   "qty": 6,
+   "order_sn": null,
+   "timestamp": "2026-11-24T08:20:00Z",
+   "owner_user": "eko",
+   "item_name": "Ceramic mug white 350 ml"
+  }
+ ],
+ "open_scans": [
+  {
+   "id": 59,
+   "content": "JX14402426462",
+   "tags": [
+    "J&T Express"
+   ],
+   "created_at": "2026-11-24T09:22:00Z",
+   "owner_user": "eko",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 88,
+   "content": "JX40021987766",
+   "tags": [],
+   "created_at": "2026-11-24T09:15:00Z",
+   "owner_user": "andi",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 81,
+   "content": "SPXID031925449920",
+   "tags": [
+    "SPX Express",
+    "Morning batch"
+   ],
+   "created_at": "2026-11-24T09:12:00Z",
+   "owner_user": "eko",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 68,
+   "content": "SPXID026502014620",
+   "tags": [
+    "SPX Express",
+    "Morning batch"
+   ],
+   "created_at": "2026-11-24T08:45:00Z",
+   "owner_user": "eko",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 87,
+   "content": "SPXID077120394851",
+   "tags": [
+    "Returns"
+   ],
+   "created_at": "2026-11-24T08:40:00Z",
+   "owner_user": "budi",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 52,
+   "content": "SPXID042731672326",
+   "tags": [
+    "SPX Express"
+   ],
+   "created_at": "2026-11-24T08:31:00Z",
+   "owner_user": "andi",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 5,
+   "content": "GRB59083016613",
+   "tags": [
+    "GrabExpress Instant",
+    "Morning batch"
+   ],
+   "created_at": "2026-11-24T08:18:00Z",
+   "owner_user": "andi",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 26,
+   "content": "2611241KTZ07HH",
+   "tags": [
+    "J&T Express",
+    "Morning batch"
+   ],
+   "created_at": "2026-11-24T07:52:00Z",
+   "owner_user": "citra",
+   "closed": false,
+   "closed_at": null
+  },
+  {
+   "id": 42,
+   "content": "GSD26330434839",
+   "tags": [
+    "GoSend Same Day"
+   ],
+   "created_at": "2026-11-24T07:48:00Z",
+   "owner_user": "budi",
+   "closed": false,
+   "closed_at": null
+  }
+ ],
+ "history": {
+  "closes": [
+   {
+    "closed_at": "2026-11-23T15:30:00Z",
+    "outbound": 7,
+    "orders_done": 6,
+    "tags": [
+     "J&T Express",
+     "Morning batch",
+     "Returns",
+     "SPX Express"
+    ]
+   },
+   {
+    "closed_at": "2026-11-22T16:45:00Z",
+    "outbound": 8,
+    "orders_done": 6,
+    "tags": [
+     "GrabExpress Instant",
+     "J&T Express",
+     "Returns",
+     "SPX Express"
+    ]
+   },
+   {
+    "closed_at": "2026-11-21T10:45:00Z",
+    "outbound": 13,
+    "orders_done": 11,
+    "tags": [
+     "GoSend Same Day",
+     "GrabExpress Instant",
+     "JNE Reguler",
+     "Morning batch",
+     "Returns",
+     "SPX Express"
+    ]
+   },
+   {
+    "closed_at": "2026-11-20T10:00:00Z",
+    "outbound": 13,
+    "orders_done": 11,
+    "tags": [
+     "GoSend Same Day",
+     "J&T Express",
+     "JNE Reguler",
+     "Morning batch",
+     "Returns",
+     "SPX Express"
+    ]
+   },
+   {
+    "closed_at": "2026-11-19T10:30:00Z",
+    "outbound": 6,
+    "orders_done": 6,
+    "tags": [
+     "GoSend Same Day",
+     "GrabExpress Instant",
+     "JNE Reguler",
+     "Morning batch",
+     "SPX Express"
+    ]
+   },
+   {
+    "closed_at": "2026-11-18T16:30:00Z",
+    "outbound": 14,
+    "orders_done": 13,
+    "tags": [
+     "GoSend Same Day",
+     "GrabExpress Instant",
+     "J&T Express",
+     "Morning batch",
+     "Returns",
+     "SPX Express"
+    ]
+   }
+  ],
+  "orders_done": [
+   {
+    "order_sn": "261122JV8DJM73",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T08:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 1,
+      "location": "B-03-01"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 2,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 3,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     }
+    ],
+    "recipient_address": {
+     "id": 90,
+     "name": "Doni R.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 89,
+      "package_number": "OFG303848860",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX56068831067",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261122Y54JPSFN",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T13:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 2,
+      "location": "B-03-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 93,
+     "name": "Joko E.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 92,
+      "package_number": "OFG698419618",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX61221387837",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261122J9QFUS12",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T05:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 2,
+      "location": "B-04-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 96,
+     "name": "Indah C.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 95,
+      "package_number": "OFG511069044",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX68364507495",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261122AJRCWJT4",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T22:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 2,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 3,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 2,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 99,
+     "name": "Yusuf H.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 98,
+      "package_number": "OFG582056843",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID031322817180",
+      "pickup_code": null,
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261122B3WDBP83",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T00:30:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 1,
+      "location": "D-00-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 102,
+     "name": "Sari M.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 101,
+      "package_number": "OFG111233098",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX84745378383",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611228NR83DK2",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T07:30:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-23T15:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 1,
+      "location": "B-03-02"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 1,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 3,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 105,
+     "name": "Lia K.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 104,
+      "package_number": "OFG172405055",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX37343373441",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611214FD7P05P",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T07:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 1,
+      "location": "B-03-02"
+     },
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     }
+    ],
+    "recipient_address": {
+     "id": 109,
+     "name": "Bayu T.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 108,
+      "package_number": "OFG103082418",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX14156183654",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261121EBRG761T",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T08:15:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 2,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 1,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 112,
+     "name": "Wawan B.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 111,
+      "package_number": "OFG309316788",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB19554590454",
+      "pickup_code": "E103",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261121XM4GETFQ",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T06:30:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 2,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 3,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 115,
+     "name": "Rudi O.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 114,
+      "package_number": "OFG184841568",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID083623610788",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261121SNSSKVPX",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T04:30:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 3,
+      "location": "D-00-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 118,
+     "name": "Nadia F.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 117,
+      "package_number": "OFG930940598",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID014449454437",
+      "pickup_code": null,
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261121PE09N5TA",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T12:30:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 2,
+      "location": "A-01-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 121,
+     "name": "Teguh Z.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 120,
+      "package_number": "OFG979504834",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX37504310399",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261121QC87E3G2",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T01:00:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-22T16:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 124,
+     "name": "Joko E.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 123,
+      "package_number": "OFG373711473",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID009305652941",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120EG18PWJC",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T05:15:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 3,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 129,
+     "name": "Putri A.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 128,
+      "package_number": "OFG253004781",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD61995822542",
+      "pickup_code": "K275",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120CXH16W3W",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T06:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 3,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 2,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 132,
+     "name": "Hendra G.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 131,
+      "package_number": "OFG707122916",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB30682651233",
+      "pickup_code": "A675",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "26112040F599CC",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T21:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 135,
+     "name": "Tari W.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 134,
+      "package_number": "OFG764530093",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD77379727611",
+      "pickup_code": "C467",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120MXU6KT97",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T08:45:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 3,
+      "location": "A-02-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 138,
+     "name": "Ayu V.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 137,
+      "package_number": "OFG886069628",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID013274231594",
+      "pickup_code": null,
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261120GT20T10K",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T08:00:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 2,
+      "location": "A-02-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 141,
+     "name": "Putri A.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 140,
+      "package_number": "OFG273118690",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE45624180578",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "26112090DJ8RCB",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T09:30:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 3,
+      "location": "B-03-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 144,
+     "name": "Rina S.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 143,
+      "package_number": "OFG372357296",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID049500324966",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120KU2TADZ5",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T03:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 3,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 1,
+      "location": "B-03-01"
+     },
+     {
+      "component_sku": "",
+      "component_name": "Custom engraving card",
+      "quantity": 1,
+      "location": null
+     }
+    ],
+    "recipient_address": {
+     "id": 147,
+     "name": "Siska D.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 146,
+      "package_number": "OFG319241302",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE59722032711",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611203N9WEWD7",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T10:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 150,
+     "name": "Joko E.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 149,
+      "package_number": "OFG936307703",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID010983263898",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120TSPMXP1Y",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T11:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 1,
+      "location": "A-01-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 153,
+     "name": "Hendra G.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 152,
+      "package_number": "OFG460257622",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD40486844318",
+      "pickup_code": "A273",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120MZKBBCJC",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T09:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 2,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 3,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 156,
+     "name": "Mega L.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 155,
+      "package_number": "OFG430444936",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD36991922001",
+      "pickup_code": "B736",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261120XY4TBZTV",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T06:30:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-21T10:45:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 1,
+      "location": "A-01-03"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 159,
+     "name": "Bayu T.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 158,
+      "package_number": "OFG318141865",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE10014712134",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611192F4B0QWT",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T18:15:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 3,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 3,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 1,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 164,
+     "name": "Joko E.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 163,
+      "package_number": "OFG404652501",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD33721178155",
+      "pickup_code": "B510",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119Y6S9PUWK",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T07:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 1,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 3,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 167,
+     "name": "Tari W.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 166,
+      "package_number": "OFG660205669",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX27852774932",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119GUQ16CA2",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T02:15:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 1,
+      "location": "B-03-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 170,
+     "name": "Hendra G.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 169,
+      "package_number": "OFG806414579",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE13622446431",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119G3S2MT47",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T05:15:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 1,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 173,
+     "name": "Rina S.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 172,
+      "package_number": "OFG561739444",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD99639321765",
+      "pickup_code": "E743",
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261119Q79B0Y36",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T08:45:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 2,
+      "location": "C-01-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 176,
+     "name": "Fajar N.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 175,
+      "package_number": "OFG214224676",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID004832385197",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "26111926QMJEP7",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T03:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 1,
+      "location": "B-04-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 179,
+     "name": "Joko E.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 178,
+      "package_number": "OFG180729232",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE66594134683",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119WX784F0K",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T19:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "CST-CRK-4",
+      "component_name": "Cork coaster set (4)",
+      "quantity": 1,
+      "location": null
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 2,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "",
+      "component_name": "Custom engraving card",
+      "quantity": 1,
+      "location": null
+     }
+    ],
+    "recipient_address": {
+     "id": 182,
+     "name": "Nadia F.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 181,
+      "package_number": "OFG480905799",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE34646270453",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119KQ2MFWP8",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T19:00:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 1,
+      "location": "D-00-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 185,
+     "name": "Lia K.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 184,
+      "package_number": "OFG325216777",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE14491923275",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119AMX68V60",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T06:15:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 2,
+      "location": "A-02-04"
+     }
+    ],
+    "recipient_address": {
+     "id": 188,
+     "name": "Rudi O.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 187,
+      "package_number": "OFG629437096",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID080772737289",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261119QV4Y4TDV",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T09:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 3,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 2,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 191,
+     "name": "Bayu T.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 190,
+      "package_number": "OFG620416409",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE20362515578",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611192D2WGACP",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T22:15:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-20T10:00:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 2,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 194,
+     "name": "Teguh Z.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 193,
+      "package_number": "OFG950351060",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX15354291068",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261118GF7QKA4A",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T12:30:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 3,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 1,
+      "location": "D-00-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 199,
+     "name": "Yusuf H.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 198,
+      "package_number": "OFG930836888",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB69671069927",
+      "pickup_code": "G661",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261118CADAF1WW",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T11:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 1,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 2,
+      "location": "D-00-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 202,
+     "name": "Teguh Z.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 201,
+      "package_number": "OFG887651280",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID020521487740",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261118YAKW4S11",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T00:00:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "SPN-BMB",
+      "component_name": "Bamboo spoon",
+      "quantity": 1,
+      "location": "B-04-03"
+     },
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 205,
+     "name": "Nadia F.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 204,
+      "package_number": "OFG490053461",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID026767495440",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261118F81PRWD2",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T11:15:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 1,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 208,
+     "name": "Lia K.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 207,
+      "package_number": "OFG387787518",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD62904292487",
+      "pickup_code": "F647",
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261118QPFNV0Z2",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T17:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "CST-CRK-4",
+      "component_name": "Cork coaster set (4)",
+      "quantity": 1,
+      "location": null
+     }
+    ],
+    "recipient_address": {
+     "id": 211,
+     "name": "Tari W.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 210,
+      "package_number": "OFG929107226",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB13698485789",
+      "pickup_code": "D293",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261118U4G5JTCY",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T21:45:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "JNE Reguler",
+    "done": true,
+    "done_at": "2026-11-19T10:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 3,
+      "location": "C-01-05"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 1,
+      "location": "A-01-03"
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 1,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 214,
+     "name": "Fajar N.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 213,
+      "package_number": "OFG657762511",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JNE90103979934",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261117ZDBDT97D",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T05:30:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GoSend Same Day",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 1,
+      "location": "A-01-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 217,
+     "name": "Tari W.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 216,
+      "package_number": "OFG706101684",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GSD31862725332",
+      "pickup_code": "A362",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611176PCMRE0J",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T15:15:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 2,
+      "location": "B-04-02"
+     },
+     {
+      "component_sku": "MUG-BLK-350",
+      "component_name": "Ceramic mug black 350 ml",
+      "quantity": 1,
+      "location": "A-01-03"
+     }
+    ],
+    "recipient_address": {
+     "id": 220,
+     "name": "Yusuf H.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 219,
+      "package_number": "OFG499096967",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX46157627320",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611173SKBUVYM",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T23:00:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "SLV-NEO-1L",
+      "component_name": "Neoprene sleeve 1 L",
+      "quantity": 1,
+      "location": "C-01-05"
+     }
+    ],
+    "recipient_address": {
+     "id": 223,
+     "name": "Wawan B.",
+     "city": "KOTA BANDUNG"
+    },
+    "info": [
+     {
+      "id": 222,
+      "package_number": "OFG253295849",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID053027827246",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611171V3MDVKB",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T17:15:00Z",
+    "owner_user": "budi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 1,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 226,
+     "name": "Siska D.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 225,
+      "package_number": "OFG701233666",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID074143564331",
+      "pickup_code": null,
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261117FF8UNQJP",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T01:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 2,
+      "location": "B-03-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 229,
+     "name": "Doni R.",
+     "city": "KOTA JAKARTA SELATAN"
+    },
+    "info": [
+     {
+      "id": 228,
+      "package_number": "OFG143537978",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID063492228323",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611175EHZSX1D",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T17:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BRS-STR",
+      "component_name": "Straw cleaning brush",
+      "quantity": 2,
+      "location": "B-03-02"
+     },
+     {
+      "component_sku": "STR-SIL-02",
+      "component_name": "Silicone straw pair",
+      "quantity": 1,
+      "location": "B-03-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 232,
+     "name": "Yusuf H.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 231,
+      "package_number": "OFG116584093",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB67243295025",
+      "pickup_code": "A464",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "2611176S5GZGNC",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T08:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     },
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 3,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "",
+      "component_name": "Custom engraving card",
+      "quantity": 1,
+      "location": null
+     }
+    ],
+    "recipient_address": {
+     "id": 235,
+     "name": "Yusuf H.",
+     "city": "KOTA DEPOK"
+    },
+    "info": [
+     {
+      "id": 234,
+      "package_number": "OFG295843880",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID021448001340",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261117C2D0Y2SY",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T08:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 238,
+     "name": "Rudi O.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 237,
+      "package_number": "OFG681536088",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX93329762066",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261117326CCCUU",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T10:00:00Z",
+    "owner_user": "eko",
+    "shipping_carrier": "GrabExpress Instant",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "CST-CRK-4",
+      "component_name": "Cork coaster set (4)",
+      "quantity": 1,
+      "location": null
+     },
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 1,
+      "location": "A-02-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 241,
+     "name": "Joko E.",
+     "city": "KOTA SURABAYA"
+    },
+    "info": [
+     {
+      "id": 240,
+      "package_number": "OFG553265228",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "GRB05182156380",
+      "pickup_code": "D242",
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261117K5H9JV3V",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-24T06:00:00Z",
+    "owner_user": "citra",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 1,
+      "location": "A-01-02"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 1,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     }
+    ],
+    "recipient_address": {
+     "id": 244,
+     "name": "Hendra G.",
+     "city": "KOTA TANGERANG"
+    },
+    "info": [
+     {
+      "id": 243,
+      "package_number": "OFG427933360",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID052109841798",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "26111712AZMSXX",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T14:15:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "BOX-GIFT-M",
+      "component_name": "Gift box medium",
+      "quantity": 3,
+      "location": "D-00-01"
+     },
+     {
+      "component_sku": "LID-TUM-500",
+      "component_name": "Tumbler lid 500 ml",
+      "quantity": 1,
+      "location": "A-02-04"
+     },
+     {
+      "component_sku": "BOT-GLS-1L",
+      "component_name": "Glass bottle 1 L",
+      "quantity": 2,
+      "location": "C-01-01"
+     },
+     {
+      "component_sku": "TEA-INF-01",
+      "component_name": "Tea infuser",
+      "quantity": 3,
+      "location": "B-04-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 247,
+     "name": "Sari M.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 246,
+      "package_number": "OFG426096737",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX97740353388",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   },
+   {
+    "order_sn": "261117K3YZJPUG",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T11:00:00Z",
+    "owner_user": "andi",
+    "shipping_carrier": "J&T Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "TUM-SS-500",
+      "component_name": "Steel tumbler 500 ml",
+      "quantity": 3,
+      "location": "A-02-01"
+     }
+    ],
+    "recipient_address": {
+     "id": 250,
+     "name": "Wawan B.",
+     "city": "KAB. BEKASI"
+    },
+    "info": [
+     {
+      "id": 249,
+      "package_number": "OFG171724684",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "JX95708675183",
+      "pickup_code": null,
+      "note": "Tolong bubble wrap tebal"
+     }
+    ]
+   },
+   {
+    "order_sn": "261117H156VZVZ",
+    "split_up": false,
+    "status": "PROCESSED",
+    "ship_by": "2026-11-23T06:15:00Z",
+    "owner_user": "dewi",
+    "shipping_carrier": "SPX Express",
+    "done": true,
+    "done_at": "2026-11-18T16:30:00Z",
+    "item_list": [
+     {
+      "component_sku": "MUG-WHT-350",
+      "component_name": "Ceramic mug white 350 ml",
+      "quantity": 2,
+      "location": "A-01-02"
+     }
+    ],
+    "recipient_address": {
+     "id": 253,
+     "name": "Siska D.",
+     "city": "KOTA BOGOR"
+    },
+    "info": [
+     {
+      "id": 252,
+      "package_number": "OFG922139818",
+      "logistics_status": "LOGISTICS_REQUEST_CREATED",
+      "tracking_number": "SPXID089176926499",
+      "pickup_code": null,
+      "note": null
+     }
+    ]
+   }
+  ],
+  "closed_scans": [
+   {
+    "id": 91,
+    "content": "JX56068831067",
+    "tags": [
+     "J&T Express",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-23T09:02:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 94,
+    "content": "JX61221387837",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-23T12:12:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 97,
+    "content": "JX68364507495",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-23T15:09:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 100,
+    "content": "SPXID031322817180",
+    "tags": [
+     "SPX Express",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-23T10:52:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 103,
+    "content": "JX84745378383",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-23T12:11:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 106,
+    "content": "JX37343373441",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-23T14:08:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 107,
+    "content": "SPXID000267511253",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-23T14:00:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-23T15:30:00Z"
+   },
+   {
+    "id": 110,
+    "content": "JX14156183654",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-22T16:20:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 113,
+    "content": "GRB19554590454",
+    "tags": [
+     "GrabExpress Instant"
+    ],
+    "created_at": "2026-11-22T15:02:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 116,
+    "content": "SPXID083623610788",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-22T12:47:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 119,
+    "content": "SPXID014449454437",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-22T12:16:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 122,
+    "content": "JX37504310399",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-22T14:44:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 125,
+    "content": "SPXID009305652941",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-22T15:49:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 126,
+    "content": "SPXID026464460495",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-22T15:15:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 127,
+    "content": "SPXID060536630626",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-22T15:15:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-22T16:45:00Z"
+   },
+   {
+    "id": 130,
+    "content": "GSD61995822542",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-21T05:10:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 133,
+    "content": "GRB30682651233",
+    "tags": [
+     "GrabExpress Instant"
+    ],
+    "created_at": "2026-11-21T07:27:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 136,
+    "content": "GSD77379727611",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-21T07:55:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 139,
+    "content": "SPXID013274231594",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-21T08:34:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 142,
+    "content": "JNE45624180578",
+    "tags": [
+     "JNE Reguler",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-21T08:38:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 145,
+    "content": "SPXID049500324966",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-21T09:41:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 148,
+    "content": "JNE59722032711",
+    "tags": [
+     "JNE Reguler"
+    ],
+    "created_at": "2026-11-21T09:11:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 151,
+    "content": "SPXID010983263898",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-21T06:52:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 154,
+    "content": "GSD40486844318",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-21T05:13:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 157,
+    "content": "GSD36991922001",
+    "tags": [
+     "GoSend Same Day",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-21T05:33:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 160,
+    "content": "JNE10014712134",
+    "tags": [
+     "JNE Reguler"
+    ],
+    "created_at": "2026-11-21T05:27:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 161,
+    "content": "SPXID074906068157",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-21T09:15:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 162,
+    "content": "SPXID089319426083",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-21T09:15:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-21T10:45:00Z"
+   },
+   {
+    "id": 165,
+    "content": "GSD33721178155",
+    "tags": [
+     "GoSend Same Day",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-20T04:28:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 168,
+    "content": "JX27852774932",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-20T04:42:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 171,
+    "content": "JNE13622446431",
+    "tags": [
+     "JNE Reguler"
+    ],
+    "created_at": "2026-11-20T07:19:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 174,
+    "content": "GSD99639321765",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-20T05:25:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 177,
+    "content": "SPXID004832385197",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-20T08:48:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 180,
+    "content": "JNE66594134683",
+    "tags": [
+     "JNE Reguler",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-20T08:36:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 183,
+    "content": "JNE34646270453",
+    "tags": [
+     "JNE Reguler",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-20T05:01:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 186,
+    "content": "JNE14491923275",
+    "tags": [
+     "JNE Reguler",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-20T06:06:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 189,
+    "content": "SPXID080772737289",
+    "tags": [
+     "SPX Express",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-20T04:24:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 192,
+    "content": "JNE20362515578",
+    "tags": [
+     "JNE Reguler"
+    ],
+    "created_at": "2026-11-20T07:00:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 195,
+    "content": "JX15354291068",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-20T05:34:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 196,
+    "content": "SPXID096929130721",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-20T08:30:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 197,
+    "content": "SPXID006105248442",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-20T08:30:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-20T10:00:00Z"
+   },
+   {
+    "id": 200,
+    "content": "GRB69671069927",
+    "tags": [
+     "GrabExpress Instant",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-19T09:18:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 203,
+    "content": "SPXID020521487740",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-19T06:11:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 206,
+    "content": "SPXID026767495440",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-19T08:21:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 209,
+    "content": "GSD62904292487",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-19T10:16:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 212,
+    "content": "GRB13698485789",
+    "tags": [
+     "GrabExpress Instant",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-19T06:08:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 215,
+    "content": "JNE90103979934",
+    "tags": [
+     "JNE Reguler",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-19T09:54:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-19T10:30:00Z"
+   },
+   {
+    "id": 218,
+    "content": "GSD31862725332",
+    "tags": [
+     "GoSend Same Day"
+    ],
+    "created_at": "2026-11-18T14:39:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 221,
+    "content": "JX46157627320",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-18T10:59:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 224,
+    "content": "SPXID053027827246",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-18T12:13:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 227,
+    "content": "SPXID074143564331",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-18T12:34:00Z",
+    "owner_user": "budi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 230,
+    "content": "SPXID063492228323",
+    "tags": [
+     "SPX Express",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-18T10:26:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 233,
+    "content": "GRB67243295025",
+    "tags": [
+     "GrabExpress Instant"
+    ],
+    "created_at": "2026-11-18T11:58:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 236,
+    "content": "SPXID021448001340",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-18T12:04:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 239,
+    "content": "JX93329762066",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-18T13:36:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 242,
+    "content": "GRB05182156380",
+    "tags": [
+     "GrabExpress Instant"
+    ],
+    "created_at": "2026-11-18T11:02:00Z",
+    "owner_user": "eko",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 245,
+    "content": "SPXID052109841798",
+    "tags": [
+     "SPX Express",
+     "Morning batch"
+    ],
+    "created_at": "2026-11-18T11:41:00Z",
+    "owner_user": "citra",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 248,
+    "content": "JX97740353388",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-18T14:30:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 251,
+    "content": "JX95708675183",
+    "tags": [
+     "J&T Express"
+    ],
+    "created_at": "2026-11-18T10:18:00Z",
+    "owner_user": "andi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 254,
+    "content": "SPXID089176926499",
+    "tags": [
+     "SPX Express"
+    ],
+    "created_at": "2026-11-18T10:49:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   },
+   {
+    "id": 255,
+    "content": "SPXID007674284269",
+    "tags": [
+     "Returns"
+    ],
+    "created_at": "2026-11-18T15:00:00Z",
+    "owner_user": "dewi",
+    "closed": true,
+    "closed_at": "2026-11-18T16:30:00Z"
+   }
+  ]
+ }
+};
+const NOW = new Date(MOCK.now).getTime();
+
+// ---------- rules (port of frontend/admin-web/src/lib/orders.ts) ----------
+const UNKNOWN_SKU = 'unknown';
+const bomSku = (s) => s || UNKNOWN_SKU;
+const lineState = (p, r) => (p === 0 ? 'none' : p < r ? 'partial' : p === r ? 'done' : 'over');
+function progress(order, picks) {
+  const bom = order.item_list || [];
+  const mine = picks.filter((p) => p.order_sn === order.order_sn);
+  const skus = new Set([...bom.map((b) => bomSku(b.component_sku)), ...mine.map((p) => p.sku)]);
+  const lines = [...skus].map((sku) => {
+    const req = bom.find((b) => bomSku(b.component_sku) === sku);
+    const picked = mine.filter((p) => p.sku === sku).reduce((n, p) => n + p.qty, 0);
+    const required = req ? req.quantity : 0;
+    const name = (req && req.component_name) || (mine.find((p) => p.sku === sku && p.item_name) || {}).item_name || 'Unknown item';
+    return { sku, name, location: (req && req.location) || null, required, picked, state: lineState(picked, required) };
+  });
+  // R4: "Not started" = no pick entry at all; "Picking n/m" counts required SKUs that have any pick entry, so
+  // "Picking 2/2" means every SKU was touched but some quantity is short or over; "Picked" = every SKU exact.
+  const doneSkus = lines.filter((l) => l.required > 0 && l.required === l.picked).length;
+  const touchedSkus = lines.filter((l) => l.required > 0 && l.picked > 0).length;
+  let state;
+  if (lines.some((l) => l.required === 0)) state = 'extra';
+  else if (!mine.length) state = 'not_started';
+  else if (doneSkus === bom.length) state = 'done';
+  else state = 'partial';
+  return { lines, doneSkus, touchedSkus, requiredSkus: bom.length, state };
+}
+const orderStateLabel = { not_started: 'Not started', partial: 'Picking', done: 'Picked', extra: 'Extra items' };
+const stateType = { not_started: '', partial: 'warning', done: 'success', extra: 'error' };
+const lineType = { none: '', partial: 'warning', done: 'success', over: 'error' };
+const pickupCode = (o) => ((o.info || []).find((i) => i.pickup_code) || {}).pickup_code || null;
+const norm = (l) => (l || '').trim().toLowerCase();
+const labelsOf = (o) => [o.order_sn, ...(o.info || []).map((i) => i.tracking_number || '')].map(norm).filter(Boolean);
+function labelIndex(orders) { const m = new Map(); for (const o of orders) for (const l of labelsOf(o)) m.set(l, o.order_sn); return m; }
+// R4: 'none' | 'partial' | 'packed'. A split order is packed only when every package's tracking number has an
+// open scan; an order-SN scan can't tell which package it was, so it never completes a split order on its own.
+function packState(o, scans) {
+  const scanned = new Set(scans.map((s) => norm(s.content)));
+  if (!labelsOf(o).some((l) => scanned.has(l))) return 'none';
+  if ((o.info || []).length < 2) return 'packed';
+  const c = packageCoverage(o, scans);
+  return c.scanned < c.total ? 'partial' : 'packed';
+}
+function packedOrders(orders, scans) { return new Set(orders.filter((o) => packState(o, scans) === 'packed').map((o) => o.order_sn)); }
+// R2: scans that pack a given order (by SN or any package tracking number), and scans that pack none
+const scansFor = (o, scans) => { const ls = new Set(labelsOf(o)); return scans.filter((s) => ls.has(norm(s.content))); };
+function strayScans(orders, scans) { const all = new Set(orders.flatMap(labelsOf)); return scans.filter((s) => !all.has(norm(s.content))); }
+// R2: for split orders, how many packages have their own label scanned (an SN scan stands for the whole order)
+function packageCoverage(o, scans) {
+  const scanned = new Set(scans.map((s) => norm(s.content)));
+  const info = o.info || [];
+  return { bySn: scanned.has(norm(o.order_sn)), scanned: info.filter((i) => i.tracking_number && scanned.has(norm(i.tracking_number))).length, total: info.length };
+}
+const partialPackages = (o, scans) => { if ((o.info || []).length < 2) return null; const c = packageCoverage(o, scans); return c.scanned < c.total ? c : null; };
+const isInstant = (o) => { const c = (o.shipping_carrier || '').toLowerCase(); return c.includes('instant') || c.includes('same day') || c.includes('sameday'); };
+function matchesFilter(o, f, ctx) {
+  if (f.category === 'instant' && !isInstant(o)) return false;
+  if (f.category === 'regular' && isInstant(o)) return false;
+  if (f.courier && o.shipping_carrier !== f.courier) return false;
+  if (f.hideDone && (ctx.packed.has(o.order_sn) || ctx.ticked.has(o.order_sn))) return false;
+  const q = f.query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [o.order_sn, pickupCode(o) || '', o.owner_user || '', (o.recipient_address || {}).name || '',
+    ...(o.info || []).map((i) => i.tracking_number || ''), ...(o.item_list || []).flatMap((b) => [b.component_sku, b.component_name || '']),
+    ...ctx.picks.filter((p) => p.order_sn === o.order_sn).flatMap((p) => [p.sku, p.item_name || ''])];
+  return hay.some((t) => t.toLowerCase().includes(q));
+}
+const statusGroup = (o) => (o.status === 'RETRY_SHIP' ? 'PROCESSED' : o.status);
+// R3: inside a group, packed orders go last (then soonest ship-by first)
+function groupByStatus(orders, packed = new Set()) {
+  const order = ['READY_TO_SHIP', 'PROCESSED'], g = new Map();
+  for (const o of orders) { const k = statusGroup(o); g.set(k, [...(g.get(k) || []), o]); }
+  const rank = (s) => (order.includes(s) ? order.indexOf(s) : order.length);
+  return [...g.entries()].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([status, list]) => ({ status, orders: [...list].sort((a, b) => (packed.has(a.order_sn) - packed.has(b.order_sn)) || a.ship_by.localeCompare(b.ship_by) || a.order_sn.localeCompare(b.order_sn)) }));
+}
+const statusLabel = (s) => s.toLowerCase().split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+function countByTag(scans) {
+  const c = new Map();
+  for (const s of scans) for (const t of (s.tags && s.tags.length ? s.tags : ['No tag'])) c.set(t, (c.get(t) || 0) + 1);
+  return [...c.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso), p = (n) => String(n).padStart(2, '0');
+  const y = d.getFullYear() !== new Date(NOW).getFullYear() ? ` ${d.getFullYear()}` : '';
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${y} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// ---------- state ----------
+const S = {
+  orders: structuredClone(MOCK.ongoing_orders), picks: structuredClone(MOCK.pick_entries), scans: structuredClone(MOCK.open_scans),
+  history: structuredClone(MOCK.history),
+  ticked: new Set(), tab: 'ongoing', mobile: matchMedia('(max-width: 767px)').matches, layout: 'paired',
+  f: { category: 'all', courier: null, hideDone: false, query: '' }, collapsed: new Set(), moreMenu: false,
+  // R2.1: expand state. Default = expanded unless packed or ticked. A manual toggle is remembered together with the
+  // default it overrode; when the default flips (the order gets packed or ticked) the manual choice is dropped.
+  expand: new Map(),
+  tag: null, selected: new Set(), closing: false, lastClose: null, syncing: false,
+  h: { view: 'closes', from: '', to: '', q: '', open: new Set(), shut: new Set(), all: new Set() }, toast: null,
+};
+try { S.ticked = new Set(JSON.parse(localStorage.getItem('oc.proto.ticked') || '[]')); } catch {}
+try { S.layout = localStorage.getItem('oc.proto.layout') || 'paired'; } catch {}
+const saveTicks = () => { try { localStorage.setItem('oc.proto.ticked', JSON.stringify([...S.ticked])); } catch {} };
+matchMedia('(max-width: 767px)').addEventListener('change', (e) => { S.mobile = e.matches; if (!S.mobile && S.tab === 'outbound') S.tab = 'ongoing'; render(); });
+function toast(msg) { S.toast = msg; render(); clearTimeout(toast.t); toast.t = setTimeout(() => { S.toast = null; render(); }, 2600); }
+function isOpen(sn, doneLike) { const base = !doneLike, e = S.expand.get(sn); return e && e.base === base ? e.open : base; }
+const isDoneLike = (sn) => packedOrders(S.orders, S.scans).has(sn) || S.ticked.has(sn);
+const tagOk = (s) => !S.tag || (s.tags || []).includes(S.tag);
+const pairedMode = () => !S.mobile && S.layout === 'paired' && S.tab === 'ongoing';
+
+// ---------- shared pieces ----------
+function ongoingCtx() {
+  const packed = packedOrders(S.orders, S.scans);
+  const filtered = S.orders.filter((o) => matchesFilter(o, S.f, { packed, ticked: S.ticked, picks: S.picks }));
+  const partly = S.orders.filter((o) => packState(o, S.scans) === 'partial').length;
+  return { packed, filtered, partly };
+}
+function filtersActive() { return S.f.category !== 'all' || S.f.courier || S.f.hideDone || S.f.query.trim(); }
+function ongoingHeader(ctx) {
+  const couriers = [...new Set(S.orders.map((o) => o.shipping_carrier).filter(Boolean))].sort();
+  return `<div class="toolbar"><span class="title">Ongoing orders</span>
+      <div style="display:flex;gap:4px">
+        <button class="btn primary" data-a="sync" ${S.syncing ? 'disabled' : ''}>${S.syncing ? 'Syncing…' : 'Sync Shopee'}</button>
+        <div class="menu"><button class="btn quiet" data-a="more" aria-label="More">⋯</button>
+          ${S.moreMenu ? `<div class="pop"><button data-a="reset">Reset sync state…</button></div>` : ''}</div>
+      </div></div>
+    <div class="filters">
+      <input type="search" data-i="query" placeholder="Search SN, code, worker, SKU, item" value="${esc(S.f.query)}">
+      <div class="seg">${[['all', 'All'], ['instant', 'Instant / same day'], ['regular', 'Regular']].map(([v, l]) => `<button data-a="cat" data-k="${v}" class="${S.f.category === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <select data-i="courier"><option value="">All couriers</option>${couriers.map((c) => `<option ${S.f.courier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      <label class="switch"><input type="checkbox" data-i="hideDone" ${S.f.hideDone ? 'checked' : ''}> Hide packed &amp; ticked</label>
+      ${filtersActive() ? `<button class="btn text sm" data-a="clear">Clear filters</button>` : ''}
+    </div>
+    <span class="count">${ctx.filtered.length} of ${S.orders.length} orders · ${ctx.packed.size} packed${ctx.partly ? ` · ${ctx.partly} partly packed` : ''} · ${S.ticked.size} ticked by hand</span>`;
+}
+function outboundHeader(shown) {
+  const tags = [...new Set(S.scans.flatMap((s) => s.tags || []))].sort();
+  const allSel = shown.length > 0 && shown.every((s) => S.selected.has(s.id));
+  const lc = S.lastClose;
+  return `<div class="toolbar"><span class="title">Outbound scans</span><button class="btn sm" data-a="export">Export CSV</button></div>
+    <div class="tagrow"><span class="tag check ${S.tag === null ? 'on' : ''}" data-a="tag" data-k="">All</span>
+      ${tags.map((t) => `<span class="tag check ${S.tag === t ? 'on' : ''}" data-a="tag" data-k="${esc(t)}">${esc(t)}</span>`).join('')}</div>
+    ${lc ? `<div class="alert success"><span>Last close: ${lc.outbound} scans closed, ${lc.orders_done} orders done.</span><button class="btn quiet sm" data-a="dismiss">×</button></div>` : ''}
+    <div class="select-row">
+      <label class="switch"><input type="checkbox" data-a="selall" ${allSel ? 'checked' : ''} ${shown.length ? '' : 'disabled'}> ${S.selected.size ? `${S.selected.size} selected` : 'Select all shown'}</label>
+      <span class="muted">${shown.length} shown of ${S.scans.length}</span></div>`;
+}
+// what "Close …" acts on: the selection if any, else every open scan with the chosen tag (order filters never narrow it)
+function toClose() { return S.selected.size ? S.scans.filter((s) => S.selected.has(s.id)) : S.scans.filter(tagOk); }
+function closeButton() {
+  const tc = toClose();
+  const label = S.selected.size ? `Close ${tc.length} selected…` : S.tag ? `Close all ${tc.length} “${esc(S.tag)}”…` : `Close all ${tc.length} scans…`;
+  return `<button class="btn danger block" data-a="openclose" ${tc.length ? '' : 'disabled'}>${label}</button>`;
+}
+// sn: undefined = don't say (paired rows), null = no ongoing order, string = the order it packs
+function scanRow(s, sn) {
+  const on = S.selected.has(s.id);
+  const where = sn === undefined ? '' : sn ? ` · packs ${sn}` : ` · <span class="tag warning">no ongoing order</span>`;
+  return `<div class="scan ${on ? 'on' : ''}" data-a="scan" data-k="${s.id}" role="checkbox" aria-checked="${on}">
+    <input type="checkbox" ${on ? 'checked' : ''} tabindex="-1" style="pointer-events:none">
+    <div class="body"><div class="line1"><strong class="mono">${esc(s.content)}</strong>
+      <span style="display:inline-flex;gap:4px;flex-wrap:wrap">${(s.tags || []).map((t) => `<span class="tag round">${esc(t)}</span>`).join('')}</span></div>
+      <div class="meta">${esc(s.owner_user || 'Unknown')} · ${formatShort(s.created_at)}${where}</div></div>
+  </div>`;
+}
+function orderCard(o, packed, ticked, showScans) {
+  const p = progress(o, S.picks), code = pickupCode(o), open = isOpen(o.order_sn, packed || ticked);
+  const note = (o.info || []).map((i) => i.note).filter(Boolean);
+  const part = !packed && packState(o, S.scans) === 'partial' ? packageCoverage(o, S.scans) : null;
+  const sc = showScans ? scansFor(o, S.scans) : [];
+  return `<div class="card ${packed || ticked ? 'done' : ''} ${o.owner_user ? '' : 'unclaimed'}">
+    <div class="head" data-a="card" data-k="${o.order_sn}" aria-expanded="${open}">
+      <div data-stop>${packed ? `<input type="checkbox" checked disabled title="Packed: its label was scanned at outbound.">` : `<input type="checkbox" data-a="tick" data-k="${o.order_sn}" ${ticked ? 'checked' : ''} aria-label="Tick by hand">`}</div>
+      <div class="main">
+        <div class="line1"><strong class="sn">${o.order_sn}</strong>${code ? `<span class="code">${esc(code)}</span>` : ''}</div>
+        <div class="line2">
+          <span class="tag ${stateType[p.state]}">${orderStateLabel[p.state]} · ${p.touchedSkus}/${p.requiredSkus} SKUs</span>
+          ${packed ? `<span class="tag success round">Packed</span>` : ticked ? `<span class="tag round">Ticked</span>` : ''}
+          ${part ? `<span class="tag warning round">Partly packed · ${part.scanned}/${part.total} packages</span>` : ''}
+          <span class="muted">${esc(o.owner_user || 'Unclaimed')}</span>
+          <span class="muted">· ship by ${formatShort(o.ship_by)}</span>
+          ${o.shipping_carrier ? `<span class="muted">· ${esc(o.shipping_carrier)}</span>` : ''}
+        </div>
+        ${o.recipient_address ? `<span class="recipient">${esc(o.recipient_address.name || '—')} (${esc(o.recipient_address.city || '—')})</span>` : ''}
+      </div>
+      <span class="chev ${open ? 'open' : ''}">›</span>
+    </div>
+    ${open ? `<div class="lines">
+      ${p.lines.map((l) => `<div class="sku"><div><div>${esc(l.name)}</div><span class="muted">${l.sku === UNKNOWN_SKU ? 'No SKU' : esc(l.sku)}${l.location ? ' · ' + esc(l.location) : ''}</span></div>
+        <span class="tag ${lineType[l.state]}">${l.picked} / ${l.required}</span></div>`).join('')}
+      ${o.info.length > 1 ? `<span class="muted">Split into ${o.info.length} packages.</span>` : ''}
+      ${note.length ? `<div class="muted" style="margin-top:4px">Note: ${note.map(esc).join(' · ')}</div>` : ''}
+      ${sc.length ? `<div class="scans-in-card muted">Outbound: ${sc.map((s) => `<span class="mono">${esc(s.content)}</span> (${esc(s.owner_user || '—')} · ${formatShort(s.created_at)})`).join(', ')}</div>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
+// ---------- round 1 views (two lists, and mobile) ----------
+// R3: a quiet divider before the first packed order of a group
+function packedDivider(list, i, packed) {
+  const isP = (o) => packed.has(o.order_sn);
+  if (!isP(list[i]) || (i > 0 && isP(list[i - 1]))) return '';
+  return `<div class="pdivider"><span>Packed · ${list.filter(isP).length}</span></div>`;
+}
+function viewOngoing() {
+  const ctx = ongoingCtx();
+  let list;
+  if (!S.orders.length) list = `<div class="empty">No ongoing orders.</div>`;
+  else if (!ctx.filtered.length) list = `<div class="empty">No order matches the filters.<br><button class="btn sm" data-a="clear" style="margin-top:8px">Clear filters</button></div>`;
+  else list = groupByStatus(ctx.filtered, ctx.packed).map((g) => `
+    <section>
+      <button class="group" data-a="group" data-k="${g.status}" aria-expanded="${!S.collapsed.has(g.status)}">
+        <span>${S.collapsed.has(g.status) ? '▸' : '▾'} ${statusLabel(g.status)}</span><span class="muted">${g.orders.length}</span></button>
+      ${S.collapsed.has(g.status) ? '' : g.orders.map((o, i) => packedDivider(g.orders, i, ctx.packed) + orderCard(o, ctx.packed.has(o.order_sn), S.ticked.has(o.order_sn), true)).join('')}
+    </section>`).join('');
+  return `<div class="pane">${ongoingHeader(ctx)}${list}</div>`;
+}
+function viewOutbound() {
+  const shown = S.scans.filter(tagOk), idx = labelIndex(S.orders);
+  return `<div class="pane">${outboundHeader(shown)}
+    ${shown.length ? shown.map((s) => scanRow(s, idx.get(norm(s.content)) || null)).join('') : `<div class="empty">No open scans.</div>`}
+    <div class="footer">${closeButton()}</div></div>`;
+}
+
+// ---------- round 2: paired rows ----------
+function pairedModel() {
+  const ctx = ongoingCtx();
+  const strays = strayScans(S.orders, S.scans).filter(tagOk).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const groups = groupByStatus(ctx.filtered, ctx.packed)
+    .map((g) => ({ status: g.status, items: g.orders.map((o) => ({ o, sc: scansFor(o, S.scans).filter(tagOk) })).filter((x) => !S.tag || x.sc.length) }))
+    .filter((g) => g.items.length);
+  const shown = [], seen = new Set(), add = (s) => { if (!seen.has(s.id)) { seen.add(s.id); shown.push(s); } };
+  if (!S.collapsed.has('__stray')) strays.forEach(add);
+  for (const g of groups) if (!S.collapsed.has(g.status)) g.items.forEach((x) => x.sc.forEach(add));
+  return { ctx, strays, groups, shown };
+}
+function scanSlot(o, sc) {
+  if (!sc.length) {
+    if (S.tag) return `<div class="slot empty">No “${esc(S.tag)}” scan</div>`;
+    if (S.ticked.has(o.order_sn)) return `<div class="slot empty">Ticked by hand · no outbound scan</div>`;
+    if (progress(o, S.picks).state === 'done') return `<div class="slot empty wait">Picked · waiting for its outbound scan</div>`;
+    return `<div class="slot empty">Not scanned yet</div>`;
+  }
+  const notes = [], part = partialPackages(o, S.scans), labels = sc.map((s) => norm(s.content));
+  if (part) notes.push(`<span class="tag warning">${part.scanned} of ${part.total} packages scanned${part.bySn ? ' · order SN scanned, package unknown' : ''}</span>`);
+  const uniq = new Set(labels);
+  if (uniq.has(norm(o.order_sn)) && [...uniq].some((l) => l !== norm(o.order_sn))) notes.push(`<span class="tag">Scanned by order SN and tracking number</span>`);
+  if (labels.length !== uniq.size) notes.push(`<span class="tag warning">Same label scanned more than once</span>`);
+  return `<div class="slot">${notes.length ? `<div class="slot-notes">${notes.join('')}</div>` : ''}${sc.map((s) => scanRow(s)).join('')}</div>`;
+}
+function viewPaired() {
+  const m = pairedModel(), { ctx } = m;
+  const groupRow = (k, label, n, cls = '') => `<div class="prow span"><button class="group ${cls}" data-a="group" data-k="${k}" aria-expanded="${!S.collapsed.has(k)}">
+    <span>${S.collapsed.has(k) ? '▸' : '▾'} ${label}</span><span class="muted">${n}</span></button></div>`;
+  let rows = '';
+  if (m.strays.length) {
+    rows += groupRow('__stray', '⚠ Scans with no ongoing order', m.strays.length, 'warn');
+    if (!S.collapsed.has('__stray')) rows += m.strays.map((s) => `<div class="prow">
+      <div class="slot empty stray">No ongoing order for this label. Most often a Tokopedia package (no integration yet); also a return, a typo, an order already done, or one whose ship-by has passed.</div>
+      <div class="slot">${scanRow(s)}</div></div>`).join('');
+  }
+  for (const g of m.groups) {
+    rows += groupRow(g.status, statusLabel(g.status), g.items.length);
+    if (S.collapsed.has(g.status)) continue;
+    const ord = g.items.map((x) => x.o);
+    rows += g.items.map(({ o, sc }, i) => (packedDivider(ord, i, ctx.packed) ? `<div class="prow span">${packedDivider(ord, i, ctx.packed)}</div>` : '') + `<div class="prow">
+      <div>${orderCard(o, ctx.packed.has(o.order_sn), S.ticked.has(o.order_sn), false)}</div>${scanSlot(o, sc)}</div>`).join('');
+  }
+  if (!rows) rows = !S.orders.length && !S.scans.length ? `<div class="empty">No ongoing orders and no open scans.</div>`
+    : `<div class="empty">Nothing matches the filters.<br><button class="btn sm" data-a="clear" style="margin-top:8px">Clear filters</button></div>`;
+  const tc = toClose(), shownIds = new Set(m.shown.map((s) => s.id)), hidden = tc.filter((s) => !shownIds.has(s.id)).length;
+  const waiting = ctx.filtered.filter((o) => !ctx.packed.has(o.order_sn) && !S.ticked.has(o.order_sn) && progress(o, S.picks).state === 'done').length;
+  return `<div class="paired">
+    <div class="phead"><div>${ongoingHeader(ctx)}</div><div>${outboundHeader(m.shown)}</div></div>
+    <div class="pbody">${rows}</div>
+    <div class="pfoot">
+      <div class="muted foot-note">${m.strays.length} scan${m.strays.length === 1 ? '' : 's'} with no ongoing order · ${waiting} picked, waiting for a scan</div>
+      <div>${hidden ? `<div class="muted foot-note">${hidden} scan${hidden === 1 ? '' : 's'} in this close ${hidden === 1 ? 'is' : 'are'} not on screen (order filters or a collapsed group).</div>` : ''}${closeButton()}</div>
+    </div></div>`;
+}
+
+function closeDialog() {
+  const scans = toClose(), labels = new Set(scans.map((s) => norm(s.content)));
+  const doneOrders = S.orders.filter((o) => labelsOf(o).some((l) => labels.has(l)));
+  const partial = doneOrders.map((o) => ({ o, c: partialPackages(o, scans) })).filter((x) => x.c);
+  const strays = strayScans(S.orders, scans).length;
+  const shownIds = new Set((pairedMode() ? pairedModel().shown : S.scans.filter(tagOk)).map((s) => s.id));
+  const hidden = scans.filter((s) => !shownIds.has(s.id)).length;
+  const scope = S.selected.size ? 'selected' : S.tag ? `“${esc(S.tag)}”` : 'open';
+  const n = scans.length, d = doneOrders.length;
+  return `<div class="backdrop" data-a="cancelclose"><div class="modal" data-stop>
+    <h3>Close the period</h3>
+    <p style="margin-top:0">Closes <strong>${n}</strong> ${scope} scan${n === 1 ? '' : 's'}. They move to History, and <strong>${d}</strong> ongoing order${d === 1 ? '' : 's'} whose label was scanned will be marked done.</p>
+    ${partial.map(({ o, c }) => `<div class="alert warning"><span><strong class="mono">${o.order_sn}</strong>: only ${c.scanned} of ${c.total} packages are in this close. The server still marks it done (rule 6; open question in SPEC §13).</span></div>`).join('')}
+    ${strays ? `<div class="alert warning"><span>${strays} scan${strays === 1 ? '' : 's'} with no ongoing order ${strays === 1 ? 'is' : 'are'} included.</span></div>` : ''}
+    ${hidden ? `<div class="alert warning"><span>${hidden} of these scans ${hidden === 1 ? 'is' : 'are'} not on screen (order filters or a collapsed group).</span></div>` : ''}
+    <table><thead><tr><th>Tag</th><th style="text-align:right">Scans</th></tr></thead>
+      <tbody>${countByTag(scans).map(([t, k]) => `<tr><td>${esc(t)}</td><td style="text-align:right">${k}</td></tr>`).join('')}</tbody></table>
+    <p class="muted">A scan with more than one tag counts under each. This cannot be undone.</p>
+    <div class="actions"><button class="btn" data-a="cancelclose">Cancel</button><button class="btn danger" data-a="confirmclose">Close ${n} scan${n === 1 ? '' : 's'}</button></div>
+  </div></div>`;
+}
+function resetDialog() {
+  return `<div class="backdrop" data-a="cancelreset"><div class="modal" data-stop>
+    <h3>Reset the Shopee sync state?</h3>
+    <p style="margin-top:0">Use this after fixing the Shopee tokens in Settings. After a token error the server stops syncing; this clears that stop and the cached orders, then syncs again. Orders, picks and scans are not changed.</p>
+    <div class="actions"><button class="btn" data-a="cancelreset">Cancel</button><button class="btn primary" data-a="confirmreset">Reset and sync</button></div>
+  </div></div>`;
+}
+// ---------- History (R4: pairs inside a close, one search across the views) ----------
+function hl(text, q) { // escape, then wrap case-insensitive matches of q in <mark>
+  const s = String(text ?? ''); if (!q) return esc(s);
+  const lo = s.toLowerCase(); let i = 0, j, out = '';
+  while ((j = lo.indexOf(q, i)) !== -1) { out += esc(s.slice(i, j)) + '<mark>' + esc(s.slice(j, j + q.length)) + '</mark>'; i = j + q.length; }
+  return out + esc(s.slice(i));
+}
+const hMatchOrder = (o, q) => [o.order_sn, pickupCode(o) || '', o.owner_user || '', o.shipping_carrier || '', (o.recipient_address || {}).name || '',
+  ...(o.info || []).map((i) => i.tracking_number || '')].some((t) => t.toLowerCase().includes(q));
+const hMatchScan = (s, q) => [s.content, s.owner_user || '', ...(s.tags || [])].some((t) => t.toLowerCase().includes(q));
+function closePairs(closedAt) {
+  const sc = S.history.closed_scans.filter((s) => s.closed_at === closedAt);
+  const rows = S.history.orders_done.filter((o) => o.done_at === closedAt).map((o) => ({ o, sc: scansFor(o, sc) }));
+  const used = new Set(rows.flatMap((r) => r.sc.map((s) => s.id)));
+  return { rows, strays: sc.filter((s) => !used.has(s.id)) };
+}
+// exact SN / tracking number / label: answers "did X leave, and when?" (also what a barcode scanner types)
+function lookup(q) {
+  if (!q) return null;
+  const hit = (o) => labelsOf(o).includes(q);
+  let o = S.orders.find(hit);
+  if (o) { const st = packState(o, S.scans);
+    return { cls: 'neutral', html: `<strong class="mono">${esc(o.order_sn)}</strong> has not left yet. It is still ongoing: ${st === 'packed' ? 'packed, waiting for a close' : st === 'partial' ? 'partly packed' : 'not packed'} · ${esc(o.shipping_carrier || '—')} · ship by ${formatShort(o.ship_by)}.` }; }
+  o = S.history.orders_done.find(hit);
+  if (o) return { cls: '', close: o.done_at, html: `✓ <strong class="mono">${esc(o.order_sn)}</strong> left in the close of <strong>${formatShort(o.done_at)}</strong> · ${esc(o.shipping_carrier || '—')} · picked by ${esc(o.owner_user || 'unclaimed')}.` };
+  const os = S.scans.find((s) => norm(s.content) === q);
+  if (os) return { cls: 'neutral', html: `<strong class="mono">${esc(os.content)}</strong> was scanned at outbound ${formatShort(os.created_at)} by ${esc(os.owner_user || '—')} and is not closed yet. It matches no ongoing order.` };
+  const cs = S.history.closed_scans.find((s) => norm(s.content) === q);
+  if (cs) return { cls: '', close: cs.closed_at, html: `✓ <strong class="mono">${esc(cs.content)}</strong> left in the close of <strong>${formatShort(cs.closed_at)}</strong> (scanned by ${esc(cs.owner_user || '—')}). It matched no order, most often a Tokopedia package.` };
+  return null;
+}
+function hOrderCell(o, q) {
+  const code = pickupCode(o);
+  return `<span class="mono">${hl(o.order_sn, q)}</span>${code ? ` <span class="code">${hl(code, q)}</span>` : ''}
+    <div class="meta">${hl(o.shipping_carrier || '—', q)} · ${hl(o.owner_user || 'unclaimed', q)} · ${hl((o.recipient_address || {}).name || '—', q)}</div>`;
+}
+function hScanCell(s, q, closed) {
+  return `<div class="hscan"><span class="mono">${hl(s.content, q)}</span> ${(s.tags || []).map((t) => `<span class="tag round">${hl(t, q)}</span>`).join(' ')}
+    <div class="meta">${hl(s.owner_user || '—', q)} · scanned ${formatShort(s.created_at)}${closed ? ` · closed ${formatShort(s.closed_at)}` : ''}</div></div>`;
+}
+function closeBlock(x, q) {
+  const H = S.h, c = x.c, key = c.closed_at;
+  const open = q ? !H.shut.has(key) : H.open.has(key), showAll = !q || H.all.has(key);
+  const rows = showAll ? x.allRows : x.rows, strays = showAll ? x.allStrays : x.strays;
+  const more = x.allRows.length + x.allStrays.length - (x.rows.length + x.strays.length);
+  const matches = x.rows.length + x.strays.length;
+  return `<div class="close"><button class="head" data-a="hclose" data-k="${key}" aria-expanded="${open}">
+    <span class="when">${open ? '▾' : '▸'} ${formatShort(key)}</span>
+    <span>${c.outbound} scans <span class="muted">· ${c.orders_done} orders done</span></span>
+    <span style="display:inline-flex;gap:4px;flex-wrap:wrap">${c.tags.map((t) => `<span class="tag round">${hl(t, q)}</span>`).join('')}</span>
+    ${q ? `<span class="tag success">${matches} match${matches === 1 ? '' : 'es'}</span>` : ''}</button>
+    ${open ? `<div class="body"><div class="hpair hhead"><span>Order done</span><span>Outbound scan</span></div>
+      ${rows.map((r) => `<div class="hpair"><div>${hOrderCell(r.o, q)}</div><div>${r.sc.length ? r.sc.map((s) => hScanCell(s, q)).join('') : '<span class="muted">No scan with this order’s labels in this close</span>'}</div></div>`).join('')}
+      ${strays.length ? `<div class="hsub">⚠ Scans with no order · ${strays.length} <span class="muted">(most often a Tokopedia package)</span></div>
+        ${strays.map((s) => `<div class="hpair"><div class="muted">No order</div><div>${hScanCell(s, q)}</div></div>`).join('')}` : ''}
+      ${q && (more > 0 || H.all.has(key)) ? `<button class="btn text sm" data-a="hall" data-k="${key}" style="margin-top:6px">${H.all.has(key) ? 'Show only the matching rows' : `Show all rows of this close (${more} more)`}</button>` : ''}
+    </div>` : ''}</div>`;
+}
+function viewHistory() {
+  const H = S.h, from = H.from ? new Date(H.from + 'T00:00').getTime() : -Infinity, to = H.to ? new Date(H.to + 'T23:59:59.999').getTime() : Infinity;
+  const inRange = (iso) => { const t = new Date(iso).getTime(); return t >= from && t <= to; };
+  const q = norm(H.q), ans = lookup(q);
+  let body = '', total = 0, outside = 0;
+  if (H.view === 'closes') {
+    const all = S.history.closes.map((c) => { const p = closePairs(c.closed_at);
+      return { c, allRows: p.rows, allStrays: p.strays,
+        rows: q ? p.rows.filter((r) => hMatchOrder(r.o, q) || r.sc.some((s) => hMatchScan(s, q))) : p.rows,
+        strays: q ? p.strays.filter((s) => hMatchScan(s, q)) : p.strays }; })
+      .filter((x) => !q || x.rows.length || x.strays.length);
+    const list = all.filter((x) => inRange(x.c.closed_at)); total = list.length; outside = all.length - total;
+    body = list.map((x) => closeBlock(x, q)).join('');
+  } else if (H.view === 'orders') {
+    const all = S.history.orders_done.filter((o) => !q || hMatchOrder(o, q));
+    const list = all.filter((o) => inRange(o.done_at)).sort((a, b) => b.done_at.localeCompare(a.done_at)); total = list.length; outside = all.length - total;
+    body = list.map((o) => `<div class="row"><div>${hOrderCell(o, q)}</div><span class="muted">closed ${formatShort(o.done_at)}</span></div>`).join('');
+  } else {
+    const all = S.history.closed_scans.filter((s) => !q || hMatchScan(s, q));
+    const list = all.filter((s) => inRange(s.closed_at)).sort((a, b) => b.closed_at.localeCompare(a.closed_at)); total = list.length; outside = all.length - total;
+    body = list.map((s) => `<div class="row" style="display:block">${hScanCell(s, q, true)}</div>`).join('');
+  }
+  const noun = (total === 1 ? { closes: 'close', orders: 'order done', scans: 'closed scan' } : { closes: 'closes', orders: 'orders done', scans: 'closed scans' })[H.view];
+  const ranged = H.from || H.to;
+  return `<div>
+    <div class="hsearch"><input type="search" data-i="hq" id="hq" value="${esc(H.q)}" placeholder="Search order SN, tracking number or label, pickup code, worker, courier, tag" aria-label="Search history (press / to focus)"></div>
+    <div class="filters">
+      <div class="seg">${[['closes', 'By close'], ['orders', 'Orders done'], ['scans', 'Closed scans']].map(([v, l]) => `<button data-a="hview" data-k="${v}" class="${H.view === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <input type="date" data-i="hfrom" value="${H.from}" title="Closed from"> <span class="muted">to</span> <input type="date" data-i="hto" value="${H.to}" title="to">
+      <button class="btn text sm" data-a="h7">Last 7 days</button>${ranged ? `<button class="btn text sm" data-a="hdates">All dates</button>` : ''}
+    </div>
+    ${ans ? `<div class="answer ${ans.cls}"><span>${ans.html}</span>${ans.close && (H.view !== 'closes' || (ranged && !inRange(ans.close))) ? `<button class="btn sm" data-a="hgoto" data-k="${ans.close}">Show this close</button>` : ''}</div>` : ''}
+    <span class="count">${total} ${noun}${q ? ' with a match' : ''}${ranged ? ' closed in the chosen days' : ''}${outside ? ` · ${outside} more outside them <button class="btn text sm" data-a="hdates">Search all dates</button>` : ''}</span>
+    ${body || `<div class="empty">${q ? `Nothing in History matches “${esc(H.q.trim())}”.` : 'Nothing closed in this range.'}</div>`}
+  </div>`;
+}
+function pruneSel() {
+  const ids = new Set((pairedMode() ? pairedModel().shown : S.scans.filter(tagOk)).map((s) => s.id));
+  S.selected = new Set([...S.selected].filter((id) => ids.has(id)));
+}
+function render() {
+  if (S.tab !== 'history' && !S.closing) pruneSel(); // a selection never includes scans the admin can't see
+  const app = document.getElementById('app');
+  const focus = document.activeElement && document.activeElement.dataset.i, caret = focus && document.activeElement.selectionStart;
+  const scrollEl = app.querySelector('.pbody'), scrollTop = scrollEl ? scrollEl.scrollTop : null;
+  const tabs = S.mobile ? [['ongoing', 'Orders'], ['outbound', `Outbound (${S.scans.length})`], ['history', 'History']] : [['ongoing', 'Ongoing'], ['history', 'History']];
+  const layoutSeg = !S.mobile && S.tab === 'ongoing' ? `<div class="seg" title="Desktop layout (prototype switch)">${[['paired', 'Paired rows (round 2)'], ['split', 'Two lists (round 1)']]
+    .map(([v, l]) => `<button data-a="layout" data-k="${v}" class="${S.layout === v ? 'on' : ''}">${l}</button>`).join('')}</div>` : '';
+  let body;
+  if (S.tab === 'history') body = viewHistory();
+  else if (S.mobile) body = S.tab === 'outbound' ? viewOutbound() : viewOngoing();
+  else if (S.layout === 'paired') body = viewPaired();
+  else body = `<div class="split"><div class="col">${viewOngoing()}</div><div class="col">${viewOutbound()}</div></div>`;
+  app.innerHTML = `<div class="tabs"><div class="tablist">${tabs.map(([k, l]) => `<button data-a="tab" data-k="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>${layoutSeg}</div>${body}${S.closing ? closeDialog() : ''}${S.resetting ? resetDialog() : ''}${S.toast ? `<div class="toast">${esc(S.toast)}</div>` : ''}`;
+  const pb = app.querySelector('.pbody'); if (pb && scrollTop !== null) pb.scrollTop = scrollTop; // live frames must not reset the scroll (rule 8)
+  if (focus) { const el = app.querySelector(`[data-i="${focus}"]`); if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch {} } }
+}
+
+// ---------- events ----------
+document.addEventListener('click', (e) => {
+  const stop = e.target.closest('[data-stop]'), t = e.target.closest('[data-a]');
+  if (!t) { if (S.moreMenu) { S.moreMenu = false; render(); } return; }
+  if (stop && t.dataset.a === 'card') return; // a click on the tick box area doesn't toggle the card
+  if ((t.dataset.a === 'cancelclose' || t.dataset.a === 'cancelreset') && e.target.closest('.modal') && !e.target.closest('button')) return;
+  const k = t.dataset.k, a = t.dataset.a;
+  if (a !== 'more') S.moreMenu = false;
+  switch (a) {
+    case 'tab': S.tab = k; break;
+    case 'layout': S.layout = k; try { localStorage.setItem('oc.proto.layout', k); } catch {} break;
+    case 'group': S.collapsed.has(k) ? S.collapsed.delete(k) : S.collapsed.add(k); break;
+    case 'card': { const base = !isDoneLike(k); S.expand.set(k, { open: !isOpen(k, !base), base }); break; }
+    case 'tick': S.ticked.has(k) ? S.ticked.delete(k) : S.ticked.add(k); saveTicks(); break;
+    case 'cat': S.f.category = k; break;
+    case 'clear': S.f = { category: 'all', courier: null, hideDone: false, query: '' }; S.tag = null; break;
+    case 'more': S.moreMenu = !S.moreMenu; break;
+    case 'sync': S.syncing = true; render(); setTimeout(() => { S.syncing = false; toast('Synced with Shopee'); }, 700); return;
+    case 'reset': S.resetting = true; break;
+    case 'cancelreset': S.resetting = false; break;
+    case 'confirmreset': S.resetting = false; toast('Sync state reset; synced with Shopee'); return;
+    case 'export': toast('outbound_scans.csv downloaded (simulated)'); return;
+    case 'tag': S.tag = k || null; break;
+    case 'dismiss': S.lastClose = null; break;
+    case 'selall': { const shown = pairedMode() ? pairedModel().shown : S.scans.filter(tagOk); const all = shown.every((s) => S.selected.has(s.id)); S.selected = all ? new Set() : new Set(shown.map((s) => s.id)); break; }
+    case 'scan': { const id = Number(k); S.selected.has(id) ? S.selected.delete(id) : S.selected.add(id); break; }
+    case 'openclose': S.closing = true; break;
+    case 'cancelclose': S.closing = false; break;
+    case 'confirmclose': doClose(); return;
+    case 'simscan': simulateScan(); return;
+    case 'hview': S.h.view = k; break;
+    case 'h7': { const d = (ms) => { const x = new Date(ms); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; }; S.h.from = d(NOW - 6 * 864e5); S.h.to = d(NOW); break; }
+    case 'hclose': { const set = norm(S.h.q) ? S.h.shut : S.h.open; set.has(k) ? set.delete(k) : set.add(k); break; }
+    case 'hall': S.h.all.has(k) ? S.h.all.delete(k) : S.h.all.add(k); break;
+    case 'hdates': S.h.from = ''; S.h.to = ''; break;
+    case 'hgoto': S.h.view = 'closes'; S.h.from = ''; S.h.to = ''; S.h.shut.delete(k); S.h.open.add(k); break;
+  }
+  render();
+});
+document.addEventListener('input', (e) => {
+  const i = e.target.dataset.i; if (!i) return;
+  if (i === 'query') S.f.query = e.target.value;
+  else if (i === 'courier') S.f.courier = e.target.value || null;
+  else if (i === 'hideDone') S.f.hideDone = e.target.checked;
+  else if (i === 'hfrom') S.h.from = e.target.value;
+  else if (i === 'hto') S.h.to = e.target.value;
+  else if (i === 'hq') { if (norm(e.target.value) !== norm(S.h.q)) { S.h.shut = new Set(); S.h.all = new Set(); } S.h.q = e.target.value; }
+  render();
+});
+document.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement || {}).tagName;
+  if (e.key === '/' && S.tab === 'history' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) { e.preventDefault(); const el = document.getElementById('hq'); if (el) el.focus(); }
+  else if (e.key === 'Escape' && e.target.dataset && e.target.dataset.i === 'hq') { S.h.q = ''; S.h.shut = new Set(); S.h.all = new Set(); render(); }
+});
+// Prototype only: add an open scan as a WebSocket frame would. Picks a fully picked order that has no scan yet
+// (soonest ship-by first), else the missing package of a part-scanned split order, else any order with no scan.
+function simulateScan() {
+  const packed = packedOrders(S.orders, S.scans), scanned = new Set(S.scans.map((s) => norm(s.content)));
+  const unpacked = S.orders.filter((o) => !packed.has(o.order_sn)).sort((a, b) => a.ship_by.localeCompare(b.ship_by));
+  let o = unpacked.find((x) => progress(x, S.picks).state === 'done'), label;
+  if (o) label = ((o.info || []).find((i) => i.tracking_number) || {}).tracking_number || o.order_sn;
+  else {
+    o = S.orders.find((x) => packState(x, S.scans) === 'partial');
+    if (o) label = o.info.find((i) => i.tracking_number && !scanned.has(norm(i.tracking_number))).tracking_number;
+    else { o = unpacked[0]; if (o) label = ((o.info || []).find((i) => i.tracking_number) || {}).tracking_number || o.order_sn; }
+  }
+  if (!o) { toast('Every ongoing order already has a scan'); return; }
+  const id = Math.max(0, ...S.scans.map((s) => s.id), ...S.history.closed_scans.map((s) => s.id)) + 1;
+  S.scans.unshift({ id, content: label, tags: o.shipping_carrier ? [o.shipping_carrier] : [], created_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    owner_user: o.owner_user || 'eko', closed: false, closed_at: null });
+  toast(`New scan ${label} packs ${o.order_sn}`);
+}
+// POST /outbound/close [labels]: the server closes every OPEN scan with a submitted label (also ones hidden by the
+// tag filter) and marks done every ongoing order whose SN or tracking number is among the labels. One shared closed_at.
+function doClose() {
+  const labels = new Set(toClose().map((s) => norm(s.content)));
+  const closedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const closed = S.scans.filter((s) => labels.has(norm(s.content)));
+  const done = S.orders.filter((o) => labelsOf(o).some((l) => labels.has(l)));
+  S.scans = S.scans.filter((s) => !closed.includes(s));
+  S.orders = S.orders.filter((o) => !done.includes(o));
+  for (const s of closed) S.history.closed_scans.push({ ...s, closed: true, closed_at: closedAt });
+  for (const o of done) { S.history.orders_done.push({ ...o, done: true, done_at: closedAt }); S.ticked.delete(o.order_sn); S.expand.delete(o.order_sn); }
+  saveTicks();
+  S.history.closes.unshift({ closed_at: closedAt, outbound: closed.length, orders_done: done.length, tags: [...new Set(closed.flatMap((s) => s.tags || []))].sort() });
+  S.lastClose = { outbound: closed.length, orders_done: done.length };
+  S.selected = new Set(); S.closing = false;
+  toast(`Closed ${closed.length} scans; ${done.length} orders marked done`);
+}
+render();
+</script>
+</body>
+</html>

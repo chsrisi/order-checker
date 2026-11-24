@@ -153,7 +153,7 @@ export interface paths {
         };
         /**
          * List period closes
-         * @description One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range.
+         * @description One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range, and `q`: only closes holding a scan or an order that matches (same fields as the two history lists).
          */
         get: operations["get_close_history_admin_history_closes_get"];
         put?: never;
@@ -196,6 +196,26 @@ export interface paths {
          * @description Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range or one exact close, and `q` over order SN, worker, tracking number and pickup code.
          */
         get: operations["get_shopee_orders_history_admin_history_shopee_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find an exact label
+         * @description Answers "did it leave?" for an order SN, a tracking number or a scanned label: the orders it names (ongoing or done, with `done_at` = its close) and its scans, open or closed. Exact match, trimmed and case-insensitive.
+         */
+        get: operations["lookup_label_admin_lookup_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -579,6 +599,24 @@ export interface components {
             online: boolean;
             /** Status */
             status: string;
+        };
+        /**
+         * AdminLookupResponse
+         * @description Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed.
+         */
+        AdminLookupResponse: {
+            /** Label */
+            label: string;
+            /**
+             * Orders
+             * @description Orders whose SN or a tracking number is the label (ongoing or done).
+             */
+            orders: components["schemas"]["ShopeeOrderResponse"][];
+            /**
+             * Scans
+             * @description Scans of the label, open and closed, newest first.
+             */
+            scans: components["schemas"]["OutboundResponse"][];
         };
         /** AdminPasswordReset */
         AdminPasswordReset: {
@@ -1153,6 +1191,8 @@ export interface operations {
                 closed_from?: string | null;
                 /** @description Closed at or before this time (inclusive). */
                 closed_to?: string | null;
+                /** @description Case-insensitive substring search. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -1265,6 +1305,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShopeeOrderResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_label_admin_lookup_get: {
+        parameters: {
+            query: {
+                /** @description The exact label. */
+                label: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLookupResponse"];
                 };
             };
             /** @description Admin scope required */

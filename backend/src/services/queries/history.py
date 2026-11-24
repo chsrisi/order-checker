@@ -9,8 +9,15 @@ from datetime import UTC, datetime
 from typing import List, Optional
 
 from sqlalchemy import func, literal, or_, select, union_all
+from sqlalchemy.orm import selectinload
 
-from ...models import OutboundItem, OutboundTag, ShopeeOrder, ShopeeOrderInfo
+from ...models import (
+    OutboundItem,
+    OutboundTag,
+    ShopeeOrder,
+    ShopeeOrderInfo,
+    ShopeeOrderRecipientAddress,
+)
 from .engine import get_db
 
 
@@ -73,6 +80,11 @@ def order_conditions(f: HistoryFilter) -> list:
             or_(
                 ShopeeOrder.order_sn.ilike(f.pattern, escape="\\"),
                 ShopeeOrder.owner_user.ilike(f.pattern, escape="\\"),
+                ShopeeOrder.shipping_carrier.ilike(f.pattern, escape="\\"),
+                # Buyer names exist only within RECIPIENT_RETENTION_DAYS (V2_ORDERS_DELTA F5).
+                ShopeeOrder.recipient_address.has(
+                    ShopeeOrderRecipientAddress.name.ilike(f.pattern, escape="\\")
+                ),
                 ShopeeOrder.info.any(
                     or_(
                         ShopeeOrderInfo.tracking_number.ilike(f.pattern, escape="\\"),
@@ -89,7 +101,9 @@ def get_close_history(
 ) -> tuple[List[dict], int]:
     """Period closes, newest first: ``closed_at``, scans closed, orders done, scan tags.
 
-    Rows without a close time (closed before v0.4 stamped one) are not listed.
+    Rows without a close time (closed before v0.4 stamped one) are not listed. With ``f.q``,
+    only closes holding a matching scan or order are listed, still with their full counts
+    (V2_ORDERS_DELTA Q49).
     """
     scans = (
         select(
@@ -110,15 +124,18 @@ def get_close_history(
         .where(*f.time_conditions(ShopeeOrder.done_at))
     )
     rows = union_all(scans, orders).subquery()
-    grouped = (
-        select(
-            rows.c.closed_at,
-            func.sum(rows.c.outbound).label("outbound"),
-            func.sum(rows.c.orders_done).label("orders_done"),
-        )
-        .group_by(rows.c.closed_at)
-        .subquery()
-    )
+    grouped = select(
+        rows.c.closed_at,
+        func.sum(rows.c.outbound).label("outbound"),
+        func.sum(rows.c.orders_done).label("orders_done"),
+    ).group_by(rows.c.closed_at)
+    if f.pattern:
+        matched = union_all(
+            select(OutboundItem.closed_at.label("t")).where(*outbound_conditions(f)),
+            select(ShopeeOrder.done_at.label("t")).where(*order_conditions(f)),
+        ).subquery()
+        grouped = grouped.where(rows.c.closed_at.in_(select(matched.c.t)))
+    grouped = grouped.subquery()
     with get_db() as db:
         total = db.execute(select(func.count()).select_from(grouped)).scalar_one()
         page = db.execute(
@@ -144,3 +161,45 @@ def get_close_history(
         }
         for row in page
     ], total
+
+
+def lookup_label(label: str) -> dict:
+    """Where an exact label is (V2_ORDERS_DELTA Q49): orders whose SN or a tracking number is
+    ``label``, and scans of it, open or closed. Trimmed and case-insensitive, like the close
+    (Q44); a few rows at most, newest first."""
+    key = (label or "").strip().lower()
+    if not key:
+        return {"orders": [], "scans": []}
+    with get_db() as db:
+        orders = (
+            db.execute(
+                select(ShopeeOrder)
+                .where(
+                    or_(
+                        func.lower(ShopeeOrder.order_sn) == key,
+                        ShopeeOrder.info.any(func.lower(ShopeeOrderInfo.tracking_number) == key),
+                    )
+                )
+                .order_by(ShopeeOrder.done_at.desc().nulls_first(), ShopeeOrder.order_sn)
+                .limit(10)
+                .options(
+                    selectinload(ShopeeOrder.info),
+                    selectinload(ShopeeOrder.item_list),
+                    selectinload(ShopeeOrder.recipient_address),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        scans = (
+            db.execute(
+                select(OutboundItem)
+                .where(func.lower(OutboundItem.content) == key)
+                .order_by(OutboundItem.created_at.desc(), OutboundItem.id.desc())
+                .limit(20)
+            )
+            .scalars()
+            .unique()
+            .all()
+        )
+        return {"orders": list(orders), "scans": list(scans)}

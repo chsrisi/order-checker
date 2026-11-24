@@ -129,7 +129,7 @@ def _orders(now: datetime):
             False,
             ["DEVTRK0006"],
             [(900000001, 1)],
-        ),  # past ship-by
+        ),  # past ship-by: late, still ongoing (V2_ORDERS_DELTA F4)
         ("DEV0007", "CANCELLED", None, now + day, None, False, [None], [(900000001, 1)]),
         (
             "DEV0008",

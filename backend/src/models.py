@@ -825,6 +825,18 @@ class ShopeeConfigResponse(BaseModel):
     current_ip: str
 
 
+class AdminLookupResponse(BaseModel):
+    """Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed."""
+
+    label: str
+    orders: List[ShopeeOrderResponse] = Field(
+        description="Orders whose SN or a tracking number is the label (ongoing or done)."
+    )
+    scans: List[OutboundResponse] = Field(
+        description="Scans of the label, open and closed, newest first."
+    )
+
+
 class AdminCloseResponse(BaseModel):
     """One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``."""
 

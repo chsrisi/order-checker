@@ -8,6 +8,7 @@ from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
     AdminCloseResponse,
+    AdminLookupResponse,
     AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
@@ -228,7 +229,8 @@ def get_shopee_orders_history(
     summary="List period closes",
     description=(
         "One row per period close, newest first: its time, the scans it closed, the orders it "
-        "marked complete and the scans' tags. Optional close time range."
+        "marked complete and the scans' tags. Optional close time range, and `q`: only closes "
+        "holding a scan or an order that matches (same fields as the two history lists)."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
@@ -239,14 +241,38 @@ def get_close_history(
     _admin: User = Depends(require_admin),
     closed_from: Optional[datetime] = CLOSED_FROM,
     closed_to: Optional[datetime] = CLOSED_TO,
+    q: Optional[str] = SEARCH,
 ):
     closes, total = queries.get_close_history(
         limit=limit,
         offset=offset,
-        f=queries.HistoryFilter(closed_from=closed_from, closed_to=closed_to),
+        f=queries.HistoryFilter(closed_from=closed_from, closed_to=closed_to, q=q),
     )
     response.headers["X-Total-Count"] = str(total)
     return closes
+
+
+@router.get(
+    "/lookup",
+    response_model=AdminLookupResponse,
+    summary="Find an exact label",
+    description=(
+        'Answers "did it leave?" for an order SN, a tracking number or a scanned label: the '
+        "orders it names (ongoing or done, with `done_at` = its close) and its scans, open or "
+        "closed. Exact match, trimmed and case-insensitive."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def lookup_label(
+    label: str = Query(..., min_length=1, max_length=1024, description="The exact label."),
+    _admin: User = Depends(require_admin),
+):
+    found = queries.lookup_label(label)
+    return {
+        "label": label,
+        "orders": shopee_service.build_shopee_order_responses(found["orders"]),
+        "scans": found["scans"],
+    }
 
 
 @router.get(

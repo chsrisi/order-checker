@@ -136,6 +136,38 @@
         "title": "AdminDeviceResponse",
         "type": "object"
       },
+      "AdminLookupResponse": {
+        "description": "Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "orders": {
+            "description": "Orders whose SN or a tracking number is the label (ongoing or done).",
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderResponse"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "scans": {
+            "description": "Scans of the label, open and closed, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/OutboundResponse"
+            },
+            "title": "Scans",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "orders",
+          "scans"
+        ],
+        "title": "AdminLookupResponse",
+        "type": "object"
+      },
       "AdminPasswordReset": {
         "properties": {
           "password": {
@@ -1305,7 +1337,7 @@
     },
     "/admin/history/closes": {
       "get": {
-        "description": "One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range.",
+        "description": "One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range, and `q`: only closes holding a scan or an order that matches (same fields as the two history lists).",
         "operationId": "get_close_history_admin_history_closes_get",
         "parameters": [
           {
@@ -1371,6 +1403,25 @@
               ],
               "description": "Closed at or before this time (inclusive).",
               "title": "Closed To"
+            }
+          },
+          {
+            "description": "Case-insensitive substring search.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring search.",
+              "title": "Q"
             }
           }
         ],
@@ -1707,6 +1758,61 @@
           }
         ],
         "summary": "Get completed Shopee order history",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/lookup": {
+      "get": {
+        "description": "Answers \"did it leave?\" for an order SN, a tracking number or a scanned label: the orders it names (ongoing or done, with `done_at` = its close) and its scans, open or closed. Exact match, trimmed and case-insensitive.",
+        "operationId": "lookup_label_admin_lookup_get",
+        "parameters": [
+          {
+            "description": "The exact label.",
+            "in": "query",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "description": "The exact label.",
+              "maxLength": 1024,
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLookupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Find an exact label",
         "tags": [
           "admin"
         ]

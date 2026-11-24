@@ -138,9 +138,25 @@ def test_admin_history_filters_reach_the_queries(monkeypatch):
     admin.get_outbound_history(Response(), 500, 0, actor("admin", "admin"), when, None, None, "x")
     assert seen["outbound"] == admin.queries.HistoryFilter(closed_from=when, q="x")
     response = Response()
-    admin.get_close_history(response, 50, 0, actor("admin", "admin"), None, when)
-    assert seen["closes"] == admin.queries.HistoryFilter(closed_to=when)
+    admin.get_close_history(response, 50, 0, actor("admin", "admin"), None, when, "jx")
+    assert seen["closes"] == admin.queries.HistoryFilter(closed_to=when, q="jx")
     assert response.headers["X-Total-Count"] == "3"
+
+
+def test_admin_lookup_returns_orders_and_scans(monkeypatch):
+    monkeypatch.setattr(
+        admin.queries, "lookup_label", lambda label: {"orders": ["o"], "scans": ["s"]}
+    )
+    monkeypatch.setattr(
+        admin.shopee_service,
+        "build_shopee_order_responses",
+        lambda values: [f"built-{v}" for v in values],
+    )
+    assert admin.lookup_label("JX-1", actor("admin", "admin")) == {
+        "label": "JX-1",
+        "orders": ["built-o"],
+        "scans": ["s"],
+    }
 
 
 def test_item_and_stock_reads(monkeypatch):

@@ -101,3 +101,47 @@ def test_history_search_runs_on_the_server(pg_session_factory):
     assert [o.order_sn for o in by_tracking[0]] == ["251101AAA"]
     # LIKE wildcards are matched literally.
     assert queries.get_outbound_history(f=queries.HistoryFilter(q="%"))[1] == 0
+
+
+# V2_ORDERS_DELTA Q49: search over courier and buyer name, closes with a match, exact lookup.
+
+
+def test_order_search_matches_courier_and_recipient_name(pg_session_factory):
+    from .factories import add_user
+
+    with pg_session_factory() as db:
+        add_user(db, "op")
+        add_order(db, "251102CCC", carrier="J&T Express", recipient=True, tracking="JX-1")
+        add_order(db, "251102DDD", carrier="SPX Express")
+        db.commit()
+    _close(["JX-1", "251102DDD"])
+    by_courier = queries.get_shopee_orders_history(f=queries.HistoryFilter(q="j&t"))
+    assert [o.order_sn for o in by_courier[0]] == ["251102CCC"]
+    by_name = queries.get_shopee_orders_history(f=queries.HistoryFilter(q="synthetic name"))
+    assert [o.order_sn for o in by_name[0]] == ["251102CCC"]
+
+
+def test_close_search_keeps_closes_with_a_match_and_their_full_counts(pg_session_factory):
+    _seed_two_closes(pg_session_factory)
+    closes, total = queries.get_close_history(f=queries.HistoryFilter(q="loose"))
+    assert total == 1
+    # The close is listed with all it closed, not only the matching scan.
+    assert (closes[0]["outbound"], closes[0]["orders_done"]) == (2, 1)
+    by_order = queries.get_close_history(f=queries.HistoryFilter(q="251101bbb"))
+    assert by_order[1] == 1 and by_order[0][0]["tags"] == ["Evening"]
+    assert queries.get_close_history(f=queries.HistoryFilter(q="nothing-like-this"))[1] == 0
+
+
+def test_lookup_finds_orders_and_scans_by_exact_label_in_any_case(pg_session_factory):
+    _seed_two_closes(pg_session_factory)
+    queries.create_outbound_item(content="OPEN-9", owner_username="op", tags_in=[])
+
+    found = queries.lookup_label(" spx-111 ")
+    assert [o.order_sn for o in found["orders"]] == ["251101AAA"]
+    assert [(s.content, s.closed) for s in found["scans"]] == [("SPX-111", True)]
+    by_sn = queries.lookup_label("251101aaa")  # an order found by SN; its scan was the tracking no.
+    assert [o.order_sn for o in by_sn["orders"]] == ["251101AAA"] and by_sn["scans"] == []
+    open_scan = queries.lookup_label("open-9")
+    assert open_scan["orders"] == [] and [s.closed for s in open_scan["scans"]] == [False]
+    assert queries.lookup_label("SPX-11") == {"orders": [], "scans": []}  # exact, not substring
+    assert queries.lookup_label("  ") == {"orders": [], "scans": []}

@@ -13,7 +13,8 @@ def test_seed_is_idempotent_and_exercises_active_orders(pg_session_factory):
     assert set(seed().values()) == {0}  # second run adds nothing
 
     active = {o.order_sn for o in queries.get_all_shopee_order_data()}
-    assert active == {"DEV0001", "DEV0002", "DEV0003", "DEV0005"}
+    # DEV0006 is past its ship-by: late, but still ongoing (V2_ORDERS_DELTA F4).
+    assert active == {"DEV0001", "DEV0002", "DEV0003", "DEV0005", "DEV0006"}
     assert {o.order_sn for o in queries.get_shopee_order_data("dev_op1")} == {"DEV0002"}
     assert queries.resolve_barcode_to_item("X-SUP9001-A").sku == "Z90_001"
 

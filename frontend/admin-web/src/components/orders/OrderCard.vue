@@ -1,16 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { NCheckbox, NTag, NText, NTooltip } from 'naive-ui'
-import { orderStateLabel, pickupCode, progress, type Order, type PickEntry } from '../../lib/orders'
+import { isLate, orderStateLabel, packageCoverage, pickupCode, progress, scansFor, type Order, type Outbound, type PickEntry } from '../../lib/orders'
 import { formatShort } from '../../lib/time'
+import { useOrdersBoard } from '../../stores/ordersBoard'
 
-const props = defineProps<{ order: Order; picks: PickEntry[]; packed: boolean; ticked: boolean }>()
+/**
+ * One ongoing order (V2_UX §2.5, V2_ORDERS_SPEC §9.1/§13). Open by default; packed and
+ * hand-ticked cards start collapsed. With [showScans] the card lists its outbound scans (mobile
+ * and the two-list layout); paired rows show them beside it instead.
+ */
+const props = defineProps<{
+  order: Order
+  picks: PickEntry[]
+  packed: boolean
+  ticked: boolean
+  partly?: boolean
+  /** All open scans (for package coverage). */
+  scans?: Outbound[]
+  /** List this order's scans inside the card (mobile, two lists). */
+  showScans?: boolean
+}>()
 const emit = defineEmits<{ toggleTick: [] }>()
 
-const open = ref(false)
+const board = useOrdersBoard()
+const open = computed(() => board.isOpen(props.order))
 const p = computed(() => progress(props.order, props.picks))
 const code = computed(() => pickupCode(props.order))
 const done = computed(() => props.packed || props.ticked)
+const late = computed(() => isLate(props.order))
+const coverage = computed(() => (props.partly && props.scans ? packageCoverage(props.order, props.scans) : null))
+const mine = computed(() => (props.showScans && props.scans ? scansFor(props.order, props.scans) : []))
+const notes = computed(() => (props.order.info ?? []).map((i) => i.note).filter(Boolean))
 
 const stateType = { not_started: 'default', partial: 'warning', done: 'success', extra: 'error' } as const
 const lineType = { none: 'default', partial: 'warning', done: 'success', over: 'error' } as const
@@ -18,7 +39,7 @@ const lineType = { none: 'default', partial: 'warning', done: 'success', over: '
 
 <template>
   <div class="card" :class="{ done, unclaimed: !order.owner_user }">
-    <div class="head" role="button" tabindex="0" :aria-expanded="open" @click="open = !open" @keyup.enter="open = !open">
+    <div class="head" role="button" tabindex="0" :aria-expanded="open" @click="board.toggleOpen(order)" @keyup.enter="board.toggleOpen(order)">
       <div class="tick" @click.stop>
         <NTooltip v-if="packed">
           <template #trigger><NCheckbox :checked="true" disabled aria-label="Packed" /></template>
@@ -32,11 +53,15 @@ const lineType = { none: 'default', partial: 'warning', done: 'success', over: '
           <NText v-if="code" type="error" strong>{{ code }}</NText>
         </div>
         <div class="line2">
-          <NTag size="small" :type="stateType[p.state]" :bordered="false">{{ orderStateLabel[p.state] }} · {{ p.doneSkus }}/{{ p.requiredSkus }} SKUs</NTag>
+          <NTag size="small" :type="stateType[p.state]" :bordered="false">{{ orderStateLabel[p.state] }} · {{ p.touchedSkus }}/{{ p.requiredSkus }} SKUs</NTag>
           <NTag v-if="packed" size="small" type="success" round>Packed</NTag>
-          <NTag v-else-if="ticked" size="small" round>Ticked</NTag>
+          <NTag v-else-if="partly" size="small" type="warning" round>
+            Partly packed<template v-if="coverage"> · {{ coverage.scanned }}/{{ coverage.total }} packages</template>
+          </NTag>
+          <NTag v-if="ticked && !packed" size="small" round>Ticked</NTag>
           <NText depth="3">{{ order.owner_user ?? 'Unclaimed' }}</NText>
           <NText depth="3">· ship by {{ formatShort(order.ship_by) }}</NText>
+          <NTag v-if="late" size="small" type="error" :bordered="false" title="Ship-by passed; Shopee still lists it as not shipped">Late</NTag>
           <NText v-if="order.shipping_carrier" depth="3">· {{ order.shipping_carrier }}</NText>
         </div>
         <NText v-if="order.recipient_address" depth="3" class="recipient">
@@ -53,7 +78,14 @@ const lineType = { none: 'default', partial: 'warning', done: 'success', over: '
         </div>
         <NTag size="small" :type="lineType[line.state]" :bordered="false">{{ line.picked }} / {{ line.required }}</NTag>
       </div>
-      <NText v-if="order.info && order.info.length > 1" depth="3">Split into {{ order.info.length }} packages.</NText>
+      <NText v-if="order.info && order.info.length > 1" depth="3" class="block">Split into {{ order.info.length }} packages.</NText>
+      <NText v-if="notes.length" depth="3" class="block">Note: {{ notes.join(' · ') }}</NText>
+      <NText v-if="mine.length" depth="3" class="block">
+        Outbound:
+        <template v-for="(s, i) in mine" :key="s.id"
+          ><template v-if="i">, </template><span class="mono">{{ s.content }}</span> ({{ s.owner_user ?? '—' }} · {{ formatShort(s.created_at) }})</template
+        >
+      </NText>
     </div>
   </div>
 </template>
@@ -115,6 +147,14 @@ const lineType = { none: 'default', partial: 'warning', done: 'success', over: '
 .lines {
   border-top: 1px solid var(--n-border-color, rgba(128, 128, 128, 0.25));
   padding: 8px 12px 10px 44px;
+}
+.block {
+  display: block;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.mono {
+  font-family: ui-monospace, monospace;
 }
 .sku {
   display: flex;

@@ -32,7 +32,7 @@ and the implementation plan.
 | **Admin** | A user with `scope = "admin"`, using the Flutter admin web app (`frontend/admin`). Exactly the users created by the startup seed (`ADMIN_USERNAME`); the API never creates other admins. |
 | **Order** | A Shopee order, key `order_sn` (string, starts with `YYMMDD`). Table `shopee.orders`. |
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
-| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` AND `ship_by >= now()` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. |
+| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. There is no ship-by cutoff (V2_ORDERS_DELTA F4): a late order stays active until the sync sees it leave those statuses. |
 | **Claim / acquire** | Setting `shopee.orders.owner_user` to an operator. Atomic; see §7.2. |
 | **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick. |
 | **Allocation** | Row in `orders.pick_stock_allocations`: which bin a pick's deducted stock came from. Sum of allocations ≤ entry qty; the difference is a *shortfall*. |
@@ -343,8 +343,11 @@ cache.
 
 ### 7.1 Shopee synchronization (`shopee_service.sync_shopee_orders`)
 
-Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin). Not triggered by the
-WebSocket `get_shopee_orders` command, which only reads the database.
+Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin), and by the background
+`auto_sync_task` every `SHOPEE_AUTO_SYNC_SECONDS` (default 300, 0 = off; V2_ORDERS_DELTA Q48),
+which runs as admin with no requesting user, skips while the token circuit is open, and logs a
+failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
+only reads the database.
 
 1. `refresh=true` invalidates the cache. If the cache is still valid (last full sync < 120 s
    ago) the database is read and returned; no WS broadcast.
@@ -387,8 +390,10 @@ sync is not marked complete.
 
 ### 7.2 Order visibility and claiming
 
-- Lists use `active_orders_query()` ordered by `ship_by DESC`. An order disappears from every
-  list once its `ship_by` passes, even if never completed.
+- Lists use `active_orders_query()` ordered by `ship_by DESC`. A **late** order (ship-by passed)
+  stays listed until Shopee reports it shipped or cancelled, or a close completes it: the sync
+  re-fetches every locally open order whatever its age (`local_active_order_sns`, §7.1), so
+  statuses stay current without a ship-by cutoff (removed in V2_ORDERS_DELTA F4).
 - `POST /shopee/orders/acquire?order_sn=` (query parameter) runs one conditional `UPDATE ...
   WHERE owner_user IS NULL OR owner_user = caller AND done = false RETURNING`. Results: 200
   (claimed, or already the caller's); 404 order unknown; 409 "Order already completed" or
@@ -493,10 +498,11 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
 
 `POST /outbound/close [values…]` (admin, ≤ 10,000 × 1024 chars):
 
-1. Trim, drop empties, de-duplicate preserving order.
+1. Trim, drop empties, de-duplicate preserving order. Matching is **case-insensitive**
+   everywhere below (V2_ORDERS_DELTA Q44), like the console's pairing.
 2. Close all **open** scans (any user) whose `content` is in the list: `closed = true`,
    `closed_at = now`.
-3. `unknown` = submitted values that closed no scan.
+3. `unknown` = submitted values (case-folded) that closed no scan.
 4. Orders matched by `order_sn`; values that are not order numbers are matched against
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
@@ -590,11 +596,16 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
   Optional server-side filters (`queries/history.py`, V2_DELTA D9): `closed_from`/`closed_to`
   on the close time (`closed_at` / `done_at`, inclusive), `closed_at` for one exact close, and
-  `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number
-  and pickup code.
+  `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number,
+  pickup code, courier and buyer name (V2_ORDERS_DELTA Q49; buyer names exist only within
+  `RECIPIENT_RETENTION_DAYS`).
 - `GET /admin/history/closes`: one row per distinct close time across scans and orders
   (`close_outbound_items` stamps both with the same `now`), newest first, with counts and the
-  scans' tags. Rows without a close time (before v0.4) are left out.
+  scans' tags. Rows without a close time (before v0.4) are left out. With `q`, only closes
+  holding a matching scan or order are listed, with their full counts.
+- `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
+  number equals the label and the scans of it, open or closed; trimmed, case-insensitive, at
+  most 10 orders and 20 scans. The console's History answers "did it leave?" from it.
 
 ---
 
