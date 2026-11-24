@@ -326,12 +326,13 @@ cache.
 | Capability | Operator | Admin |
 |---|---|---|
 | List active orders (HTTP and WS) | **only orders it claimed** | all active orders |
-| Claim an order | yes | yes (same rules) |
+| Claim an order | yes | v1 routes: yes (same rules); `/v2`: no (403) |
 | Pick entries: list | own | all |
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
+| `/v2` order picks and unassign | own orders | no (403) |
 | Outbound scans: list (open) | own | all open |
-| Outbound: create scan | yes | yes |
+| Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
 | Stocks: read, adjust, transfer | yes | yes |
 | Item search | yes | yes |
@@ -677,7 +678,7 @@ Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contrac
 committed export `backend/openapi/v2.json`.
 
 - `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
-  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  "Operator-client contract v2"), except picks, **reusing the v1 endpoint functions**, response models,
   summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
   operations.
 - Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
@@ -685,6 +686,9 @@ committed export `backend/openapi/v2.json`.
   `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
   ungated. The metadata file is re-read only when its mtime changes
   (`services/client_releases.py`).
+- Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
+  delete do not exist in v2. Claim, pick, unassign and outbound require an operator
+  (`require_operator`, `OPERATOR_ONLY`).
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`

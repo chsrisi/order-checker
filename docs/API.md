@@ -75,14 +75,20 @@ operations are also served under `/v2` for the v2 operator app, by **the same ha
 | v2 path | Same as |
 |---|---|
 | `POST /v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/logout`, `/v2/auth/ws-token` | `/auth/...` |
-| `POST /v2/outbound` | `POST /outbound` |
-| `POST /v2/pick-items`, `/v2/pick-items/{id}/assign`, `/v2/pick-items/unassign`, `DELETE /v2/pick-items/{id}` | `/pick-items...` |
-| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...` |
+| `POST /v2/outbound` | `POST /outbound`, but 403 for admins |
+| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...`, but acquire answers 403 to admins |
 | `GET /v2/items/find` | `GET /items/find` |
 | `POST /v2/stocks/update` | `POST /stocks/update` |
 | `GET /v2/meta` | `GET /meta` |
 
-Not under `/v2`: registration, JWKS (the v2 app does not verify tokens locally), and every
+v2 only (V2_PICKING_DELTA; admins get 403):
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks` `{sku, qty}` | Pick into a claimed order → `{order_sn, sku, qty, item_name}` with the resolved SKU and the line's total. 404 unknown item or order; 409 completed, not active on Shopee, or not enough stock (`STOCK_STRICT`) |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign` `{sku, qty}` | Take a quantity off the order and return it to stock. 404 not picked; 409 completed, or more than is picked |
+
+Not under `/v2`: the v1 `/pick-items` operations, registration, JWKS (the v2 app does not verify tokens locally), and every
 admin operation (the admin API stays at the root).
 
 **Version gate.** Every `/v2` operation except `/v2/meta` (and the update and device-registration

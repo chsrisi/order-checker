@@ -750,6 +750,22 @@ class PickItemEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrderPickRequest(BaseModel):
+    """v2: add to, or take off, one order (the order is in the path)."""
+
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Warehouse SKU or recognized barcode."
+    )
+    qty: int = Field(gt=0)
+
+
+class OrderPickResponse(BaseModel):
+    order_sn: str
+    sku: str = Field(description="The resolved warehouse SKU.")
+    qty: int = Field(ge=0, description="What the order now has of this SKU.")
+    item_name: Optional[str] = None
+
+
 class PickItemEntryAssign(BaseModel):
     order_sn: str = Field(
         min_length=1, max_length=ORDER_SN_MAX_LENGTH, description="Claimed Shopee order number."
