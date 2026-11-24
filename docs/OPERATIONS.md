@@ -236,6 +236,7 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | --- | --- | --- | --- | --- |
 | `MOCK_ORDER_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to bypass Shopee OpenAPI synchronization failures and serve local/seeded database orders. Default `0` raises exceptions on sync failure. |
 | `STOCK_LOCATION_MODE` | string | `multi` | No | `multi`: an item may have stock in several locations. `single`: at most one location per item. Both are valid in production. See "Stock Location Mode". |
+| `STOCK_STRICT` | bool | `0` | No | `1`: a pick larger than the recorded stock is rejected (409). `0`: it succeeds and the rest is logged as `pick_shortfall`. See "Strict stock". |
 | `SINGLE_LOCATION_STOCK_BYPASS`, `STOCK_SINGLE_LOCATION_BYPASS` | bool | unset | No | **Deprecated aliases** of `STOCK_LOCATION_MODE` (truthy = `single`). Used only when `STOCK_LOCATION_MODE` is unset; they log a deprecation warning. |
 
 ---
@@ -329,8 +330,10 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
   stock last. For each bin it records an **allocation** (`orders.pick_stock_allocations`).
   The schema has no per-item default bin, so location order is the whole rule.
 - If there is not enough stock, the pick still succeeds (HTTP 200). The unmet quantity is
-  logged as `pick_shortfall` and is never allocated.
-- Assigning part of an entry to an order moves the **deducted** quantity first (oldest
+  logged as `pick_shortfall` and is never allocated. `STOCK_STRICT=1` changes this, see below.
+- **v2 app:** a pick always goes into an order. Unassigning returns stock at once: the shortfall
+  goes first (it was never deducted), then the newest allocation, back to its bin.
+- **v1 app:** assigning part of an entry to an order moves the **deducted** quantity first (oldest
   allocation first). Any shortfall stays with the remainder. Assign and unassign never
   change stock.
 - A pick for an order (`order_sn`) needs an order claimed by the caller that is not done.
@@ -344,6 +347,14 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
 > not reached this case before this change. If an entry was deleted to correct a shipment that
 > actually left the warehouse, adjust stock manually afterwards.
 
+### Strict stock
+`STOCK_STRICT=1` (server-wide, v1 and v2; restart to apply) rejects a pick larger than the SKU's
+total stock over all bins: 409, nothing changes. Correct the count in Stockkeeping and scan again.
+It also rejects correct picks whenever the recorded count is too low, so turn it on only once
+counts are trusted: the `pick_shortfall` rows show how often it would have blocked. The v1 app
+shows only "Failed to post scan entry." Shortfalls that already exist stay. `GET /meta` reports
+it as `features.strict_stock`.
+
 ### Stock audit log
 `warehouse.stocks_log` rows carry `sku, location, delta, before, after, reason, actor,
 ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
@@ -352,8 +363,8 @@ ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
 |---|---|
 | `adjust_set`, `adjust_add` | `POST /stocks/update` without `move_to` |
 | `transfer_out`, `transfer_in` | `POST /stocks/update` with `move_to` |
-| `pick`, `pick_shortfall` | `POST /pick-items` (`ref_type=pick_entry`) |
-| `pick_restore` | `DELETE /pick-items/{id}` (actor = the deleting user, admin included) |
+| `pick`, `pick_shortfall` | a pick, v1 or v2 (`ref_type=pick_entry`) |
+| `pick_restore` | v2 unassign, `DELETE /pick-items/{id}`, worker deletion, `scripts.release_unassigned_picks` (actor = the deleting user, admin included) |
 | `mode_merge` | `single` mode merging bins, or `scripts.stock_merge_single` |
 | `cutover_clear` | `scripts.clear_open_pick_entries` (one row; `ref_id` = entries deleted) |
 | `migration_merge` | the T4.3 migration folding duplicate `(sku, location)` rows |

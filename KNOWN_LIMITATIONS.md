@@ -212,13 +212,13 @@ This document tracks known architectural, library, and system limitations within
   `backend/src/services/queries/pick_items.py` (`OrderClosedError`)
 
 ### 14. Picks Can Exceed Recorded Stock (Shortfall)
-- **Issue**: A pick never fails for lack of stock. What is available is deducted; the rest is
+- **Issue**: By default a pick never fails for lack of stock. What is available is deducted; the rest is
   logged as `pick_shortfall` and has no allocation, so it is never restored. An order can
   therefore show more picked than was deducted, and a mistyped quantity can empty every bin of a SKU.
 - **Impact**: By design: recorded counts can be behind the shelf, and picking should not stop.
   There is no shortfall report (#5); use the `stocks_log` rows with `reason = pick_shortfall`.
-- **Countermeasure (planned, not implemented)**: a `STOCK_STRICT` setting that rejects such picks
-  (`docs/V2_PICKING_DELTA.md` R1.5), and v2 unassign removing the shortfall first (Q62).
+- **Countermeasure**: `STOCK_STRICT=1` rejects such picks (off by default, OPERATIONS "Strict
+  stock"). v2 unassign removes the shortfall first, so undoing a mistyped quantity is exact.
 - **Code References**: `backend/src/services/queries/stocks.py` (`deduct_for_pick`,
   `move_pick_quantity`, `restore_for_pick`)
 
@@ -235,8 +235,8 @@ This document tracks known architectural, library, and system limitations within
 
 ### 16. The Bin of a Pick Is Assumed, Not Recorded (`multi` Mode)
 - **Issue**: The operator never says which bin an item came from. The server deducts by location
-  name, unlocated stock last, and stores that as the pick's allocation. Deleting a pick, and the
-  planned v2 unassign, return stock to that **assumed** bin.
+  name, unlocated stock last, and stores that as the pick's allocation. Deleting a pick, and v2
+  unassign, return stock to that **assumed** bin.
 - **Impact**: If the item came from, or goes back to, another bin, the per-bin counts drift from
   the shelf. The SKU's total stays right. `single` mode is not affected.
 - **Countermeasure**: transfer the stock in Stockkeeping. For future reference, not planned:

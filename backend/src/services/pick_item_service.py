@@ -21,7 +21,7 @@ async def create_pick_item_entry(
         )
     except LookupError as e:
         raise DomainException(status_code=404, detail=str(e))
-    except queries.OrderClosedError as e:
+    except (queries.OrderClosedError, queries.InsufficientStockError) as e:
         raise DomainException(status_code=409, detail=str(e))
 
     await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
@@ -77,3 +77,30 @@ async def delete_pie(pie_id: int, username: str, is_admin: bool = False) -> bool
     await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
     await conn_mgr.broadcast(WSMessageType.STOCKS)  # delete restores stock (D1.4.2)
     return res
+
+
+# ----------------------------------------------------------------------- contract v2
+async def _change_order(query, order_sn: str, sku: str, qty: int, username: str):
+    try:
+        line = await asyncio.to_thread(query, order_sn, sku, qty, username)
+    except LookupError as e:
+        raise DomainException(status_code=404, detail=str(e))
+    except (
+        queries.OrderClosedError,
+        queries.InsufficientStockError,
+        queries.PickQuantityError,
+    ) as e:
+        raise DomainException(status_code=409, detail=str(e))
+
+    await conn_mgr.send_to_user(WSMessageType.PICK_ITEM_ENTRIES, username=username)
+    await conn_mgr.broadcast(WSMessageType.PICK_ITEM_ENTRIES, scope="admin")
+    await conn_mgr.broadcast(WSMessageType.STOCKS)
+    return line
+
+
+async def pick_for_order(order_sn: str, sku: str, qty: int, username: str):
+    return await _change_order(queries.pick_for_order, order_sn, sku, qty, username)
+
+
+async def unassign_from_order(order_sn: str, sku: str, qty: int, username: str):
+    return await _change_order(queries.unassign_from_order, order_sn, sku, qty, username)

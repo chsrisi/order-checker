@@ -452,7 +452,8 @@ name contains the query (`ILIKE`, with `\ % _` escaped).
 
 ### 7.5 Pick lifecycle (`queries/pick_items.py`, one transaction each)
 
-Lock order everywhere: pick entry → allocations → stock rows.
+Lock order everywhere: order (v2 picks and worker deletion) → pick entry → allocations → stock
+rows. v1 operations do not lock the order. The table covers the v1 operations; v2 is below it.
 
 | Operation | Rules | Stock effect | Errors |
 |---|---|---|---|
@@ -464,6 +465,15 @@ Lock order everywhere: pick entry → allocations → stock rows.
 Create, assign and unassign set the receiving entry's `timestamp` to now. Events after commit: caller +
 admins get `pick_item_entries_update`; create and delete also broadcast `stocks_update` to
 everyone.
+
+**Contract v2** (`pick_for_order`, `unassign_from_order`; V2_PICKING_DELTA): the order is locked
+`FOR NO KEY UPDATE`, so picks, unassigns and closes of one order run one at a time. Entries never
+have `order_sn = NULL`; a duplicate row left by v1 is merged.
+
+| Operation | Rules | Stock effect | Errors |
+|---|---|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks {sku, qty>0}` | order claimed by the caller, not done, and active on Shopee; `sku` resolved via §7.4 | deduct (§7.6) | 404; 409 done, not active, or strict stock |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign {sku, qty>0}` | order claimed by the caller and not done (a cancelled one is allowed); `sku` is the stored SKU | `restore_pick_quantity` (§7.6) | 404; 409 done, or more than is picked |
 
 ### 7.6 Inventory engine
 
@@ -493,8 +503,10 @@ pre-migration duplicate rows are folded on load.
 
 **Picks:** deduction takes bin by bin in deduction order, writing one allocation and one
 `pick` log row per bin. Unmet quantity is logged `pick_shortfall` (log row with `delta = 0`
-and a warning) and is never restored. A pick never fails for lack of stock and stock never
-goes negative. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
+and a warning) and is never restored. A pick never fails for lack of stock unless
+`STOCK_STRICT=1` (then 409 and nothing changes: `InsufficientStockError`, checked on the locked
+rows). Stock never goes negative. `restore_pick_quantity` is the exact reverse of a pick: the
+shortfall first, then the newest allocations. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
 #5).
 
 ### 7.7 Outbound scans and period closure

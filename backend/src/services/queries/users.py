@@ -66,8 +66,14 @@ def delete_user_by_username(username: str, actor: str = "admin") -> bool:
         if not user or user.scope == "admin":
             return False
 
-        # Lock order as in queries/pick_items.py: entries, then allocations, then stock rows
+        # Lock order as in queries/pick_items.py: orders, entries, allocations, then stock rows
         # (by sku, so concurrent picks on several SKUs cannot deadlock against this).
+        db.execute(
+            select(ShopeeOrder.order_sn)
+            .where(ShopeeOrder.owner_user == username)
+            .order_by(ShopeeOrder.order_sn)
+            .with_for_update(key_share=True)
+        ).all()
         entries = (
             db.execute(
                 select(PickItemEntry)

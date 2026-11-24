@@ -128,8 +128,9 @@ negative.
 
 A pick locks the item's stock rows (`ORDER BY sku, location FOR UPDATE`) and deducts bin by
 bin. It writes one allocation per bin and a structured `stocks_log` row per change. A
-shortfall never blocks the pick. Assign and unassign move allocations, oldest first, without
-touching stock. A delete returns the allocations to stock. Each operation is one transaction,
+shortfall never blocks the pick, unless `STOCK_STRICT=1`. In contract v1, assign and unassign move
+allocations, oldest first, without touching stock, and a delete returns them. In contract v2 a pick
+belongs to an order and unassign returns stock directly. Each operation is one transaction,
 and `stocks_update` / `pick_item_entries_update` are broadcast after the commit. Rules and log
 reasons: OPERATIONS "Inventory".
 

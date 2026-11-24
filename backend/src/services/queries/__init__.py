@@ -48,6 +48,7 @@ from .stocks import (
     get_stocks_data,
     location_policy,
     merge_all_to_single,
+    InsufficientStockError,
 )
 from .pick_items import (
     create_pick_item_entry,
@@ -55,7 +56,12 @@ from .pick_items import (
     unassign_pick_item_entry,
     get_pie_data,
     clear_open_pick_entries,
+    pick_for_order,
+    unassign_from_order,
+    count_unassigned_picks,
+    release_unassigned_picks,
     OrderClosedError,
+    PickQuantityError,
     delete_pie,
 )
 from .warehouse import (
@@ -124,6 +130,12 @@ __all__ = [
     "create_pick_item_entry",
     "assign_pick_item_entry",
     "unassign_pick_item_entry",
+    "pick_for_order",
+    "unassign_from_order",
+    "count_unassigned_picks",
+    "release_unassigned_picks",
+    "PickQuantityError",
+    "InsufficientStockError",
     "get_pie_data",
     "clear_open_pick_entries",
     "OrderClosedError",

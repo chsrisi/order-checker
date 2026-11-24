@@ -151,6 +151,14 @@ RECIPIENT_RETENTION_MAX_DAYS: int = 90  # Shopee DPP maximum
 # Stock location mode (docs/OPERATIONS.md "Stock Location Mode", delta A-8)
 # ------------------------------------------------------------------------------
 STOCK_LOCATION_MODES = ("multi", "single")
+
+
+def strict_stock() -> bool:
+    """``STOCK_STRICT``: reject picks larger than the recorded stock instead of logging a
+    shortfall (V2_PICKING_DELTA R1.5). Evaluated on every call, off by default."""
+    return get_config_bool("STOCK_STRICT", False)
+
+
 _LEGACY_STOCK_MODE_FLAGS = ("SINGLE_LOCATION_STOCK_BYPASS", "STOCK_SINGLE_LOCATION_BYPASS")
 _warned_legacy_stock_flags: set[str] = set()
 
