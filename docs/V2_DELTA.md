@@ -325,6 +325,15 @@ Consequences:
 | Q43 | Deleting a worker keeps its v1 behaviour for now (the dialog warns). A **"disable worker"** that keeps history is pinned for later. | ✅ 📌 |
 | – | Next: the console's **Settings** page (Shopee connection), brief in [V2_UX.md](V2_UX.md) §2.6. No backend change. | ✅ |
 
+## Delta 11 (2026-11-24)
+
+The Orders page round 4 (the brainstorm in [V2_ORDERS_SPEC.md](V2_ORDERS_SPEC.md), prototype in
+`prototypes/orders/`) was checked against the code, and its questions are decided in a side file,
+[V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) (Q44–Q50 and F4). Key points: labels match
+case-insensitively on the server too; the ship-by cutoff for ongoing orders is removed; Shopee
+auto-sync runs on the server; History gets a search and a lookup endpoint (all additive, except
+the two behaviour changes named).
+
 ---
 
 ## Open questions and things to revisit
@@ -367,3 +376,4 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q31–Q38~~ | ~~Client shell scope, admin naming, device status, nav~~ | Decided (D8) | – | ✅ |
 | ~~Q39–Q42~~ | ~~Admin Orders: hand-ticks, history filters, close all, previous close~~ | Decided (D9) | – | ✅ |
 | Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |
+| ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
