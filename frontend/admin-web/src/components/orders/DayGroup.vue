@@ -2,19 +2,17 @@
 import { computed, ref, watch } from 'vue'
 import { NButton, NSpin, NTag, NText } from 'naive-ui'
 import Hl from './Hl.vue'
-import type { Schemas } from '../../api'
-import { withQuery } from '../../api/http'
-import { usePaged } from '../../lib/usePaged'
-import { formatShort } from '../../lib/time'
-import { closePairs, matchingPairs } from '../../lib/history'
-import { pickupCode, type Order, type Outbound } from '../../lib/orders'
+import { api, type Schemas } from '../../api'
+import { formatDay, formatShort } from '../../lib/time'
+import { dayPairs, matchingPairs } from '../../lib/history'
+import { pickupCode } from '../../lib/orders'
 
 /**
- * One period close in History (V2_ORDERS_SPEC §13.3): each order it completed next to its
- * scans, then the scans that matched no order. While searching it opens by itself and shows
+ * One business day in History (V2_ORDERS_DELTA C2): each completed order next to the scans of
+ * that day, whenever they were closed, then the scans that matched no order. While searching it opens by itself and shows
  * only the matching pairs; collapsing it is remembered until the query changes.
  */
-const props = defineProps<{ close: Schemas['AdminCloseResponse']; q?: string }>()
+const props = defineProps<{ day: Schemas['AdminDayResponse']; q?: string }>()
 
 const manual = ref<boolean | null>(null)
 const showAll = ref(false)
@@ -27,43 +25,54 @@ watch(
 )
 const open = computed(() => manual.value ?? !!props.q)
 
-const scans = usePaged<Outbound>((offset) => withQuery('/admin/history/outbound', { closed_at: props.close.closed_at, limit: 500, offset }))
-const orders = usePaged<Order>((offset) => withQuery('/admin/history/shopee/orders', { closed_at: props.close.closed_at, limit: 500, offset }))
-const loaded = ref(false)
+const detail = ref<Schemas['AdminDayDetailResponse'] | null>(null)
+const loading = ref(false)
+const error = ref<string | null>(null)
+let generation = 0
+
+async function load() {
+  const mine = ++generation
+  loading.value = true
+  error.value = null
+  try {
+    const found = await api().get<Schemas['AdminDayDetailResponse']>(`/admin/history/days/${props.day.day}`)
+    if (mine === generation) detail.value = found
+  } catch (e) {
+    if (mine === generation) error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (mine === generation) loading.value = false
+  }
+}
+// A past day can still grow (R4.2): load when opened, and again when its counts change.
 watch(
-  open,
-  (isOpen) => {
-    if (isOpen && !loaded.value) {
-      loaded.value = true
-      void scans.reload()
-      void orders.reload()
-    }
+  [open, () => `${props.day.outbound}/${props.day.orders_done}`],
+  ([isOpen, counts], [, before]) => {
+    if (isOpen && (!detail.value || counts !== before)) void load()
   },
   { immediate: true },
 )
 
-const all = computed(() => closePairs(orders.items.value, scans.items.value))
+const all = computed(() => dayPairs(detail.value?.orders ?? [], detail.value?.scans ?? []))
 const matching = computed(() => matchingPairs(all.value, props.q ?? ''))
 const shown = computed(() => (props.q && !showAll.value ? matching.value : all.value))
 const matches = computed(() => matching.value.rows.length + matching.value.strays.length)
 const more = computed(() => all.value.rows.length + all.value.strays.length - matches.value)
-const loading = computed(() => scans.loading.value || orders.loading.value)
 </script>
 
 <template>
-  <div class="close">
+  <div class="day">
     <button class="head" type="button" :aria-expanded="open" @click="manual = !open">
-      <span class="when">{{ open ? '▾' : '▸' }} {{ formatShort(close.closed_at) }}</span>
+      <span class="when">{{ open ? '▾' : '▸' }} {{ formatDay(day.day) }}</span>
       <span class="counts">
-        <NText>{{ close.outbound }} scans</NText>
-        <NText depth="3">· {{ close.orders_done }} orders done</NText>
+        <NText>{{ day.outbound }} scans</NText>
+        <NText depth="3">· {{ day.orders_done }} orders done</NText>
       </span>
-      <span class="tags"><NTag v-for="t in close.tags" :key="t" size="small" round><Hl :text="t" :q="q" /></NTag></span>
-      <NTag v-if="q && loaded && !loading" size="small" type="success" :bordered="false">{{ matches }} match{{ matches === 1 ? '' : 'es' }}</NTag>
+      <span class="tags"><NTag v-for="t in day.tags" :key="t" size="small" round><Hl :text="t" :q="q" /></NTag></span>
+      <NTag v-if="q && detail && !loading" size="small" type="success" :bordered="false">{{ matches }} match{{ matches === 1 ? '' : 'es' }}</NTag>
     </button>
     <div v-if="open" class="body">
-      <NSpin v-if="loading" size="small" />
-      <NText v-else-if="scans.error.value || orders.error.value" type="error">{{ scans.error.value ?? orders.error.value }}</NText>
+      <NSpin v-if="loading && !detail" size="small" />
+      <NText v-else-if="error" type="error">{{ error }}</NText>
       <template v-else>
         <div class="pair head-row"><span>Order done</span><span>Outbound scan</span></div>
         <div v-for="r in shown.rows" :key="r.order.order_sn" class="pair">
@@ -79,9 +88,9 @@ const loading = computed(() => scans.loading.value || orders.loading.value)
             <div v-for="s in r.scans" :key="s.id" class="scan">
               <span class="mono"><Hl :text="s.content" :q="q" /></span>
               <NTag v-for="t in s.tags" :key="t" size="small" round style="margin-left: 6px"><Hl :text="t" :q="q" /></NTag>
-              <NText depth="3" class="meta" tag="div"><Hl :text="s.owner_user ?? '—'" :q="q" /> · scanned {{ formatShort(s.created_at) }}</NText>
+              <NText depth="3" class="meta" tag="div"><Hl :text="s.owner_user ?? '—'" :q="q" /> · scanned {{ formatShort(s.created_at) }} · closed {{ formatShort(s.closed_at) }}</NText>
             </div>
-            <NText v-if="!r.scans.length" depth="3" class="meta">No scan with this order’s labels in this close</NText>
+            <NText v-if="!r.scans.length" depth="3" class="meta">No closed scan with this order’s labels; done {{ formatShort(r.order.done_at) }}</NText>
           </div>
         </div>
         <template v-if="shown.strays.length">
@@ -93,13 +102,13 @@ const loading = computed(() => scans.loading.value || orders.loading.value)
             <div class="scan">
               <span class="mono"><Hl :text="s.content" :q="q" /></span>
               <NTag v-for="t in s.tags" :key="t" size="small" round style="margin-left: 6px"><Hl :text="t" :q="q" /></NTag>
-              <NText depth="3" class="meta" tag="div"><Hl :text="s.owner_user ?? '—'" :q="q" /> · scanned {{ formatShort(s.created_at) }}</NText>
+              <NText depth="3" class="meta" tag="div"><Hl :text="s.owner_user ?? '—'" :q="q" /> · scanned {{ formatShort(s.created_at) }} · closed {{ formatShort(s.closed_at) }}</NText>
             </div>
           </div>
         </template>
         <NText v-if="!shown.rows.length && !shown.strays.length" depth="3">None</NText>
         <NButton v-if="q && (more > 0 || showAll)" size="small" text type="primary" style="margin-top: 6px" @click="showAll = !showAll">
-          {{ showAll ? 'Show only the matching rows' : `Show all rows of this close (${more} more)` }}
+          {{ showAll ? 'Show only the matching rows' : `Show all rows of this day (${more} more)` }}
         </NButton>
       </template>
     </div>
@@ -107,7 +116,7 @@ const loading = computed(() => scans.loading.value || orders.loading.value)
 </template>
 
 <style scoped>
-.close {
+.day {
   border: 1px solid var(--n-border-color, rgba(128, 128, 128, 0.25));
   border-radius: 6px;
   margin-bottom: 8px;

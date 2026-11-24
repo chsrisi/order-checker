@@ -26,15 +26,14 @@ export function formatShort(value: string | null | undefined, now: Date = new Da
   return `${d.getDate()} ${months[d.getMonth()]}${year} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** The start and end of the local days [from] and [to] (epoch ms, as date pickers give), in UTC ISO. */
-export function localDayRange(from: number | null, to: number | null): { from: string | null; to: string | null } {
-  const start = (ms: number) => {
-    const d = new Date(ms)
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString()
-  }
-  const end = (ms: number) => {
-    const d = new Date(ms)
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).toISOString()
-  }
-  return { from: from === null ? null : start(from), to: to === null ? null : end(to) }
+/** The calendar day of a date picker's value (epoch ms, local) as "2026-11-24". */
+export function dayOf(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** "2026-11-24" → "24 Nov", with the year when it is not this year. A day, not an instant: no zone applies. */
+export function formatDay(day: string, now: Date = new Date()): string {
+  const [y = 0, m = 1, d = 1] = day.split('-').map(Number)
+  return `${d} ${months[m - 1]}${y === now.getFullYear() ? '' : ` ${y}`}`
 }

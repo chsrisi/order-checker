@@ -132,8 +132,11 @@ returns. Functions in `queries/stocks.py` that take `db` never commit.
 
 ## 4. Data model
 
-PostgreSQL, five schemas. All `DateTime` columns are naive UTC; the API serializes them as
-`...Z` (`models.UTCDateTime`). Column types: `str` = `VARCHAR`, `float` = double precision.
+PostgreSQL, five schemas. Timestamps are `timestamptz` and every connection runs in
+UTC (`queries/engine.py`); the API serializes them as `...Z` (`models.UTCDateTime`). Exception:
+the imported dates on `warehouse.items`, the marketplace BOM tables and `shopee_items` are naive,
+zone unknown, and unused. `src/timezone.py` holds the business clock: one fixed
+`BUSINESS_UTC_OFFSET` (default +07:00) for History days, the auto-sync pause and exports. Column types: `str` = `VARCHAR`, `float` = double precision.
 
 ### 4.1 Tables
 
@@ -345,8 +348,9 @@ cache.
 
 Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin), and by the background
 `auto_sync_task` every `SHOPEE_AUTO_SYNC_SECONDS` (default 300, 0 = off; V2_ORDERS_DELTA Q48),
-which runs as admin with no requesting user, skips while the token circuit is open, and logs a
-failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
+which runs as admin with no requesting user, skips while the token circuit is open and in the nightly
+`SHOPEE_AUTO_SYNC_PAUSE` (default 21:00-06:00 business time, start included, end excluded; other
+syncs still run then), and logs a failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
 only reads the database.
 
 1. `refresh=true` invalidates the cache. If the cache is still valid (last full sync < 120 s
@@ -369,6 +373,11 @@ only reads the database.
    - package rows keyed by `package_number`: failed-tracking packages are skipped (keep old
      values); for non-`READY_TO_SHIP` orders tracking/pickup code are overwritten.
    - Orders are never deleted.
+   Then, also after a partial sync, `close_shipped_outbound` (V2_ORDERS_DELTA C1): every open
+   scan whose label is exactly the SN or a tracking number of an order in `SHIPPED`,
+   `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
+   database, not this sync's batch; cancelled and returned orders and unscanned ones are left
+   alone. If it closed any, admins get `outbound_update`. Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -595,17 +604,18 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   500), `offset`; total in `X-Total-Count`; the body stays a list. Order history is sorted
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
   Optional server-side filters (`queries/history.py`, V2_DELTA D9): `closed_from`/`closed_to`
-  on the close time (`closed_at` / `done_at`, inclusive), `closed_at` for one exact close, and
+  on the close time (`closed_at` / `done_at`, inclusive), `day_from`/`day_to` on business days, and
   `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number,
   pickup code, courier and buyer name (V2_ORDERS_DELTA Q49; buyer names exist only within
   `RECIPIENT_RETENTION_DAYS`).
-- `GET /admin/history/closes`: one row per distinct close time across scans and orders
-  (`close_outbound_items` stamps both with the same `now`), newest first, with counts and the
-  scans' tags. Rows without a close time (before v0.4) are left out. With `q`, only closes
-  holding a matching scan or order are listed, with their full counts.
+- `GET /admin/history/days` and `/days/{day}` (V2_ORDERS_DELTA C2, R4.2): one row per business
+  day, and all of one day unpaged. A closed scan belongs to the day it was **made**; a done order
+  is on every day one of its closed scans was made, or on the day it was done when it has none.
+  A past day can grow when its scans close later. With `q`, only days holding a matching scan or
+  order are listed, with their full counts.
 - `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
   number equals the label and the scans of it, open or closed; trimmed, then exact, at
-  most 10 orders and 20 scans. The console's History answers "did it leave?" from it.
+  most 10 orders and 20 scans, and the History `day` it left on. The console's History answers "did it leave?" from it.
 
 ---
 

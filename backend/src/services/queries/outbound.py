@@ -1,13 +1,16 @@
 import logging
 from typing import List, Optional
 from datetime import datetime, UTC
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, union, update
 
 from ...models import OutboundItem, ShopeeOrder, ShopeeOrderInfo
 from .engine import get_db
 from .history import NO_FILTER, HistoryFilter, outbound_conditions
 
 logger = logging.getLogger("backend.services.queries.outbound")
+
+# Left the shop, as Shopee reports it (V2_ORDERS_DELTA Q51).
+SHIPPED_ORDER_STATUSES = ("SHIPPED", "TO_CONFIRM_RECEIVE", "COMPLETED")
 
 
 def get_outbounds_data(username: str) -> List[OutboundItem]:
@@ -175,6 +178,52 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
             "unknown": unknown_count,
             "orders_done": orders_done_count,
         }
+
+
+def close_shipped_outbound() -> dict:
+    """Close open scans whose order has left on Shopee, and complete those orders
+    (V2_ORDERS_DELTA C1, Q51, Q52). Matches the whole database, not one sync's batch: an order
+    may have shipped in a sync that ran before its label was scanned. Labels match exactly.
+    Orders without an open scan are left alone, as are cancelled and returned ones."""
+    now = datetime.now(UTC)
+    open_scans = OutboundItem.closed == False  # noqa: E712
+    left = ShopeeOrder.status.in_(SHIPPED_ORDER_STATUSES)
+    pair = select(OutboundItem.id, ShopeeOrder.order_sn).select_from(OutboundItem)
+    # Two joins, not one OR: each uses its index, and this runs with every sync.
+    shipped = union(
+        pair.join(ShopeeOrder, ShopeeOrder.order_sn == OutboundItem.content).where(
+            open_scans, left
+        ),
+        pair.join(ShopeeOrderInfo, ShopeeOrderInfo.tracking_number == OutboundItem.content)
+        .join(ShopeeOrder, ShopeeOrder.order_sn == ShopeeOrderInfo.order_sn)
+        .where(open_scans, left),
+    )
+    with get_db() as db:
+        pairs = db.execute(shipped).all()
+        if not pairs:
+            return {"outbound": 0, "orders_done": 0}
+        closed = db.execute(
+            update(OutboundItem)
+            .where(
+                OutboundItem.id.in_({scan_id for scan_id, _ in pairs}),
+                OutboundItem.closed == False,  # noqa: E712
+            )
+            .values(closed=True, closed_at=now)
+            .returning(OutboundItem.id)
+        ).all()
+        done = db.execute(
+            update(ShopeeOrder)
+            .where(
+                ShopeeOrder.order_sn.in_({sn for _, sn in pairs}),
+                ShopeeOrder.done == False,  # noqa: E712
+            )
+            .values(done=True, done_at=now)
+            .returning(ShopeeOrder.order_sn)
+        ).all()
+        db.commit()
+    result = {"outbound": len(closed), "orders_done": len(done)}
+    logger.info("outbound_auto_closed", extra={"event": "outbound.auto_closed", **result})
+    return result
 
 
 def clear_all_outbound_items() -> int:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatShort, localDayRange, parseUtc, timeAgo } from './time'
+import { formatShort, dayOf, formatDay, parseUtc, timeAgo } from './time'
 
 describe('time', () => {
   const now = new Date('2026-11-23T12:00:00Z')
@@ -20,13 +20,9 @@ describe('time', () => {
     expect(formatShort(local, new Date(2027, 0, 1))).toBe('4 Nov 2026 09:05')
     expect(formatShort(null)).toBe('—')
   })
-  it('turns picked days into whole local days in UTC', () => {
-    const picked = new Date(2026, 10, 24, 15, 30).getTime()
-    const range = localDayRange(picked, picked)
-    const from = new Date(range.from!)
-    const to = new Date(range.to!)
-    expect([from.getDate(), from.getHours(), from.getMinutes()]).toEqual([24, 0, 0])
-    expect([to.getDate(), to.getHours(), to.getMinutes(), to.getSeconds()]).toEqual([24, 23, 59, 59])
-    expect(localDayRange(null, null)).toEqual({ from: null, to: null })
+  it('handles calendar days without shifting them', () => {
+    expect(dayOf(new Date(2026, 10, 4, 23, 59).getTime())).toBe('2026-11-04')
+    expect(formatDay('2026-11-04', new Date(2026, 10, 24))).toBe('4 Nov')
+    expect(formatDay('2025-01-03', new Date(2026, 10, 24))).toBe('3 Jan 2025')
   })
 })

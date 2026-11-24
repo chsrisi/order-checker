@@ -119,7 +119,7 @@ def test_admin_history_and_exports(monkeypatch):
 
 
 def test_admin_history_filters_reach_the_queries(monkeypatch):
-    from datetime import UTC, datetime
+    from datetime import UTC, date, datetime
 
     from fastapi import Response
 
@@ -133,19 +133,21 @@ def test_admin_history_filters_reach_the_queries(monkeypatch):
         return call
 
     monkeypatch.setattr(admin.queries, "get_outbound_history", fake("outbound", ([], 0)))
-    monkeypatch.setattr(admin.queries, "get_close_history", fake("closes", ([], 3)))
+    monkeypatch.setattr(admin.queries, "get_day_history", fake("days", ([], 3)))
     when = datetime(2026, 11, 24, tzinfo=UTC)
-    admin.get_outbound_history(Response(), 500, 0, actor("admin", "admin"), when, None, None, "x")
-    assert seen["outbound"] == admin.queries.HistoryFilter(closed_from=when, q="x")
+    day = date(2026, 11, 24)
+    who = actor("admin", "admin")
+    admin.get_outbound_history(Response(), 500, 0, who, when, None, day, None, "x")
+    assert seen["outbound"] == admin.queries.HistoryFilter(closed_from=when, day_from=day, q="x")
     response = Response()
-    admin.get_close_history(response, 50, 0, actor("admin", "admin"), None, when, "jx")
-    assert seen["closes"] == admin.queries.HistoryFilter(closed_to=when, q="jx")
+    admin.get_day_history(response, 50, 0, who, None, day, "jx")
+    assert seen["days"] == admin.queries.HistoryFilter(day_to=day, q="jx")
     assert response.headers["X-Total-Count"] == "3"
 
 
 def test_admin_lookup_returns_orders_and_scans(monkeypatch):
     monkeypatch.setattr(
-        admin.queries, "lookup_label", lambda label: {"orders": ["o"], "scans": ["s"]}
+        admin.queries, "lookup_label", lambda label: {"orders": ["o"], "scans": ["s"], "day": None}
     )
     monkeypatch.setattr(
         admin.shopee_service,
@@ -156,6 +158,7 @@ def test_admin_lookup_returns_orders_and_scans(monkeypatch):
         "label": "JX-1",
         "orders": ["built-o"],
         "scans": ["s"],
+        "day": None,
     }
 
 

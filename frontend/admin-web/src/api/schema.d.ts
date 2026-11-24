@@ -144,7 +144,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/history/closes": {
+    "/admin/history/days": {
         parameters: {
             query?: never;
             header?: never;
@@ -152,10 +152,30 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List period closes
-         * @description One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range, and `q`: only closes holding a scan or an order that matches (same fields as the two history lists).
+         * List history days
+         * @description One row per business day (`BUSINESS_UTC_OFFSET`), newest first: the closed scans made that day, the completed orders they belong to, and the scans' tags. Optional day range, and `q`: only days holding a scan or an order that matches (same fields as the two history lists).
          */
-        get: operations["get_close_history_admin_history_closes_get"];
+        get: operations["get_day_history_admin_history_days_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/history/days/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one history day
+         * @description All closed scans made on one business day and the completed orders of that day.
+         */
+        get: operations["get_day_admin_history_days__day__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -173,7 +193,7 @@ export interface paths {
         };
         /**
          * Get closed outbound history
-         * @description Returns only scans that have been closed by an administrator. Optional filters: close time range or one exact close, and `q` over label, worker and tags.
+         * @description Returns only scans that have been closed by an administrator. Optional filters: close time range, day range (scan time), and `q` over label, worker and tags.
          */
         get: operations["get_outbound_history_admin_history_outbound_get"];
         put?: never;
@@ -193,7 +213,7 @@ export interface paths {
         };
         /**
          * Get completed Shopee order history
-         * @description Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range or one exact close, and `q` over order SN, worker, tracking number and pickup code.
+         * @description Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range, day range, and `q` over order SN, worker, tracking number and pickup code.
          */
         get: operations["get_shopee_orders_history_admin_history_shopee_orders_get"];
         put?: never;
@@ -540,19 +560,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * AdminCloseResponse
-         * @description One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``.
-         */
-        AdminCloseResponse: {
+        /** AdminDayDetailResponse */
+        AdminDayDetailResponse: {
             /**
-             * Closed At
-             * Format: date-time
+             * Day
+             * Format: date
              */
-            closed_at: string;
+            day: string;
+            /** Orders */
+            orders: components["schemas"]["ShopeeOrderResponse"][];
+            /** Scans */
+            scans: components["schemas"]["OutboundResponse"][];
+        };
+        /**
+         * AdminDayResponse
+         * @description One business day of History (V2_ORDERS_DELTA C2): scans count on the day they were made.
+         */
+        AdminDayResponse: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
             /**
              * Orders Done
-             * @description Orders marked complete.
+             * @description Completed orders with a scan of that day.
              */
             orders_done: number;
             /**
@@ -605,6 +637,11 @@ export interface components {
          * @description Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed.
          */
         AdminLookupResponse: {
+            /**
+             * Day
+             * @description The History day it left on, if it left.
+             */
+            day?: string | null;
             /** Label */
             label: string;
             /**
@@ -1180,17 +1217,17 @@ export interface operations {
             };
         };
     };
-    get_close_history_admin_history_closes_get: {
+    get_day_history_admin_history_days_get: {
         parameters: {
             query?: {
                 /** @description Page size (newest first). */
                 limit?: number;
                 /** @description Rows to skip. */
                 offset?: number;
-                /** @description Closed at or after this time (inclusive). */
-                closed_from?: string | null;
-                /** @description Closed at or before this time (inclusive). */
-                closed_to?: string | null;
+                /** @description On or after this business day (YYYY-MM-DD). */
+                day_from?: string | null;
+                /** @description On or before this business day (YYYY-MM-DD). */
+                day_to?: string | null;
                 /** @description Case-insensitive substring search. */
                 q?: string | null;
             };
@@ -1206,7 +1243,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminCloseResponse"][];
+                    "application/json": components["schemas"]["AdminDayResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_day_admin_history_days__day__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDayDetailResponse"];
                 };
             };
             /** @description Admin scope required */
@@ -1238,8 +1313,10 @@ export interface operations {
                 closed_from?: string | null;
                 /** @description Closed at or before this time (inclusive). */
                 closed_to?: string | null;
-                /** @description Exactly this close (a `closed_at` from /admin/history/closes). */
-                closed_at?: string | null;
+                /** @description On or after this business day (YYYY-MM-DD). */
+                day_from?: string | null;
+                /** @description On or before this business day (YYYY-MM-DD). */
+                day_to?: string | null;
                 /** @description Case-insensitive substring search. */
                 q?: string | null;
             };
@@ -1287,8 +1364,10 @@ export interface operations {
                 closed_from?: string | null;
                 /** @description Closed at or before this time (inclusive). */
                 closed_to?: string | null;
-                /** @description Exactly this close (a `closed_at` from /admin/history/closes). */
-                closed_at?: string | null;
+                /** @description On or after this business day (YYYY-MM-DD). */
+                day_from?: string | null;
+                /** @description On or before this business day (YYYY-MM-DD). */
+                day_to?: string | null;
                 /** @description Case-insensitive substring search. */
                 q?: string | null;
             };

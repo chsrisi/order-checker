@@ -285,6 +285,16 @@ classic admin. Notes for you to try:
   range hides matches; `/` focuses the search, Esc clears it.
 - **Auto-sync:** the server syncs Shopee every `SHOPEE_AUTO_SYNC_SECONDS` (Q48).
 
+**Round 3 (2026-11-24, V2_ORDERS_DELTA rounds 3–4).** Replaces the matching parts above.
+
+- A sync closes the scans of orders that left on Shopee and marks those orders done (C1).
+- History's first view is *By day* (by scan time, Q53) instead of *By close*; its date range picks
+  those days in all three views. A past day can still grow when its scans close later.
+- Auto-sync rests from 21:00 to 06:00 (C3).
+- Labels match exactly after trimming (Q57).
+- Hovering a paired row highlights its card, scans or empty slot (C4).
+- The close review is frozen when it opens (F7).
+
 ### 2.6 Admin Settings: Shopee connection (D10)
 
 - **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.

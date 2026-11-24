@@ -1,7 +1,7 @@
 from __future__ import annotations
 import re
 from enum import Enum as PyEnum
-from datetime import datetime, UTC
+from datetime import date, datetime, UTC
 from typing import List, Optional, Union, Annotated, Any, Literal
 
 from sqlalchemy import CheckConstraint, Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float, Index, text
@@ -832,15 +832,22 @@ class AdminLookupResponse(BaseModel):
     scans: List[OutboundResponse] = Field(
         description="Scans of the label, open and closed, newest first."
     )
+    day: Optional[date] = Field(None, description="The History day it left on, if it left.")
 
 
-class AdminCloseResponse(BaseModel):
-    """One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``."""
+class AdminDayResponse(BaseModel):
+    """One business day of History (V2_ORDERS_DELTA C2): scans count on the day they were made."""
 
-    closed_at: datetime
+    day: date
     outbound: int = Field(ge=0, description="Scans closed.")
-    orders_done: int = Field(ge=0, description="Orders marked complete.")
+    orders_done: int = Field(ge=0, description="Completed orders with a scan of that day.")
     tags: List[str] = Field(description="Distinct tags of the closed scans.")
+
+
+class AdminDayDetailResponse(BaseModel):
+    day: date
+    orders: List[ShopeeOrderResponse]
+    scans: List[OutboundResponse]
 
 
 class OutboundCloseResponse(BaseModel):

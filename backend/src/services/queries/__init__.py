@@ -22,13 +22,14 @@ from .users import (
     revoke_session,
     revoke_user_sessions,
 )
-from .history import HistoryFilter, get_close_history, lookup_label
+from .history import HistoryFilter, get_day, get_day_history, lookup_label
 from .outbound import (
     get_outbounds_data,
     get_all_outbound_data,
     get_outbound_history,
     create_outbound_item,
     close_outbound_items,
+    close_shipped_outbound,
     clear_all_outbound_items,
 )
 from .orders import (
@@ -99,11 +100,13 @@ __all__ = [
     "get_outbounds_data",
     "get_all_outbound_data",
     "get_outbound_history",
-    "get_close_history",
+    "get_day",
+    "get_day_history",
     "lookup_label",
     "HistoryFilter",
     "create_outbound_item",
     "close_outbound_items",
+    "close_shipped_outbound",
     "clear_all_outbound_items",
     "resolve_shopee_order_bom_tree",
     "get_shopee_order_data",

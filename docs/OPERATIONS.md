@@ -225,6 +225,8 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | `SHOPEE_PACKAGE_CHUNK_SIZE` | int | `50` | No | Maximum number of packages per batch tracking lookup (`/api/v2/logistics/get_mass_tracking_number`). |
 | `SHOPEE_SYNC_WINDOW_DAYS` | int | `2` | No | Time window in days backwards from `now` to pull active/recent Shopee orders (default: 2 days). |
 | `SHOPEE_AUTO_SYNC_SECONDS` | int | `300` | No | Background Shopee sync interval (V2_ORDERS_DELTA Q48). The server syncs on its own every N seconds, as *Sync Shopee* does, and admins get the update live. `0` turns it off. It skips while a Shopee token error is unresolved (until *Reset sync state* or a token save), and does nothing extra when a sync just ran (cache). Runs in the one backend process (single worker). |
+| `SHOPEE_AUTO_SYNC_PAUSE` | `HH:MM-HH:MM` | `21:00-06:00` | No | Daily rest of the background sync, in business time (start included, end excluded, may pass midnight). Empty = no pause. *Sync Shopee* and operators' syncs still run. An invalid value logs a warning and uses the default. |
+| `BUSINESS_UTC_OFFSET` | `±HH:MM` | `+07:00` | No | Fixed offset of the business clock: History days, the sync pause, export times. No daylight saving. An invalid value logs a warning and uses the default. |
 
 ---
 

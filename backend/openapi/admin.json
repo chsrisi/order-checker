@@ -1,16 +1,46 @@
 {
   "components": {
     "schemas": {
-      "AdminCloseResponse": {
-        "description": "One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``.",
+      "AdminDayDetailResponse": {
         "properties": {
-          "closed_at": {
-            "format": "date-time",
-            "title": "Closed At",
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/ShopeeOrderResponse"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "scans": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundResponse"
+            },
+            "title": "Scans",
+            "type": "array"
+          }
+        },
+        "required": [
+          "day",
+          "orders",
+          "scans"
+        ],
+        "title": "AdminDayDetailResponse",
+        "type": "object"
+      },
+      "AdminDayResponse": {
+        "description": "One business day of History (V2_ORDERS_DELTA C2): scans count on the day they were made.",
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
             "type": "string"
           },
           "orders_done": {
-            "description": "Orders marked complete.",
+            "description": "Completed orders with a scan of that day.",
             "minimum": 0.0,
             "title": "Orders Done",
             "type": "integer"
@@ -31,12 +61,12 @@
           }
         },
         "required": [
-          "closed_at",
+          "day",
           "outbound",
           "orders_done",
           "tags"
         ],
-        "title": "AdminCloseResponse",
+        "title": "AdminDayResponse",
         "type": "object"
       },
       "AdminDeviceResponse": {
@@ -139,6 +169,19 @@
       "AdminLookupResponse": {
         "description": "Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed.",
         "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The History day it left on, if it left.",
+            "title": "Day"
+          },
           "label": {
             "title": "Label",
             "type": "string"
@@ -1335,10 +1378,10 @@
         ]
       }
     },
-    "/admin/history/closes": {
+    "/admin/history/days": {
       "get": {
-        "description": "One row per period close, newest first: its time, the scans it closed, the orders it marked complete and the scans' tags. Optional close time range, and `q`: only closes holding a scan or an order that matches (same fields as the two history lists).",
-        "operationId": "get_close_history_admin_history_closes_get",
+        "description": "One row per business day (`BUSINESS_UTC_OFFSET`), newest first: the closed scans made that day, the completed orders they belong to, and the scans' tags. Optional day range, and `q`: only days holding a scan or an order that matches (same fields as the two history lists).",
+        "operationId": "get_day_history_admin_history_days_get",
         "parameters": [
           {
             "description": "Page size (newest first).",
@@ -1368,41 +1411,41 @@
             }
           },
           {
-            "description": "Closed at or after this time (inclusive).",
+            "description": "On or after this business day (YYYY-MM-DD).",
             "in": "query",
-            "name": "closed_from",
+            "name": "day_from",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "format": "date-time",
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Closed at or after this time (inclusive).",
-              "title": "Closed From"
+              "description": "On or after this business day (YYYY-MM-DD).",
+              "title": "Day From"
             }
           },
           {
-            "description": "Closed at or before this time (inclusive).",
+            "description": "On or before this business day (YYYY-MM-DD).",
             "in": "query",
-            "name": "closed_to",
+            "name": "day_to",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "format": "date-time",
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Closed at or before this time (inclusive).",
-              "title": "Closed To"
+              "description": "On or before this business day (YYYY-MM-DD).",
+              "title": "Day To"
             }
           },
           {
@@ -1431,9 +1474,9 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/AdminCloseResponse"
+                    "$ref": "#/components/schemas/AdminDayResponse"
                   },
-                  "title": "Response Get Close History Admin History Closes Get",
+                  "title": "Response Get Day History Admin History Days Get",
                   "type": "array"
                 }
               }
@@ -1459,7 +1502,59 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "List period closes",
+        "summary": "List history days",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/history/days/{day}": {
+      "get": {
+        "description": "All closed scans made on one business day and the completed orders of that day.",
+        "operationId": "get_day_admin_history_days__day__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "day",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Day",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDayDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get one history day",
         "tags": [
           "admin"
         ]
@@ -1467,7 +1562,7 @@
     },
     "/admin/history/outbound": {
       "get": {
-        "description": "Returns only scans that have been closed by an administrator. Optional filters: close time range or one exact close, and `q` over label, worker and tags.",
+        "description": "Returns only scans that have been closed by an administrator. Optional filters: close time range, day range (scan time), and `q` over label, worker and tags.",
         "operationId": "get_outbound_history_admin_history_outbound_get",
         "parameters": [
           {
@@ -1536,22 +1631,41 @@
             }
           },
           {
-            "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+            "description": "On or after this business day (YYYY-MM-DD).",
             "in": "query",
-            "name": "closed_at",
+            "name": "day_from",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "format": "date-time",
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
-              "title": "Closed At"
+              "description": "On or after this business day (YYYY-MM-DD).",
+              "title": "Day From"
+            }
+          },
+          {
+            "description": "On or before this business day (YYYY-MM-DD).",
+            "in": "query",
+            "name": "day_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On or before this business day (YYYY-MM-DD).",
+              "title": "Day To"
             }
           },
           {
@@ -1616,7 +1730,7 @@
     },
     "/admin/history/shopee/orders": {
       "get": {
-        "description": "Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range or one exact close, and `q` over order SN, worker, tracking number and pickup code.",
+        "description": "Returns only orders marked complete by outbound period closure. Optional filters: completion (close) time range, day range, and `q` over order SN, worker, tracking number and pickup code.",
         "operationId": "get_shopee_orders_history_admin_history_shopee_orders_get",
         "parameters": [
           {
@@ -1685,22 +1799,41 @@
             }
           },
           {
-            "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
+            "description": "On or after this business day (YYYY-MM-DD).",
             "in": "query",
-            "name": "closed_at",
+            "name": "day_from",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "format": "date-time",
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Exactly this close (a `closed_at` from /admin/history/closes).",
-              "title": "Closed At"
+              "description": "On or after this business day (YYYY-MM-DD).",
+              "title": "Day From"
+            }
+          },
+          {
+            "description": "On or before this business day (YYYY-MM-DD).",
+            "in": "query",
+            "name": "day_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On or before this business day (YYYY-MM-DD).",
+              "title": "Day To"
             }
           },
           {

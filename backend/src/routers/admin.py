@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.responses import StreamingResponse
@@ -7,7 +7,8 @@ from fastapi.responses import StreamingResponse
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
 from ..models import (
-    AdminCloseResponse,
+    AdminDayDetailResponse,
+    AdminDayResponse,
     AdminLookupResponse,
     AdminDeviceResponse,
     AdminPasswordReset,
@@ -157,15 +158,15 @@ HISTORY_OFFSET = Query(0, ge=0, description="Rows to skip.")
 # Delta 9 (Q40): server-side filters. Times are ISO 8601; without an offset they are UTC.
 CLOSED_FROM = Query(None, description="Closed at or after this time (inclusive).")
 CLOSED_TO = Query(None, description="Closed at or before this time (inclusive).")
-CLOSED_AT = Query(
-    None, description="Exactly this close (a `closed_at` from /admin/history/closes)."
-)
+# V2_ORDERS_DELTA Q53: business days, by scan time.
+DAY_FROM = Query(None, description="On or after this business day (YYYY-MM-DD).")
+DAY_TO = Query(None, description="On or before this business day (YYYY-MM-DD).")
 SEARCH = Query(None, max_length=100, description="Case-insensitive substring search.")
 
 
-def _history_filter(closed_from, closed_to, closed_at, q) -> queries.HistoryFilter:
+def _history_filter(closed_from, closed_to, day_from, day_to, q) -> queries.HistoryFilter:
     return queries.HistoryFilter(
-        closed_from=closed_from, closed_to=closed_to, closed_at=closed_at, q=q
+        closed_from=closed_from, closed_to=closed_to, day_from=day_from, day_to=day_to, q=q
     )
 
 
@@ -175,7 +176,7 @@ def _history_filter(closed_from, closed_to, closed_at, q) -> queries.HistoryFilt
     summary="Get closed outbound history",
     description=(
         "Returns only scans that have been closed by an administrator. Optional filters: close "
-        "time range or one exact close, and `q` over label, worker and tags."
+        "time range, day range (scan time), and `q` over label, worker and tags."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
@@ -186,11 +187,14 @@ def get_outbound_history(
     current_user: User = Depends(require_admin),
     closed_from: Optional[datetime] = CLOSED_FROM,
     closed_to: Optional[datetime] = CLOSED_TO,
-    closed_at: Optional[datetime] = CLOSED_AT,
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
     q: Optional[str] = SEARCH,
 ):
     items, total = queries.get_outbound_history(
-        limit=limit, offset=offset, f=_history_filter(closed_from, closed_to, closed_at, q)
+        limit=limit,
+        offset=offset,
+        f=_history_filter(closed_from, closed_to, day_from, day_to, q),
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -202,7 +206,7 @@ def get_outbound_history(
     summary="Get completed Shopee order history",
     description=(
         "Returns only orders marked complete by outbound period closure. Optional filters: "
-        "completion (close) time range or one exact close, and `q` over order SN, worker, "
+        "completion (close) time range, day range, and `q` over order SN, worker, "
         "tracking number and pickup code."
     ),
     responses={403: {"description": "Admin scope required"}},
@@ -214,43 +218,63 @@ def get_shopee_orders_history(
     current_user: User = Depends(require_admin),
     closed_from: Optional[datetime] = CLOSED_FROM,
     closed_to: Optional[datetime] = CLOSED_TO,
-    closed_at: Optional[datetime] = CLOSED_AT,
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
     q: Optional[str] = SEARCH,
 ):
     orders, total = queries.get_shopee_orders_history(
-        limit=limit, offset=offset, f=_history_filter(closed_from, closed_to, closed_at, q)
+        limit=limit,
+        offset=offset,
+        f=_history_filter(closed_from, closed_to, day_from, day_to, q),
     )
     response.headers["X-Total-Count"] = str(total)
     return shopee_service.build_shopee_order_responses(orders)
 
 
 @router.get(
-    "/history/closes",
-    response_model=List[AdminCloseResponse],
-    summary="List period closes",
+    "/history/days",
+    response_model=List[AdminDayResponse],
+    summary="List history days",
     description=(
-        "One row per period close, newest first: its time, the scans it closed, the orders it "
-        "marked complete and the scans' tags. Optional close time range, and `q`: only closes "
-        "holding a scan or an order that matches (same fields as the two history lists)."
+        "One row per business day (`BUSINESS_UTC_OFFSET`), newest first: the closed scans made "
+        "that day, the completed orders they belong to, and the scans' tags. Optional day range, "
+        "and `q`: only days holding a scan or an order that matches (same fields as the two "
+        "history lists)."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
-def get_close_history(
+def get_day_history(
     response: Response,
     limit: int = Query(50, ge=1, le=500, description="Page size (newest first)."),
     offset: int = HISTORY_OFFSET,
     _admin: User = Depends(require_admin),
-    closed_from: Optional[datetime] = CLOSED_FROM,
-    closed_to: Optional[datetime] = CLOSED_TO,
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
     q: Optional[str] = SEARCH,
 ):
-    closes, total = queries.get_close_history(
+    days, total = queries.get_day_history(
         limit=limit,
         offset=offset,
-        f=queries.HistoryFilter(closed_from=closed_from, closed_to=closed_to, q=q),
+        f=queries.HistoryFilter(day_from=day_from, day_to=day_to, q=q),
     )
     response.headers["X-Total-Count"] = str(total)
-    return closes
+    return days
+
+
+@router.get(
+    "/history/days/{day}",
+    response_model=AdminDayDetailResponse,
+    summary="Get one history day",
+    description="All closed scans made on one business day and the completed orders of that day.",
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_day(day: date, _admin: User = Depends(require_admin)):
+    found = queries.get_day(day)
+    return {
+        "day": day,
+        "orders": shopee_service.build_shopee_order_responses(found["orders"]),
+        "scans": found["scans"],
+    }
 
 
 @router.get(
@@ -273,6 +297,7 @@ def lookup_label(
         "label": label,
         "orders": shopee_service.build_shopee_order_responses(found["orders"]),
         "scans": found["scans"],
+        "day": found["day"],
     }
 
 

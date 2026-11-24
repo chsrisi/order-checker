@@ -10,7 +10,7 @@ from src.models import ShopeeResponse
 from src.services import shopee_service
 
 
-def _wire_sync(monkeypatch, chunk_outcomes, local_active=()):
+def _wire_sync(monkeypatch, chunk_outcomes, local_active=(), auto_closed=0):
     monkeypatch.setenv("MOCK_ORDER_BYPASS", "0")
     monkeypatch.setattr(shopee_service, "MOCK_ORDER_BYPASS", False)
     monkeypatch.setattr(shopee_service.cache_mgr, "is_valid", lambda: False)
@@ -48,6 +48,11 @@ def _wire_sync(monkeypatch, chunk_outcomes, local_active=()):
     stored = []
     monkeypatch.setattr(
         shopee_service.queries, "sync_shopee_orders_to_db", lambda chunks: stored.append(chunks)
+    )
+    monkeypatch.setattr(
+        shopee_service.queries,
+        "close_shipped_outbound",
+        lambda: {"outbound": auto_closed, "orders_done": 0},
     )
     monkeypatch.setattr(shopee_service, "_orders_visible_to", lambda *_: [])
     return mark, stored, fetched, asked_local
@@ -134,3 +139,23 @@ async def test_failed_tracking_lookup_keeps_packages_out_of_the_update(monkeypat
     monkeypatch.setattr(shopee_service, "shopee_request", fake_request)
     _, tracking, failed = await shopee_service.fetch_chunk_details(["SN1"])
     assert tracking == {} and failed == {"P1"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auto_closed", [0, 2])
+async def test_a_sync_sends_admins_the_scans_only_when_it_closed_some(monkeypatch, auto_closed):
+    """V2_ORDERS_DELTA C1."""
+    _wire_sync(monkeypatch, [([], {}, set())], auto_closed=auto_closed)
+    await shopee_service.sync_shopee_orders(refresh=True, username=None, scope="admin")
+    sent = [c.args[0].value for c in shopee_service.conn_mgr.broadcast.await_args_list]
+    assert sent.count("outbound_update") == (1 if auto_closed else 0)
+
+
+@pytest.mark.asyncio
+async def test_a_partial_sync_still_closes_what_it_stored(monkeypatch):
+    failure = HTTPException(status_code=502, detail="x")
+    _wire_sync(monkeypatch, [([], {}, set()), failure], auto_closed=1)
+    with pytest.raises(HTTPException):
+        await shopee_service.sync_shopee_orders(refresh=True, username=None, scope="admin")
+    sent = [c.args[0].value for c in shopee_service.conn_mgr.broadcast.await_args_list]
+    assert sent == ["outbound_update"]

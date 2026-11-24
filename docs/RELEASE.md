@@ -199,3 +199,15 @@ the downgrade; `alembic downgrade b7c4e1a9d2f3` recreates the table empty.
 
 Release notes: admin CSV exports work on the web; deleting an operator restores the stock of
 its open picks; `GET /stocks` fixed; the admin web is no longer stuck on a cached build.
+
+### Next release: auto-close and time-zone aware timestamps (no relogin, no client change)
+
+Migration `f6c9a4b2d3e5` (down revision `e5b8f3a1c2d4`) turns the timestamps into `timestamptz`.
+It rewrites each table once under a lock, so run it inside the window (§2).
+
+1. **Before deploying, export the scans CSV** (admin). The first Shopee sync closes every open scan
+   whose order already left on Shopee; it cannot be undone (V2_ORDERS_DELTA Q56).
+2. Check that the server database runs in UTC: `SHOW timezone` prints `UTC` or `Etc/UTC`. Stored
+   values are taken as UTC. If it prints anything else, stop and ask before migrating.
+3. Optional in `.env`: `BUSINESS_UTC_OFFSET` and `SHOPEE_AUTO_SYNC_PAUSE` (OPERATIONS).
+4. After the first sync, compare the log's `outbound.auto_closed` counts with History.
