@@ -12,6 +12,7 @@ from ...models import (
     BOMHeader,
 )
 from ... import config
+from ...timezone import as_utc
 from .engine import get_db
 from .history import NO_FILTER, HistoryFilter, order_conditions
 from .bom import get_marketplace_bom_node, get_standard_bom_node_internal
@@ -164,17 +165,11 @@ def _item_rows(order_detail) -> list[ShopeeOrderItemList]:
     return rows
 
 
-def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
 def _past_retention(order: ShopeeOrder, cutoff: datetime) -> bool:
     """Same rule as purge_recipient_data: never re-store buyer data the purge removed."""
     if order.done_at is not None:
-        return _naive_utc(order.done_at) < cutoff
-    return not order.done and order.ship_by is not None and _naive_utc(order.ship_by) < cutoff
+        return as_utc(order.done_at) < cutoff
+    return not order.done and order.ship_by is not None and as_utc(order.ship_by) < cutoff
 
 
 def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> None:
@@ -186,9 +181,7 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
     purged recipient row is never recreated. Packages whose tracking lookup failed are
     skipped and keep their previous values.
     """
-    cutoff = (now or datetime.now(UTC)).replace(tzinfo=None) - timedelta(
-        days=config.RECIPIENT_RETENTION_DAYS
-    )
+    cutoff = as_utc(now or datetime.now(UTC)) - timedelta(days=config.RECIPIENT_RETENTION_DAYS)
     details = [d for chunk, _, _ in chunk_results for d in chunk]
     order_sns = [d.order_sn for d in details]
     all_package_nums = [

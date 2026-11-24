@@ -12,6 +12,7 @@ from ...models import (
     PickItemEntry,
     ShopeeOrder,
 )
+from ...timezone import as_utc
 from .engine import get_db
 from .stocks import restore_for_pick
 
@@ -197,7 +198,7 @@ def get_user_for_session(username: str, sid: str, client_version: int | None = N
             return None
         user, last_seen, device_id, device_version = row
         now = datetime.now(UTC)
-        stale = last_seen is None or last_seen.replace(tzinfo=UTC) < now - LAST_SEEN_INTERVAL
+        stale = last_seen is None or as_utc(last_seen) < now - LAST_SEEN_INTERVAL
         if stale:
             db.execute(update(AuthSession).where(AuthSession.id == sid).values(last_seen_at=now))
         if device_id is not None and client_version is not None:

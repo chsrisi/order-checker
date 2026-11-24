@@ -57,3 +57,40 @@ def test_models_match_migrated_schema(pg_engine):
             if not (d[0] == "remove_table" and d[1].schema == "alembic")
         ]
     assert diff == []
+
+
+def test_timestamptz_migration_keeps_every_instant(pg_url):
+    """V2_ORDERS_DELTA R4.3: stored values are UTC, whatever zone the migrating session uses."""
+    from datetime import UTC, datetime
+
+    from alembic import command
+    from sqlalchemy import text
+
+    zoned = create_engine(pg_url, connect_args={"options": "-c timezone=Asia/Jakarta"})
+    database = zoned.url.database
+    try:
+        reset_schemas(zoned)
+        cfg = alembic_config(pg_url)
+        command.upgrade(cfg, "e5b8f3a1c2d4")
+        with zoned.begin() as conn:
+            conn.execute(text(f"ALTER DATABASE \"{database}\" SET timezone TO 'Asia/Jakarta'"))
+            conn.execute(
+                text(
+                    "INSERT INTO shopee.orders (order_sn, split_up, ship_by, status, done)"
+                    " VALUES ('S', false, '2026-11-24 16:30:00', 'PROCESSED', false)"
+                )
+            )
+        command.upgrade(cfg, "head")
+        with zoned.connect() as conn:
+            ship_by = conn.execute(text("SELECT ship_by FROM shopee.orders")).scalar_one()
+        assert ship_by == datetime(2026, 11, 24, 16, 30, tzinfo=UTC)
+        command.downgrade(cfg, "e5b8f3a1c2d4")
+        with zoned.connect() as conn:
+            ship_by = conn.execute(text("SELECT ship_by FROM shopee.orders")).scalar_one()
+        assert ship_by == datetime(2026, 11, 24, 16, 30)
+    finally:
+        with zoned.begin() as conn:
+            conn.execute(text(f'ALTER DATABASE "{database}" RESET timezone'))
+        reset_schemas(zoned)
+        command.upgrade(alembic_config(pg_url), "head")
+        zoned.dispose()

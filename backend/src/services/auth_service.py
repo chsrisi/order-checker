@@ -18,6 +18,7 @@ from . import queries
 from .. import config
 from ..exceptions import DomainException
 from ..models import User, WSMessageType
+from ..timezone import as_utc
 from ..config import (
     JWT_ALGORITHM,
     JWT_AUDIENCE,
@@ -413,7 +414,7 @@ def refresh_tokens(refresh_token: str) -> dict:
         logger.error("Token revoked")
         raise credentials_exception
 
-    if db_token.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
+    if as_utc(db_token.expires_at) < datetime.now(UTC):
         logger.error("Token expired in DB")
         raise credentials_exception
 

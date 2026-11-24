@@ -5,7 +5,7 @@ A period close stamps every scan it closes (``closed_at``) and every order it co
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import func, literal, or_, select, union_all
@@ -18,14 +18,8 @@ from ...models import (
     ShopeeOrderInfo,
     ShopeeOrderRecipientAddress,
 )
+from ...timezone import as_utc
 from .engine import get_db
-
-
-def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
-    """Columns hold naive UTC; aware inputs are converted, naive ones are taken as UTC."""
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _escape_like(value: str) -> str:
@@ -44,11 +38,11 @@ class HistoryFilter:
     def time_conditions(self, column) -> list:
         conditions = []
         if self.closed_at is not None:
-            conditions.append(column == _naive_utc(self.closed_at))
+            conditions.append(column == as_utc(self.closed_at))
         if self.closed_from is not None:
-            conditions.append(column >= _naive_utc(self.closed_from))
+            conditions.append(column >= as_utc(self.closed_from))
         if self.closed_to is not None:
-            conditions.append(column <= _naive_utc(self.closed_to))
+            conditions.append(column <= as_utc(self.closed_to))
         return conditions
 
     @property

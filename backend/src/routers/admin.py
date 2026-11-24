@@ -20,6 +20,7 @@ from ..models import (
     UserResponse,
 )
 from ..dependencies import require_admin
+from ..timezone import business_time
 from ..services import queries, auth_service, outbound_service, shopee_service
 from ..services.managers import conn_mgr
 
@@ -288,7 +289,7 @@ def export_scanned_items(current_user: User = Depends(require_admin)):
         iter([csv_data]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=scanned_items_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            "Content-Disposition": f"attachment; filename=scanned_items_{business_time().strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 
@@ -306,7 +307,7 @@ def export_stocks(current_user: User = Depends(require_admin)):
         iter([csv_data]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=inventory_stocks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            "Content-Disposition": f"attachment; filename=inventory_stocks_{business_time().strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 
