@@ -315,3 +315,49 @@ async def test_failed_shopee_call_logs_no_credentials(monkeypatch, caplog):
     assert "Critical error during Shopee call" in caplog.text
     assert "LIVE_ACCESS_TOKEN" not in caplog.text
     assert "SECRETSIG" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_runs_survives_errors_and_pauses_on_token_error(monkeypatch):
+    """V2_ORDERS_DELTA Q48: a server task syncs on an interval, as admin, without a
+    requesting user; a failed run doesn't stop it; it skips while the token circuit is open."""
+    import asyncio
+
+    from src.services import shopee_service
+
+    calls = []
+
+    async def fake_sync(refresh, username, scope="client"):
+        calls.append((refresh, username, scope))
+        if len(calls) == 1:
+            raise RuntimeError("Shopee down")
+        return []
+
+    fatal = {"on": False}
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", fake_sync)
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_token_fatal", lambda: fatal["on"])
+
+    task = asyncio.create_task(shopee_service.auto_sync_task(interval=0.01))
+    await asyncio.sleep(0.06)
+    fatal["on"] = True
+    await asyncio.sleep(0.02)
+    seen = len(calls)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert seen >= 2  # the first run failed, the loop went on
+    assert calls[0] == (False, None, "admin")
+    assert len(calls) == seen  # nothing while the token circuit is open
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_is_off_with_zero_interval(monkeypatch):
+    from src.services import shopee_service
+
+    async def boom(*_a, **_k):
+        raise AssertionError("must not sync")
+
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", boom)
+    await shopee_service.auto_sync_task(interval=0)  # returns at once

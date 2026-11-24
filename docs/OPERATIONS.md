@@ -224,6 +224,7 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | `SHOPEE_ORDER_CHUNK_SIZE` | int | `50` | No | Maximum number of order SNs per batch detail lookup (`/api/v2/order/get_order_detail`). |
 | `SHOPEE_PACKAGE_CHUNK_SIZE` | int | `50` | No | Maximum number of packages per batch tracking lookup (`/api/v2/logistics/get_mass_tracking_number`). |
 | `SHOPEE_SYNC_WINDOW_DAYS` | int | `2` | No | Time window in days backwards from `now` to pull active/recent Shopee orders (default: 2 days). |
+| `SHOPEE_AUTO_SYNC_SECONDS` | int | `300` | No | Background Shopee sync interval (V2_ORDERS_DELTA Q48). The server syncs on its own every N seconds, as *Sync Shopee* does, and admins get the update live. `0` turns it off. It skips while a Shopee token error is unresolved (until *Reset sync state* or a token save), and does nothing extra when a sync just ran (cache). Runs in the one backend process (single worker). |
 
 ---
 

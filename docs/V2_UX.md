@@ -278,6 +278,12 @@ classic admin. Notes for you to try:
 - **Late** tag once ship-by passes; late orders stay listed (F4).
 - A scan with no tags borrows its order's courier for the chips, *Close all "courier"* and the
   review's tag table, shown as "(from order)" (Q45).
+- **History:** one search above the views (server-side, Q49; from 2 characters), highlighted
+  matches; *By close* opens matching closes by themselves, each order paired with its scans
+  and only the matching pairs shown (*Show all rows*); an exact SN, tracking number or label
+  gets a "did it leave?" answer from `GET /admin/lookup`; *n more outside them* when the date
+  range hides matches; `/` focuses the search, Esc clears it.
+- **Auto-sync:** the server syncs Shopee every `SHOPEE_AUTO_SYNC_SECONDS` (Q48).
 
 ### 2.6 Admin Settings: Shopee connection (D10)
 

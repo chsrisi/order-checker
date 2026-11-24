@@ -200,3 +200,11 @@ Consequences:
 
 Every Round 1 question is answered. The build order in R1.5 stands, with F4 added to step 1
 (backend: the active query and the case-insensitive close).
+
+### R2.4 Built (2026-11-24)
+
+Steps 1–4 of R1.5 are built on `feat/v2-parity` (not pushed). The rehearsal backend and headless
+Firefox checked: paired rows, the deprecated two lists, mobile, a close by borrowed courier,
+and History search with the exact answer. Open for your trial: the layout itself, and SPEC §13.1
+(server-side split close), still 📌.
+

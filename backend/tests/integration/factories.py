@@ -31,6 +31,7 @@ def add_order(
     done_at=None,
     recipient=False,
     note=None,
+    carrier=None,
 ):
     db.add(
         ShopeeOrder(
@@ -38,6 +39,7 @@ def add_order(
             split_up=False,
             ship_by=ship_by or datetime.now(UTC) + timedelta(days=1),
             owner_user=owner,
+            shipping_carrier=carrier,
             status=status,
             done=done,
             done_at=done_at,
