@@ -409,6 +409,13 @@ Round 2 plus one change, in every layout (paired rows, two lists, mobile):
   orders would join the ongoing list like Shopee's, so their outbound scans stop showing up as
   strays (§2.1). It would need per-marketplace order sync and statuses, a marketplace mark on the
   order card and in the filters, and history that tells the marketplaces apart.
+- **Future milestone, same urgency as Tokopedia / TikTok Shop: barcode rules as configuration.**
+  (Added 2026-11-25.) The rules are hardcoded today: the SKU shape, the `*` cut and the supplier
+  barcode forms in `queries/warehouse.py` (SYSTEM_REFERENCE §7.4), and the order SN pattern
+  (`^\d{6}`) in the Android client's `OrderLogic.kt` and the v1 client's `orders_view.dart`. Move
+  them behind one abstraction so a new supplier or label format needs no code change. Where the
+  rules live and who edits them is to be decided when this is planned. Today's rules become the
+  defaults, with unchanged results.
 
 ## 13. Round 4 (2026-11-24): `prototypes/orders/admin-orders-r4.html`
 
