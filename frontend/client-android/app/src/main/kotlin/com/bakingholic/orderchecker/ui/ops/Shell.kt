@@ -43,7 +43,8 @@ import com.bakingholic.orderchecker.scan.ScanSuffix
 enum class Destination(val title: String) {
     HOME("Order Checker"),
     DEVICE_INFO("Device info"),
-    ORDERS("Orders"),
+    PICKING("Picking"),
+    OUTBOUND("Outbound"),
     STOCK("Stockkeeping"),
     FINDER("Finder"),
 }
@@ -102,7 +103,8 @@ fun MainShell(
                 when (destination) {
                     Destination.HOME -> HomeMenu(onOpen = { destination = it })
                     Destination.DEVICE_INFO -> DeviceInfoScreen(deviceInfo, onLogout)
-                    Destination.ORDERS -> OrdersScreen(ops, scanSuffix)
+                    Destination.PICKING -> PickingScreen(ops, scanSuffix)
+                    Destination.OUTBOUND -> OutboundScreen(ops, scanSuffix)
                     Destination.STOCK -> StockScreen(ops, scanSuffix)
                     Destination.FINDER -> FinderScreen(ops, scanSuffix)
                 }
@@ -141,7 +143,7 @@ private fun HomeMenu(onOpen: (Destination) -> Unit) {
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
     ) {
-        listOf(Destination.ORDERS, Destination.STOCK, Destination.FINDER).forEach { d ->
+        listOf(Destination.PICKING, Destination.OUTBOUND, Destination.STOCK, Destination.FINDER).forEach { d ->
             Button(
                 onClick = { onOpen(d) },
                 modifier = Modifier.fillMaxWidth().height(88.dp).testTag("home_${d.name.lowercase()}"),

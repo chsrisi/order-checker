@@ -196,3 +196,14 @@ r1 is kept only for comparison.
 |---|---|---|
 | Q80 | Supplier barcodes in the List search are pinned for later. The search is mainly for finding an order by its **order SN**. | 📌 |
 | – | Go-ahead: planned and built as T6.17–T6.20 (IMPLEMENTATION_PLAN). | ✅ |
+
+---
+
+## Round 7 (2026-11-25): built
+
+T6.17–T6.20 are built (IMPLEMENTATION_PLAN §7). Two findings from the emulator check:
+
+| Ref | Question | Recommendation | Status |
+|---|---|---|---|
+| Q81 | A close (manual or automatic) is not pushed to operators, so a closed order stays in their list until the next reload. The app now reloads on the 409 of its next pick or unassign. Push `shopee_orders_update` to the owners on a close too? v1 clients would receive it as well (an existing event, same shape). | **Yes**, as a small separate task. | ❓ |
+| Q82 | A pick has no upper quantity limit. A barcode of digits typed into Qty would be accepted. | Cap it in the app (for example 9,999). | ❓ |

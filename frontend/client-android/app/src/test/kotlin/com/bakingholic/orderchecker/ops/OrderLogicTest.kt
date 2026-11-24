@@ -1,6 +1,5 @@
 package com.bakingholic.orderchecker.ops
 
-import com.bakingholic.orderchecker.api.model.PickItemEntryResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderInfoResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderItemBOMResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
@@ -15,16 +14,15 @@ class OrderLogicTest {
         orderSn = "251120ABC",
         shipBy = "2025-11-21T00:00:00",
         status = "READY_TO_SHIP",
-        info = listOf(ShopeeOrderInfoResponse(id = 1, pickupCode = "PK-77")),
+        info = listOf(ShopeeOrderInfoResponse(id = 1, pickupCode = "PK-77", trackingNumber = "SPXID77")),
         itemList = listOf(
             ShopeeOrderItemBOMResponse(componentSku = "CAKE-1", quantity = 2, componentName = "Choco cake", location = "A1"),
             ShopeeOrderItemBOMResponse(componentSku = "", quantity = 1),
         ),
     )
-    private var nextId = 1
 
-    private fun pick(sku: String, qty: Int, orderSn: String? = order.orderSn, name: String? = null) =
-        PickItemEntryResponse(id = nextId++, ownerUser = "ana", qty = qty, sku = sku, timestamp = "t", itemName = name, orderSn = orderSn)
+    private fun pick(sku: String, qty: Int, orderSn: String = order.orderSn, name: String? = null) =
+        OrderPick(orderSn, sku, name, qty)
 
     @Test
     fun progressFollowsTheBomAndThePicks() {
@@ -61,16 +59,32 @@ class OrderLogicTest {
         assertEquals(OrderState.DONE, p.state)
         assertEquals(1, p.requiredSkus)
         assertEquals(3, p.lines.single().required)
-        assertNull(overQuantityWarning(twice, listOf(pick("MUG", 3)), "MUG"))
+        assertNull(pickWarning(twice, "MUG", 3))
         assertEquals("Picking · 0/1 done", progressLabel(progress(twice, listOf(pick("MUG", 1)))))
     }
 
     @Test
-    fun overQuantityWarningUsesTheResolvedSku() {
-        assertNull(overQuantityWarning(order, listOf(pick("CAKE-1", 2)), "CAKE-1"))
-        val warning = overQuantityWarning(order, listOf(pick("CAKE-1", 2), pick("CAKE-1", 1)), "CAKE-1")
-        assertEquals("Scan quantity (3) exceeds requirement (2) for SKU: CAKE-1", warning)
-        assertNull(overQuantityWarning(order, listOf(pick("OTHER", 9)), "OTHER")) // not in the BOM
+    fun pickWarnsAboutTooManyAndAboutExtraSkus() {
+        assertNull(pickWarning(order, "CAKE-1", 2))
+        assertEquals("Scan quantity (3) exceeds requirement (2) for SKU: CAKE-1", pickWarning(order, "CAKE-1", 3))
+        assertTrue(pickWarning(order, "OTHER", 1)!!.startsWith("OTHER is not part of this order"))
+    }
+
+    @Test
+    fun pickedOrdersGoLastAndComeBack() {
+        val other = order.copy(orderSn = "251120XYZ")
+        val all = listOf(pick("CAKE-1", 2), pick(UNKNOWN_SKU, 1))
+        assertEquals(listOf(other) to listOf(order), splitPicked(listOf(order, other), all))
+        assertEquals(listOf(order, other), splitPicked(listOf(order, other), all.dropLast(1)).first)
+        // Extra items still need work: not sunk.
+        assertEquals(listOf(order, other), splitPicked(listOf(order, other), all + pick("OTHER", 1)).first)
+    }
+
+    @Test
+    fun quantitiesAreWholeNumbersInRange() {
+        assertEquals(3, validQty(" 3 ", 3))
+        listOf("", "0", "4", "-1", "x", "99999999999").forEach { assertNull(it, validQty(it, 3)) }
+        assertNull(validQty("99999999999"))
     }
 
     @Test
@@ -78,6 +92,7 @@ class OrderLogicTest {
         val picks = listOf(pick("CANDLE-9", 1, name = "Birthday candle"))
         assertTrue(matchesOrder(order, picks, ""))
         assertTrue(matchesOrder(order, picks, "pk-77"))
+        assertTrue(matchesOrder(order, picks, "spxid77"))
         assertTrue(matchesOrder(order, picks, "251120"))
         assertTrue(matchesOrder(order, picks, "choco"))
         assertTrue(matchesOrder(order, picks, "birthday"))
@@ -89,12 +104,6 @@ class OrderLogicTest {
     fun orderLabelsMustStartWithADate() {
         assertTrue(ORDER_SN_PATTERN.matches("251120ABCDEF"))
         assertFalse(ORDER_SN_PATTERN.matches("SPX123"))
-    }
-
-    @Test
-    fun unassignDefaultsToTheExcess() {
-        assertEquals(1, unassignDefault(picked = 3, required = 2))
-        assertEquals(2, unassignDefault(picked = 2, required = 2))
     }
 
     @Test

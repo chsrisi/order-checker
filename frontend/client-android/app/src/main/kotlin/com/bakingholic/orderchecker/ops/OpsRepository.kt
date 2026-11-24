@@ -2,10 +2,8 @@ package com.bakingholic.orderchecker.ops
 
 import com.bakingholic.orderchecker.api.model.OutboundCreate
 import com.bakingholic.orderchecker.api.model.OutboundResponse
-import com.bakingholic.orderchecker.api.model.PickItemEntryAssign
-import com.bakingholic.orderchecker.api.model.PickItemEntryCreate
-import com.bakingholic.orderchecker.api.model.PickItemEntryResponse
-import com.bakingholic.orderchecker.api.model.PickItemEntryUnassign
+import com.bakingholic.orderchecker.api.model.OrderPickRequest
+import com.bakingholic.orderchecker.api.model.OrderPickResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
 import com.bakingholic.orderchecker.api.model.StockCreate
 import com.bakingholic.orderchecker.api.model.WarehouseItemResponse
@@ -28,6 +26,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.URLEncoder
 
 /** A row of the `stocks_update` frame (WS payloads are not in the OpenAPI export). */
 @Serializable
@@ -36,6 +35,15 @@ data class StockRow(
     val sku: String,
     val stock: Int,
     val location: String? = null,
+    @SerialName("item_name") val itemName: String? = null,
+)
+
+/** A row of the `pick_item_entries_update` frame, shared with v1. */
+@Serializable
+private data class PickRow(
+    val sku: String,
+    val qty: Int,
+    @SerialName("order_sn") val orderSn: String? = null,
     @SerialName("item_name") val itemName: String? = null,
 )
 
@@ -59,12 +67,16 @@ class OpsRepository(
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val _orders = MutableStateFlow<List<ShopeeOrderResponse>>(emptyList())
     val orders: StateFlow<List<ShopeeOrderResponse>> = _orders
-    private val _picks = MutableStateFlow<List<PickItemEntryResponse>>(emptyList())
-    val picks: StateFlow<List<PickItemEntryResponse>> = _picks
+    private val _picks = MutableStateFlow<List<OrderPick>>(emptyList())
+    val picks: StateFlow<List<OrderPick>> = _picks
     private val _outbounds = MutableStateFlow<List<OutboundResponse>>(emptyList())
     val outbounds: StateFlow<List<OutboundResponse>> = _outbounds
     private val _stocks = MutableStateFlow<List<StockRow>>(emptyList())
     val stocks: StateFlow<List<StockRow>> = _stocks
+
+    /** False between logout and the next order snapshot: an empty list then means nothing. */
+    private val _ordersLoaded = MutableStateFlow(false)
+    val ordersLoaded: StateFlow<Boolean> = _ordersLoaded
 
     init {
         scope.launch {
@@ -86,8 +98,13 @@ class OpsRepository(
 
     internal fun apply(type: WsEventType, data: JsonArray) {
         when (type) {
-            WsEventType.SHOPEE_ORDERS -> _orders.value = decode(ShopeeOrderResponse.serializer(), data)
-            WsEventType.PICK_ITEM_ENTRIES -> _picks.value = decode(PickItemEntryResponse.serializer(), data)
+            WsEventType.SHOPEE_ORDERS -> {
+                _orders.value = decode(ShopeeOrderResponse.serializer(), data)
+                _ordersLoaded.value = true
+            }
+            WsEventType.PICK_ITEM_ENTRIES -> _picks.value = decode(PickRow.serializer(), data)
+                // Rows without an order are v1's pool, which v2 does not have (V2_PICKING_DELTA Q66).
+                .mapNotNull { row -> row.orderSn?.let { OrderPick(it, row.sku, row.itemName, row.qty) } }
             WsEventType.OUTBOUNDS -> _outbounds.value = decode(OutboundResponse.serializer(), data)
                 .sortedByDescending { it.createdAt }
             WsEventType.STOCKS -> _stocks.value = decode(StockRow.serializer(), data)
@@ -96,6 +113,7 @@ class OpsRepository(
     }
 
     fun clear() {
+        _ordersLoaded.value = false // before the list empties: see OpsController
         _orders.value = emptyList()
         _picks.value = emptyList()
         _outbounds.value = emptyList()
@@ -121,19 +139,20 @@ class OpsRepository(
     /** v1's "backend refresh" when an order is not found: a Shopee sync. */
     suspend fun syncOrders() = call(ApiRequest("GET", "/v2/shopee/orders", query = mapOf("refresh" to "true"))) { }
 
-    suspend fun pick(sku: String, qty: Int, orderSn: String?) = call(
-        ApiRequest("POST", "/v2/pick-items", jsonBody = body(PickItemEntryCreate(qty = qty, sku = sku, orderSn = orderSn), PickItemEntryCreate.serializer())),
-    ) { json.decodeFromString(PickItemEntryResponse.serializer(), it) }
+    /** Picks straight into the order (V2_PICKING_SPEC); answers the resolved SKU and its total. */
+    suspend fun pick(orderSn: String, sku: String, qty: Int) = orderPicks(orderSn, "", sku, qty)
 
-    suspend fun assign(entryId: Int, orderSn: String, qty: Int?) = call(
-        ApiRequest("POST", "/v2/pick-items/$entryId/assign", jsonBody = body(PickItemEntryAssign(orderSn = orderSn, qty = qty), PickItemEntryAssign.serializer())),
-    ) { }
+    /** Takes [qty] off the order and returns it to stock. */
+    suspend fun unassign(orderSn: String, sku: String, qty: Int) = orderPicks(orderSn, "/unassign", sku, qty)
 
-    suspend fun unassign(orderSn: String, sku: String, qty: Int) = call(
-        ApiRequest("POST", "/v2/pick-items/unassign", jsonBody = body(PickItemEntryUnassign(orderSn = orderSn, qty = qty, sku = sku), PickItemEntryUnassign.serializer())),
-    ) { }
-
-    suspend fun deletePick(entryId: Int) = call(ApiRequest("DELETE", "/v2/pick-items/$entryId")) { }
+    private suspend fun orderPicks(orderSn: String, suffix: String, sku: String, qty: Int) = call(
+        ApiRequest(
+            "POST",
+            // The label is scanned text: escape it as one path segment.
+            "/v2/shopee/orders/${URLEncoder.encode(orderSn, "UTF-8").replace("+", "%20")}/picks$suffix",
+            jsonBody = body(OrderPickRequest(qty = qty, sku = sku), OrderPickRequest.serializer()),
+        ),
+    ) { json.decodeFromString(OrderPickResponse.serializer(), it) }
 
     suspend fun outbound(content: String) = call(
         ApiRequest("POST", "/v2/outbound", jsonBody = body(OutboundCreate(content = content), OutboundCreate.serializer())),

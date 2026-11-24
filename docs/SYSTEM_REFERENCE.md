@@ -596,7 +596,8 @@ so every event reaches v1 and v2 devices and both admins alike.
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |
 | pick create / delete | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
-| pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
@@ -810,7 +811,8 @@ plan says so.
 4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
 5. Period closure pushes updates to admins only; operators see closed scans disappear on
-   their next `get_items`.
+   their next `get_items`. Orders too: the v2 app learns of a close from the 409 of its next
+   pick or unassign, and then reloads its orders.
 6. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
 
 ---

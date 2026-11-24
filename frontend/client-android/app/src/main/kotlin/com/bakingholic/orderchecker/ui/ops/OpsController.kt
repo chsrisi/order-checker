@@ -1,12 +1,13 @@
 package com.bakingholic.orderchecker.ui.ops
 
-import com.bakingholic.orderchecker.api.model.PickItemEntryResponse
+import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
 import com.bakingholic.orderchecker.api.model.StockCreate
 import com.bakingholic.orderchecker.api.model.WarehouseItemResponse
 import com.bakingholic.orderchecker.ops.ActionResult
 import com.bakingholic.orderchecker.ops.ORDER_SN_PATTERN
 import com.bakingholic.orderchecker.ops.OpsRepository
-import com.bakingholic.orderchecker.ops.overQuantityWarning
+import com.bakingholic.orderchecker.ops.displayCode
+import com.bakingholic.orderchecker.ops.pickWarning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +59,12 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
         else -> say("$fallback ${result.detail}".trim(), isError = true)
     }
 
+    /** 409: what this screen shows is stale (a close is not pushed to operators), so reload it. */
+    private fun orderFailed(result: ActionResult.Failed, fallback: String) {
+        failed(result, fallback)
+        if (result.code == 409) repo.requestSnapshots()
+    }
+
     private fun launchSaving(block: suspend () -> Unit) {
         scope.launch {
             _saving.value = true
@@ -69,18 +76,56 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
         }
     }
 
+    /** Input shows the Item mode; only possible with a selected order (V2_PICKING_SPEC §5.1). */
+    private val _itemMode = MutableStateFlow(false)
+    val itemMode: StateFlow<Boolean> = _itemMode
+
+    /** The scanned SKU waiting for its quantity, for the selected order. */
+    private val _pendingSku = MutableStateFlow<String?>(null)
+    val pendingSku: StateFlow<String?> = _pendingSku
+
+    init {
+        // The selected order may leave the list (done, cancelled). Right after a claim its frame
+        // has not arrived yet, so it must have been in the list before.
+        scope.launch {
+            var previous = emptyList<ShopeeOrderResponse>()
+            repo.orders.collect { orders ->
+                val selected = _selectedOrder.value
+                val before = previous.firstOrNull { it.orderSn == selected }
+                previous = orders
+                if (before != null && orders.none { it.orderSn == selected }) {
+                    selectOrder(null)
+                    if (repo.ordersLoaded.value) { // else: logged out
+                        say("${displayCode(before)} (${before.orderSn}) is no longer in your list: it was completed, cancelled or released.", alert = true)
+                    }
+                }
+            }
+        }
+    }
+
     fun selectOrder(orderSn: String?) {
+        if (orderSn != _selectedOrder.value) _pendingSku.value = null
         _selectedOrder.value = orderSn
+        _itemMode.value = orderSn != null
+    }
+
+    fun setItemMode(on: Boolean) {
+        _itemMode.value = on && _selectedOrder.value != null
+        _pendingSku.value = null
+    }
+
+    fun scanSku(sku: String?) {
+        _pendingSku.value = sku
     }
 
     fun clear() {
-        _selectedOrder.value = null
+        selectOrder(null)
         _found.value = null
         repo.clear()
     }
 
     /** Order mode: claim the scanned order; on 404 sync Shopee once and retry (v1). */
-    fun acquire(orderSn: String, onSelected: () -> Unit = {}) {
+    fun acquire(orderSn: String) {
         if (!ORDER_SN_PATTERN.matches(orderSn)) {
             say("Invalid Order SN. Must start with YYMMDD.", isError = true, alert = true)
             return
@@ -100,58 +145,35 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
             when (result) {
                 is ActionResult.Ok -> {
                     say("Order acquired successfully.")
-                    _selectedOrder.value = orderSn
-                    onSelected()
+                    selectOrder(orderSn)
                 }
                 is ActionResult.Failed -> failed(result, "Failed to acquire order.")
             }
         }
     }
 
-    /** Item mode: a pick for the selected order; warns (does not block) when over the BOM. */
-    fun pick(sku: String, qty: Int) {
-        val orderSn = _selectedOrder.value
-        if (orderSn == null) {
-            say("No order selected.", alert = true)
-            return
-        }
+    /** Item mode: picks the pending SKU into the selected order; warns, never blocks (Q63). */
+    fun pick(qty: Int) {
+        val orderSn = _selectedOrder.value ?: return say("No order selected.", alert = true)
+        val sku = _pendingSku.value ?: return
+        _pendingSku.value = null
         launchSaving {
-            when (val result = repo.pick(sku, qty, orderSn)) {
+            when (val result = repo.pick(orderSn, sku, qty)) {
                 is ActionResult.Ok -> {
-                    val entry = result.value
                     val order = repo.orders.value.firstOrNull { it.orderSn == orderSn }
-                    val picks = repo.picks.value.filterNot { it.id == entry.id } + entry
-                    val warning = order?.let { overQuantityWarning(it, picks, entry.sku) }
+                    val warning = order?.let { pickWarning(it, result.value.sku, result.value.qty) }
                     if (warning != null) say(warning, alert = true) else say("Scan entry posted.")
                 }
-                is ActionResult.Failed -> failed(result, "Failed to post scan entry.")
+                is ActionResult.Failed -> orderFailed(result, "Failed to post scan entry.")
             }
         }
     }
 
-    fun deletePick(entry: PickItemEntryResponse) = launchSaving {
-        when (val r = repo.deletePick(entry.id)) {
-            is ActionResult.Ok -> say("Scan entry deleted.")
-            is ActionResult.Failed -> failed(r, "Failed to delete scan entry.")
-        }
-    }
-
-    fun assign(entry: PickItemEntryResponse, orderSn: String, required: Int?) = launchSaving {
-        when (val r = repo.assign(entry.id, orderSn, null)) {
-            is ActionResult.Ok ->
-                if (required != null && entry.qty > required) {
-                    say("Assigned to label, but qty (${entry.qty}) exceeds order requirement ($required).", alert = true)
-                } else {
-                    say("Assigned to label.")
-                }
-            is ActionResult.Failed -> failed(r, "Failed to assign to label.")
-        }
-    }
-
+    /** Takes a quantity off an order; it goes back to stock at once. */
     fun unassign(orderSn: String, sku: String, qty: Int) = launchSaving {
         when (val r = repo.unassign(orderSn, sku, qty)) {
-            is ActionResult.Ok -> say("Moved $qty × $sku to Unknown.")
-            is ActionResult.Failed -> failed(r, "Failed to unassign.")
+            is ActionResult.Ok -> say("Returned $qty × $sku to stock.")
+            is ActionResult.Failed -> orderFailed(r, "Failed to unassign.")
         }
     }
 
