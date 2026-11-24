@@ -716,7 +716,8 @@ committed export `backend/openapi/v2.json`.
 | `set_admin_password` | apply the configured `ADMIN_PASSWORD` to the existing admin; refuses defaults; revokes its refresh tokens |
 | `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all pick entries and allocations **without** restoring stock; logs `cutover_clear` |
 | `stock_merge_single [--confirm]` | merge multi-bin SKUs onto their first bin before switching to `single` (dry run without `--confirm`) |
-| `seed_dev [--reset]` | synthetic orders/items for development; refuses under production rules |
+| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool) and **restore** their stock; counts only without `--confirm` |
+| `seed_dev [--reset] [--scenario picking]` | synthetic orders/items for development; refuses under production rules |
 | `ci_migration_gate.sh` | CI: upgrade from the previous release tag to head |
 
 ---

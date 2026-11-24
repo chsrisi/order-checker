@@ -259,6 +259,7 @@ cd backend
 APP_ENV=development uv run python -m scripts.seed_dev                      # idempotent
 APP_ENV=development uv run python -m scripts.seed_dev --reset              # remove, then re-add
 APP_ENV=development uv run python -m scripts.seed_dev --stock-mode single  # one bin per item
+APP_ENV=development uv run python -m scripts.seed_dev --scenario picking   # scannable orders with picks
 ```
 
 It creates:
@@ -268,6 +269,10 @@ It creates:
 - stock: in multi mode, several bins plus one item with no stock (shortfall case)
 - orders `DEV0001`–`DEV0008`: unclaimed, claimed, split into two packages, done, retry-ship,
   past ship-by (late, still listed), cancelled, and one past the 30-day retention
+
+With `--scenario picking`: orders `991231DEVPK01`–`08` (scannable in the v2 app) for `dev_op1`:
+unclaimed, partly picked from two bins, picked, over-picked, with a shortfall, with an extra SKU,
+cancelled with picks, done with picks; plus one v1 pool row, which v2 hides.
 
 The old untracked `temp/seed_mock_order.py` is superseded.
 
@@ -371,6 +376,11 @@ ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
 
 Each `(sku, location)` pair, including an unlocated one, has at most one stock row (unique
 index `uq_stocks_sku_location`). A row that reaches 0 is deleted, and a restore recreates it.
+
+### Releasing unassigned picks (when v1 retires)
+The v2 app has no picks without an order and does not show v1's. `python -m
+scripts.release_unassigned_picks` counts them; `--confirm` deletes them and returns their stock
+(`pick_restore`). Unlike the cutover script below, it leaves order picks alone.
 
 ### Cutover of legacy pick entries (one time)
 Entries created before the allocation table existed cannot be restored correctly. The release
