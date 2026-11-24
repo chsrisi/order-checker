@@ -377,3 +377,4 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q39–Q42~~ | ~~Admin Orders: hand-ticks, history filters, close all, previous close~~ | Decided (D9) | – | ✅ |
 | Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |
 | ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
+| ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |

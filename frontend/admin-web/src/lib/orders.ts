@@ -95,8 +95,8 @@ export function pickupCode(order: Order): string | null {
   return order.info?.find((i) => i.pickup_code)?.pickup_code ?? null
 }
 
-/** A label as matched everywhere: trimmed, lower-cased (Q44; the server close does the same). */
-export const normLabel = (label: string | null | undefined) => (label ?? '').trim().toLowerCase()
+/** A label as matched everywhere: trimmed, then exact (Q57; the server close does the same). */
+export const normLabel = (label: string | null | undefined) => (label ?? '').trim()
 
 /** Order SN and tracking numbers, normalised, as an outbound scan carries them. */
 function labelsOf(order: Order): string[] {

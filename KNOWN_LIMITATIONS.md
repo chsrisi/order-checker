@@ -198,3 +198,15 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**: `frontend/admin-web/src/lib/orders.ts` (`progress`),
   `frontend/client-android/.../ops/OrderLogic.kt` (`progress`),
   `backend/src/services/queries/orders.py` (`active_orders_query`, `local_active_order_sns`)
+
+### 13. An Order Shipped on Shopee Locks Its Picks Without an Admin
+- **Issue**: A Shopee sync closes an open outbound scan whose order is SHIPPED,
+  TO_CONFIRM_RECEIVE or COMPLETED, and marks the order done (V2_ORDERS_DELTA C1). Operators can
+  then no longer create or assign picks for it (409), even when it was packed but not fully picked.
+- **Impact**: None where packed means done and ready to ship (the maintainer's operation, F11).
+  In a strict operation, where every pick must be recorded before dispatch, the missing picks
+  (and their stock deduction) can no longer be entered on the order.
+- **Countermeasure (not applied)**: only auto-complete fully picked orders and leave the others
+  for an admin to close, or allow picks on done orders.
+- **Code References**: `backend/src/services/queries/outbound.py` (`close_shipped_outbound`),
+  `backend/src/services/queries/pick_items.py` (`OrderClosedError`)

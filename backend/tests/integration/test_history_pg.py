@@ -132,16 +132,17 @@ def test_close_search_keeps_closes_with_a_match_and_their_full_counts(pg_session
     assert queries.get_close_history(f=queries.HistoryFilter(q="nothing-like-this"))[1] == 0
 
 
-def test_lookup_finds_orders_and_scans_by_exact_label_in_any_case(pg_session_factory):
+def test_lookup_finds_orders_and_scans_by_exact_label(pg_session_factory):
     _seed_two_closes(pg_session_factory)
     queries.create_outbound_item(content="OPEN-9", owner_username="op", tags_in=[])
 
-    found = queries.lookup_label(" spx-111 ")
+    found = queries.lookup_label(" SPX-111 ")
     assert [o.order_sn for o in found["orders"]] == ["251101AAA"]
     assert [(s.content, s.closed) for s in found["scans"]] == [("SPX-111", True)]
-    by_sn = queries.lookup_label("251101aaa")  # an order found by SN; its scan was the tracking no.
+    by_sn = queries.lookup_label("251101AAA")  # an order found by SN; its scan was the tracking no.
     assert [o.order_sn for o in by_sn["orders"]] == ["251101AAA"] and by_sn["scans"] == []
-    open_scan = queries.lookup_label("open-9")
+    open_scan = queries.lookup_label("OPEN-9")
     assert open_scan["orders"] == [] and [s.closed for s in open_scan["scans"]] == [False]
+    assert queries.lookup_label("spx-111") == {"orders": [], "scans": []}  # Q57
     assert queries.lookup_label("SPX-11") == {"orders": [], "scans": []}  # exact, not substring
     assert queries.lookup_label("  ") == {"orders": [], "scans": []}

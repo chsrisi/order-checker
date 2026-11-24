@@ -165,9 +165,9 @@ def get_close_history(
 
 def lookup_label(label: str) -> dict:
     """Where an exact label is (V2_ORDERS_DELTA Q49): orders whose SN or a tracking number is
-    ``label``, and scans of it, open or closed. Trimmed and case-insensitive, like the close
-    (Q44); a few rows at most, newest first."""
-    key = (label or "").strip().lower()
+    ``label``, and scans of it, open or closed. Trimmed, then exact, like the close (Q57);
+    a few rows at most, newest first."""
+    key = (label or "").strip()
     if not key:
         return {"orders": [], "scans": []}
     with get_db() as db:
@@ -176,8 +176,8 @@ def lookup_label(label: str) -> dict:
                 select(ShopeeOrder)
                 .where(
                     or_(
-                        func.lower(ShopeeOrder.order_sn) == key,
-                        ShopeeOrder.info.any(func.lower(ShopeeOrderInfo.tracking_number) == key),
+                        ShopeeOrder.order_sn == key,
+                        ShopeeOrder.info.any(ShopeeOrderInfo.tracking_number == key),
                     )
                 )
                 .order_by(ShopeeOrder.done_at.desc().nulls_first(), ShopeeOrder.order_sn)
@@ -194,7 +194,7 @@ def lookup_label(label: str) -> dict:
         scans = (
             db.execute(
                 select(OutboundItem)
-                .where(func.lower(OutboundItem.content) == key)
+                .where(OutboundItem.content == key)
                 .order_by(OutboundItem.created_at.desc(), OutboundItem.id.desc())
                 .limit(20)
             )

@@ -33,16 +33,16 @@ def test_duplicate_inputs_count_once(pg_session_factory):
     assert result == {"outbound": 1, "unknown": 1, "orders_done": 0}
 
 
-def test_close_matches_labels_case_insensitively(pg_session_factory):
-    """V2_ORDERS_DELTA Q44: the console pairs labels case-insensitively, so the close must
-    too, for scans as well as for the orders it completes (by SN or tracking number)."""
+def test_close_matches_labels_exactly(pg_session_factory):
+    """V2_ORDERS_DELTA Q57 (replaces Q44): trimmed, then exact, for scans as well as for the
+    orders a close completes (by SN or tracking number)."""
     with pg_session_factory() as db:
         add_user(db, "alice")
         add_order(db, "260101ABCD")
         add_order(db, "260101TRCK", tracking="SPXID0123")
         db.commit()
     _scan("alice", "260101abcd")
-    _scan("alice", "spxid0123")
+    _scan("alice", "SPXID0123")
 
-    result = queries.close_outbound_items(["260101ABCD", "SPXID0123", "missing"], "admin")
-    assert result == {"outbound": 2, "unknown": 1, "orders_done": 2}
+    result = queries.close_outbound_items(["260101abcd", " SPXID0123 ", "spxid0123"], "admin")
+    assert result == {"outbound": 2, "unknown": 1, "orders_done": 1}

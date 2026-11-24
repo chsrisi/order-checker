@@ -113,14 +113,12 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
     if not clean_contents:
         return {"outbound": 0, "unknown": 0, "orders_done": 0}
 
-    # Labels match case-insensitively (V2_ORDERS_DELTA Q44), as the console pairs them.
-    keys = list(dict.fromkeys(c.lower() for c in clean_contents))
-
+    # Labels match exactly, after trimming (V2_ORDERS_DELTA Q57, which replaces Q44).
     with get_db() as db:
         result_outbound = db.execute(
             update(OutboundItem)
             .where(
-                func.lower(OutboundItem.content).in_(keys),
+                OutboundItem.content.in_(clean_contents),
                 OutboundItem.closed == False,  # noqa: E712
             )
             .values(closed=True, closed_at=now)
@@ -130,22 +128,22 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
         outbound_count = len(closed_contents)
         # Several scans (e.g. two operators) can share one label: count *inputs* that
         # matched nothing, not rows, so the number never goes negative (F-M1).
-        unknown_count = len(set(keys) - {c.lower() for c in closed_contents})
+        unknown_count = len(set(clean_contents) - set(closed_contents))
 
         matched_order_sns: set[str] = set(
             db.execute(
-                select(ShopeeOrder.order_sn).filter(func.lower(ShopeeOrder.order_sn).in_(keys))
+                select(ShopeeOrder.order_sn).filter(ShopeeOrder.order_sn.in_(clean_contents))
             )
             .scalars()
             .all()
         )
 
-        remaining = [k for k in keys if k not in {sn.lower() for sn in matched_order_sns}]
+        remaining = [c for c in clean_contents if c not in matched_order_sns]
         if remaining:
             tracking_matches = (
                 db.execute(
                     select(ShopeeOrderInfo.order_sn).filter(
-                        func.lower(ShopeeOrderInfo.tracking_number).in_(remaining),
+                        ShopeeOrderInfo.tracking_number.in_(remaining),
                         ShopeeOrderInfo.tracking_number.isnot(None),
                     )
                 )

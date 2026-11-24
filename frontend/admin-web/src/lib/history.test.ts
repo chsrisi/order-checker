@@ -30,13 +30,13 @@ describe('history', () => {
   })
 
   it('pairs a close’s orders with their scans and keeps the rest as strays', () => {
-    const scans = [scan('jx123'), scan('261122Y54'), scan('TOKO-1')]
+    const scans = [scan(' JX123 '), scan('261122Y54'), scan('TOKO-1'), scan('jx123')]
     const pairs = closePairs([jt, order('OTHER')], scans)
     expect(pairs.rows.map((r) => [r.order.order_sn, r.scans.length])).toEqual([
       ['261122Y54', 2],
       ['OTHER', 0],
     ])
-    expect(pairs.strays.map((s) => s.content)).toEqual(['TOKO-1'])
+    expect(pairs.strays.map((s) => s.content)).toEqual(['TOKO-1', 'jx123']) // labels match exactly (Q57)
     // A pair matches through its order or its scans; strays through themselves.
     const byScan = matchingPairs(pairs, 'toko')
     expect([byScan.rows.length, byScan.strays.length]).toEqual([0, 1])

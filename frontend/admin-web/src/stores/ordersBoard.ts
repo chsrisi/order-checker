@@ -149,6 +149,15 @@ export const useOrdersBoard = defineStore('ordersBoard', () => {
     const ids = new Set(shown.value.map((s) => s.id))
     return toClose.value.filter((s) => !ids.has(s.id)).length
   })
+  /**
+   * The close under review, frozen when the dialog opens (F7). `toClose` is live: if its
+   * selection vanished under the dialog it would fall back to every open scan.
+   */
+  const review = ref<{ scans: Outbound[]; scope: string; hidden: number } | null>(null)
+  function openReview() {
+    review.value = { scans: [...toClose.value], scope: scope.value, hidden: hiddenInClose.value }
+  }
+
   const scope = computed(() => (selected.value.size ? 'selected' : tag.value ? `“${tag.value}”` : 'open'))
 
   /** Fully picked, not packed or ticked: the gap to chase before a handover. */
@@ -203,6 +212,8 @@ export const useOrdersBoard = defineStore('ordersBoard', () => {
     toClose,
     hiddenInClose,
     scope,
+    review,
+    openReview,
     waiting,
     toggleScan,
     allShownSelected,

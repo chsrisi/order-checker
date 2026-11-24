@@ -208,3 +208,138 @@ Firefox checked: paired rows, the deprecated two lists, mobile, a close by borro
 and History search with the exact answer. Open for your trial: the layout itself, and SPEC §13.1
 (server-side split close), still 📌.
 
+
+---
+
+## Round 3 (2026-11-24)
+
+Checked by reading the code at `e292783` (merged to `dev` in PR #7). Nothing in this round is built.
+
+### R3.1 What you asked
+
+| # | Request |
+|---|---|
+| C1 | On a Shopee sync, check SHIPPED orders against the outbound scans; if one matches, close it. |
+| C2 | History "by close" becomes **by day** (00:00 to 23:59). |
+| C3 | Auto-sync stops from 21:00 to 06:00. |
+| C4 | Hovering a paired row highlights it as the r4 prototype does. |
+
+Reading of C2: only History's grouping changes. Nothing closes by itself at midnight.
+
+### R3.2 Verification
+
+| Point | Code | Verdict |
+|---|---|---|
+| Outbounds miss their order if not closed the same day | Active orders are READY_TO_SHIP, PROCESSED and RETRY_SHIP. Once a sync stores SHIPPED, the order leaves the list and its open scan becomes a stray. | ✅ Confirmed. **Corrects R2.2**, which said E4 "goes away" with the ship-by cutoff: a status change still causes it. |
+| What a late manual close does today | `close_outbound_items` does not look at the order's status. | The order is still completed. What is lost is the pairing, the borrowed courier and the preview count. |
+| Which shipped orders a sync sees | The list covers orders **created** in the last 2 days, plus every order still active locally. | An order is seen when it changes, but not again later if it is older. C1 must match against the **database**, not the batch just fetched. |
+| An order can pass SHIPPED unseen | TO_CONFIRM_RECEIVE and COMPLETED are stored as they arrive. With a 9-hour pause (C3) an instant order can go straight there. | Matching only SHIPPED would leave its scan open for good (Q51). |
+| A day has a time zone | Columns hold naive UTC. The backend has no time-zone setting, and `tzdata` is locked for Windows only. | C2 and C3 need one (Q54). |
+| Hover | r4: `.prow:hover` sets the border of the card, the scans and the empty slot to the primary colour; a selected scan keeps its red border. The console draws an outline around the row. | Console differs from r4. CSS only, no question. |
+
+### R3.3 Findings
+
+- **F7. The close review can change under the admin (shipped in PR #7, fix first).** The dialog
+  reads the live list. If the selected scans disappear while it is open (closed by another
+  admin, and with C1 by any sync), the selection becomes empty, and an empty selection means
+  *every* open scan (or every one with the chosen tag). Confirming then closes far more than was
+  reviewed, and a close cannot be undone. Found by reading; not reproduced yet. Fix: freeze the
+  labels when the dialog opens, with a test that fails first.
+- **F8. Q44 is incomplete.** `create_outbound_item` still compares labels case-sensitively, both
+  when it adds the courier tag and when it rejects a duplicate. Fix the courier match as Q44
+  says. The duplicate check is operator behaviour (contract v1), so it needs your word (Q57).
+- **F9. C1 and C3 together move evening parcels to the next day.** Packed on Monday, reported
+  shipped after 21:00, closed by the 06:00 sync: History lists it under Tuesday (Q53).
+- **F10. The first sync after deploying C1 closes the whole backlog** of matching scans in one
+  go, all dated that day, and it cannot be undone (Q56).
+- **F11. Consequences of completing an order automatically.** Same as a manual close: operators
+  can no longer add or assign picks to it (409). Packed but never picked orders can therefore
+  lock sooner, without an admin looking.
+- **F12. An opened close in History loads at most 500 scans and 500 orders** and does not say when
+  it cut something. A whole day makes that likelier; C2 pages it.
+
+### R3.4 Proposed behaviour
+
+- **C1.** After a sync stores its data, in the same lock: take every **open** scan whose label
+  (trimmed, lower-cased) is the SN or a tracking number of an order in the Q51 statuses; close the
+  scan, and mark the order done if it is not. One `now` for the run. Admins get the scans frame as
+  well as the orders frame. A shipped order with no scan is left alone, as today. A cached sync
+  does nothing. It runs on every real sync: automatic, *Sync Shopee*, or an operator's request.
+- **C2.** `GET /admin/history/days`: one row per local day with its scans, orders done and tags,
+  with `closed_from`, `closed_to` and `q`. An open day pairs orders with scans across all closes
+  of that day. Each row shows its close time. Lookup says "left on 24 Nov (closed 15:52)".
+  Supersedes Q42.
+- **C3.** `SHOPEE_AUTO_SYNC_PAUSE=21:00-06:00` (empty = no pause; 06:00 itself syncs). Manual and
+  operator-triggered syncs still work at night.
+- **C4.** The r4 rule, with C9 unaffected (hover carries no meaning).
+
+### R3.5 Questions
+
+| Ref | Question | Recommendation | Status |
+|---|---|---|---|
+| Q51 | Which statuses close a scan? | **SHIPPED, TO_CONFIRM_RECEIVE and COMPLETED.** Never CANCELLED, IN_CANCEL or TO_RETURN: those parcels need a person, so their scans stay open as strays. | ❓ |
+| Q52 | A split order is SHIPPED but only some packages were scanned. | **Close the scans it has and mark it done**, like a manual close (SPEC §13.1 (a)). Waiting for every package risks a scan that stays open for good. | ❓ |
+| Q53 | Which day does an overnight auto-close belong to (F9)? | **The close time**, so History never states a time that did not happen. Alternative: group scans by the day they were **scanned**; closer to "what left on Monday", but it departs from Q40's close-time filter. | ❓ |
+| Q54 | Which time zone, and how is it set? | **One server setting, a fixed offset: `BUSINESS_UTC_OFFSET=+07:00`**, for C2 and C3. No new dependency. Please confirm +07:00: I assumed it. A zone with daylight saving would need `tzdata`. | ❓ |
+| Q55 | Should History tell automatic closes from manual ones? | **Not in this round**: log each run with its counts. Showing it needs an additive column on scans and orders. | ❓ |
+| Q56 | The backlog on the first run (F10). | **Let it run**, after you export the scans CSV. Alternative: close only scans newer than a cutoff you name, and close the rest by hand. | ❓ |
+| Q57 | Should the duplicate-scan check ignore case too (F8)? | **No**: leave operator behaviour as it is; a scanner sends the same case each time. | ❓ |
+| Q58 | Replace `GET /admin/history/closes`, or keep it beside `/days`? | **Replace it**, and drop the `closed_at` filter with it. Only the console uses them, and the Flutter admin does not call `/closes`. This removes part of the admin API; operator contracts are untouched. | ❓ |
+
+### R3.6 Build order after your answers
+
+1. F7 and F8 (bugs, tests first) and C4.
+2. Q54 setting, then C3.
+3. C1, with PostgreSQL tests: each status, split orders, both barcodes, case, rescans, a partial
+   sync, no scan, no second effect on a second run.
+4. C2, then docs (API, SYSTEM_REFERENCE §7.1 and §7.7, OPERATIONS, V2_UX, tracker).
+
+One thing to check on a real order: that Shopee turns an order SHIPPED when the courier takes the
+parcel, not earlier when the label is arranged. C1 depends on it, and the code cannot show it.
+
+## Round 4 (2026-11-24)
+
+Your answers to Round 3. All of it is decided and being built, in the order of R4.4.
+
+### R4.1 Decisions
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q51 | SHIPPED, TO_CONFIRM_RECEIVE and COMPLETED close a matching open scan. Cancelled and returned orders never do. | ✅ |
+| Q52 | A shipped split order closes the scans it has and is marked done. | ✅ |
+| Q53 | **History days use the scan time**, not the close time. | ✅ |
+| Q54 | +07:00 confirmed: `BUSINESS_UTC_OFFSET=+07:00`. In addition **the backend becomes time-zone aware** (R4.3). | ✅ |
+| Q55 | Automatic closes are only logged for now. | 📌 |
+| Q56 | The first run closes the backlog. Export the scans CSV before deploying. | ✅ |
+| Q57 | **Labels match exactly, after trimming, everywhere.** Replaces Q44 (Round 2) and its "any case" lookup (Q49). A scanner sends the same case each time. F8 needs no fix. | ✅ |
+| Q58 | `/admin/history/closes` and the `closed_at` filter are removed. | ✅ |
+| F11 | Not a problem here (packed means done); recorded as KNOWN_LIMITATIONS #13 for stricter operations. | ✅ |
+
+Text search in History and in the filters stays case-insensitive: it is typed, not scanned.
+
+### R4.2 What Q53 means
+
+- A scan belongs to the local day it was **scanned**, and appears in History once it is closed. A
+  past day can therefore still grow: Monday's row gains Monday's parcels on Tuesday at 06:00. F9
+  no longer applies.
+- An order is listed on **every** day one of its closed scans was made, so that no scan of it looks
+  like a stray. A split order scanned over two days appears on both, and counts on both.
+- A done order without any closed scan falls on the day it was done.
+- Scans closed before v0.4 (no close time) now appear too.
+- The date range in History selects these days in all three views, replacing Q40's close-time
+  range there. The server keeps `closed_from` / `closed_to`.
+
+### R4.3 Time-zone aware backend
+
+- Every timestamp the app writes becomes `timestamptz`; existing values are taken as UTC, which is
+  how they were written. Connections run in UTC.
+- API output does not change for contract v1 (already UTC with `Z`). Device times gain the `Z`.
+- The scans CSV and export file names use the business offset.
+- **Not converted:** the imported dates on warehouse items and BOM tables. The app never writes or
+  reads them, so their zone is unknown.
+- Code before this release keeps working on the new columns (checked by reading, with the
+  database in UTC as in the images).
+
+### R4.4 Build order
+
+1. Exact matching, F7, C4. 2. Time zone, then C3. 3. C1. 4. C2 and docs.

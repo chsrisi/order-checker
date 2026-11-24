@@ -498,11 +498,11 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
 
 `POST /outbound/close [values…]` (admin, ≤ 10,000 × 1024 chars):
 
-1. Trim, drop empties, de-duplicate preserving order. Matching is **case-insensitive**
-   everywhere below (V2_ORDERS_DELTA Q44), like the console's pairing.
+1. Trim, drop empties, de-duplicate preserving order. Matching is **exact**
+   everywhere below (V2_ORDERS_DELTA Q57), like the console's pairing.
 2. Close all **open** scans (any user) whose `content` is in the list: `closed = true`,
    `closed_at = now`.
-3. `unknown` = submitted values (case-folded) that closed no scan.
+3. `unknown` = submitted values that closed no scan.
 4. Orders matched by `order_sn`; values that are not order numbers are matched against
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
@@ -604,7 +604,7 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   scans' tags. Rows without a close time (before v0.4) are left out. With `q`, only closes
   holding a matching scan or order are listed, with their full counts.
 - `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
-  number equals the label and the scans of it, open or closed; trimmed, case-insensitive, at
+  number equals the label and the scans of it, open or closed; trimmed, then exact, at
   most 10 orders and 20 scans. The console's History answers "did it leave?" from it.
 
 ---

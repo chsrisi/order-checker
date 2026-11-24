@@ -213,7 +213,7 @@ export interface paths {
         };
         /**
          * Find an exact label
-         * @description Answers "did it leave?" for an order SN, a tracking number or a scanned label: the orders it names (ongoing or done, with `done_at` = its close) and its scans, open or closed. Exact match, trimmed and case-insensitive.
+         * @description Answers "did it leave?" for an order SN, a tracking number or a scanned label: the orders it names (ongoing or done, with `done_at` = its close) and its scans, open or closed. Exact match after trimming.
          */
         get: operations["lookup_label_admin_lookup_get"];
         put?: never;

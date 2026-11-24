@@ -259,7 +259,7 @@ def get_close_history(
     description=(
         'Answers "did it leave?" for an order SN, a tracking number or a scanned label: the '
         "orders it names (ongoing or done, with `done_at` = its close) and its scans, open or "
-        "closed. Exact match, trimmed and case-insensitive."
+        "closed. Exact match after trimming."
     ),
     responses={403: {"description": "Admin scope required"}},
 )

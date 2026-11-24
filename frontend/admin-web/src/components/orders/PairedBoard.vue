@@ -163,9 +163,21 @@ function emptySlot(order: Order): { text: string; wait: boolean } {
   align-items: start;
   border-radius: 6px;
 }
-.prow:hover {
-  outline: 1px solid rgba(128, 128, 128, 0.35);
-  outline-offset: 2px;
+/* r4: hovering a row highlights the card, its scans and the empty slot (C4) */
+.prow:hover :deep(.card),
+.prow:hover :deep(.scan),
+.prow:hover .slot.empty {
+  border-color: #18a058;
+}
+@media (prefers-color-scheme: dark) {
+  .prow:hover :deep(.card),
+  .prow:hover :deep(.scan),
+  .prow:hover .slot.empty {
+    border-color: #63e2b7;
+  }
+}
+.prow:hover :deep(.scan.on) {
+  border-color: #d03050;
 }
 .slot.empty {
   border: 1px dashed rgba(128, 128, 128, 0.35);
