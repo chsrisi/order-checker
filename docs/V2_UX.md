@@ -259,6 +259,26 @@ classic admin. Notes for you to try:
   count is shown afterwards.
 - Scans and orders closed before v0.4 have no close time and do not appear in *By close*.
 
+**Round 2: Ongoing rebuilt from the round 4 prototype (2026-11-24).** Spec and edge cases:
+[V2_ORDERS_SPEC.md](V2_ORDERS_SPEC.md) §9–§13; decisions: [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md).
+
+- **Desktop paired rows** (Q47): each ongoing order beside the open scans that pack it, one
+  shared scroll. Scans that match no ongoing order come first, under *⚠ Scans with no ongoing
+  order*. An empty slot says *Picked · waiting for its outbound scan* (highlighted), *Ticked by
+  hand · no outbound scan* or *Not scanned yet*. The footer counts strays and orders waiting for
+  a scan, and says how many scans in the close are off screen.
+- **Two lists** (round 1) stay behind a switch, marked **deprecated**, to be removed later.
+- **Mobile** keeps the three tabs; an open card lists its outbound scans.
+- Cards start **open**; packed and hand-ticked cards start collapsed (a manual choice holds
+  until that changes). Packed orders sink to the bottom of their group under *Packed · n*.
+- **Picking states** (R4.3): *Not started* only without any pick; *Picking n/m* counts SKUs
+  touched; *Picked* = every SKU exact. BOM lines sharing a SKU are one requirement (F2).
+- **Split orders** (R4.1) are *partly packed · 1/2 packages* until every package's tracking
+  number is scanned; the close review warns that they still get marked done.
+- **Late** tag once ship-by passes; late orders stay listed (F4).
+- A scan with no tags borrows its order's courier for the chips, *Close all "courier"* and the
+  review's tag table, shown as "(from order)" (Q45).
+
 ### 2.6 Admin Settings: Shopee connection (D10)
 
 - **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.

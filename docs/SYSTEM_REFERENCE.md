@@ -32,7 +32,7 @@ and the implementation plan.
 | **Admin** | A user with `scope = "admin"`, using the Flutter admin web app (`frontend/admin`). Exactly the users created by the startup seed (`ADMIN_USERNAME`); the API never creates other admins. |
 | **Order** | A Shopee order, key `order_sn` (string, starts with `YYMMDD`). Table `shopee.orders`. |
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
-| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` AND `ship_by >= now()` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. |
+| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. There is no ship-by cutoff (V2_ORDERS_DELTA F4): a late order stays active until the sync sees it leave those statuses. |
 | **Claim / acquire** | Setting `shopee.orders.owner_user` to an operator. Atomic; see §7.2. |
 | **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick. |
 | **Allocation** | Row in `orders.pick_stock_allocations`: which bin a pick's deducted stock came from. Sum of allocations ≤ entry qty; the difference is a *shortfall*. |
@@ -387,8 +387,10 @@ sync is not marked complete.
 
 ### 7.2 Order visibility and claiming
 
-- Lists use `active_orders_query()` ordered by `ship_by DESC`. An order disappears from every
-  list once its `ship_by` passes, even if never completed.
+- Lists use `active_orders_query()` ordered by `ship_by DESC`. A **late** order (ship-by passed)
+  stays listed until Shopee reports it shipped or cancelled, or a close completes it: the sync
+  re-fetches every locally open order whatever its age (`local_active_order_sns`, §7.1), so
+  statuses stay current without a ship-by cutoff (removed in V2_ORDERS_DELTA F4).
 - `POST /shopee/orders/acquire?order_sn=` (query parameter) runs one conditional `UPDATE ...
   WHERE owner_user IS NULL OR owner_user = caller AND done = false RETURNING`. Results: 200
   (claimed, or already the caller's); 404 order unknown; 409 "Order already completed" or
@@ -493,10 +495,11 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
 
 `POST /outbound/close [values…]` (admin, ≤ 10,000 × 1024 chars):
 
-1. Trim, drop empties, de-duplicate preserving order.
+1. Trim, drop empties, de-duplicate preserving order. Matching is **case-insensitive**
+   everywhere below (V2_ORDERS_DELTA Q44), like the console's pairing.
 2. Close all **open** scans (any user) whose `content` is in the list: `closed = true`,
    `closed_at = now`.
-3. `unknown` = submitted values that closed no scan.
+3. `unknown` = submitted values (case-folded) that closed no scan.
 4. Orders matched by `order_sn`; values that are not order numbers are matched against
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.

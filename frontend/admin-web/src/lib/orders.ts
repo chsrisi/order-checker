@@ -1,4 +1,5 @@
 import type { Schemas } from '../api'
+import { parseUtc } from './time'
 
 /**
  * Order rules for the console's Orders page (V2_UX §2.4), kept as plain functions so they are
@@ -35,7 +36,10 @@ export interface SkuLine {
 
 export interface Progress {
   lines: SkuLine[]
+  /** Required SKUs picked exactly. */
   doneSkus: number
+  /** Required SKUs with any pick entry (R4.3: the count the console shows). */
+  touchedSkus: number
   requiredSkus: number
   state: OrderState
 }
@@ -46,24 +50,38 @@ function lineState(picked: number, required: number): LineState {
   return picked === required ? 'done' : 'over'
 }
 
+/**
+ * Picking progress (V2_ORDERS_DELTA R4.3): *Not started* = no pick entry for the order;
+ * *Picked* = every required SKU exact; *Extra items* = a SKU picked that the order lacks
+ * (wins); otherwise *Picking*. BOM lines that share a SKU are one requirement (F2): the server
+ * sums per (sku, name, location), so one SKU can arrive on several lines.
+ */
 export function progress(order: Order, picks: PickEntry[]): Progress {
-  const bom = order.item_list ?? []
+  const bom = new Map<string, { quantity: number; name: string | null; location: string | null }>()
+  for (const b of order.item_list ?? []) {
+    const sku = bomSku(b.component_sku)
+    const prev = bom.get(sku)
+    if (prev) prev.quantity += b.quantity
+    else bom.set(sku, { quantity: b.quantity, name: b.component_name || null, location: b.location || null })
+  }
   const mine = picks.filter((p) => p.order_sn === order.order_sn)
-  const skus = new Set<string>([...bom.map((b) => bomSku(b.component_sku)), ...mine.map((p) => p.sku)])
+  const skus = new Set<string>([...bom.keys(), ...mine.map((p) => p.sku)])
   const lines = [...skus].map((sku): SkuLine => {
-    const req = bom.find((b) => bomSku(b.component_sku) === sku)
+    const req = bom.get(sku)
     const picked = mine.filter((p) => p.sku === sku).reduce((n, p) => n + p.qty, 0)
     const required = req?.quantity ?? 0
-    const name = req?.component_name || mine.find((p) => p.sku === sku && p.item_name)?.item_name || 'Unknown item'
-    return { sku, name, location: req?.location || null, required, picked, state: lineState(picked, required) }
+    const name = req?.name || mine.find((p) => p.sku === sku && p.item_name)?.item_name || 'Unknown item'
+    return { sku, name, location: req?.location ?? null, required, picked, state: lineState(picked, required) }
   })
-  const doneSkus = lines.filter((l) => l.required === l.picked).length
+  const required = lines.filter((l) => l.required > 0)
+  const doneSkus = required.filter((l) => l.picked === l.required).length
+  const touchedSkus = required.filter((l) => l.picked > 0).length
   let state: OrderState
   if (lines.some((l) => l.required === 0)) state = 'extra'
-  else if (doneSkus === 0) state = 'not_started'
-  else if (doneSkus < bom.length) state = 'partial'
-  else state = 'done'
-  return { lines, doneSkus, requiredSkus: bom.length, state }
+  else if (mine.length === 0) state = 'not_started'
+  else if (doneSkus === required.length) state = 'done'
+  else state = 'partial'
+  return { lines, doneSkus, touchedSkus, requiredSkus: required.length, state }
 }
 
 export const orderStateLabel: Record<OrderState, string> = {
@@ -77,10 +95,12 @@ export function pickupCode(order: Order): string | null {
   return order.info?.find((i) => i.pickup_code)?.pickup_code ?? null
 }
 
-/** Order SN and tracking numbers, trimmed and lower-cased, as an outbound scan carries them. */
+/** A label as matched everywhere: trimmed, lower-cased (Q44; the server close does the same). */
+export const normLabel = (label: string | null | undefined) => (label ?? '').trim().toLowerCase()
+
+/** Order SN and tracking numbers, normalised, as an outbound scan carries them. */
 function labelsOf(order: Order): string[] {
-  const labels = [order.order_sn, ...(order.info ?? []).map((i) => i.tracking_number ?? '')]
-  return labels.map((l) => l.trim().toLowerCase()).filter(Boolean)
+  return [order.order_sn, ...(order.info ?? []).map((i) => i.tracking_number ?? '')].map(normLabel).filter(Boolean)
 }
 
 /** Label (SN or tracking number, normalised) → order SN, to show which order a scan packs. */
@@ -91,18 +111,92 @@ export function labelIndex(orders: Order[]): Map<string, string> {
 }
 
 export function orderForScan(index: Map<string, string>, scan: Outbound): string | null {
-  return index.get(scan.content.trim().toLowerCase()) ?? null
+  return index.get(normLabel(scan.content)) ?? null
 }
 
-/** Order SNs whose label (SN or tracking number) was scanned at outbound: "Packed" (v1 rule). */
+/** Label → every order it matches (one label can match two orders, SPEC E5). */
+export function ordersByLabel(orders: Order[]): Map<string, Order[]> {
+  const index = new Map<string, Order[]>()
+  for (const o of orders) for (const l of new Set(labelsOf(o))) index.set(l, [...(index.get(l) ?? []), o])
+  return index
+}
+
+/** Open scans whose label is this order's SN or one of its tracking numbers. */
+export function scansFor(order: Order, scans: Outbound[]): Outbound[] {
+  const labels = new Set(labelsOf(order))
+  return scans.filter((s) => labels.has(normLabel(s.content)))
+}
+
+/** Scans that match no ongoing order (most often a Tokopedia package, SPEC §2.1). */
+export function strayScans(orders: Order[], scans: Outbound[]): Outbound[] {
+  const all = new Set(orders.flatMap(labelsOf))
+  return scans.filter((s) => !all.has(normLabel(s.content)))
+}
+
+export interface PackageCoverage {
+  /** The order SN itself was scanned (it can't say which package). */
+  bySn: boolean
+  /** Packages whose own tracking number was scanned. */
+  scanned: number
+  total: number
+}
+
+export function packageCoverage(order: Order, scans: Outbound[]): PackageCoverage {
+  const scanned = new Set(scans.map((s) => normLabel(s.content)))
+  const info = order.info ?? []
+  return {
+    bySn: scanned.has(normLabel(order.order_sn)),
+    scanned: info.filter((i) => i.tracking_number && scanned.has(normLabel(i.tracking_number))).length,
+    total: info.length,
+  }
+}
+
+export type PackState = 'none' | 'partial' | 'packed'
+
+/**
+ * R4.1: an order is packed when one of its labels was scanned, except a split order (2+
+ * packages), which is packed only when every package's tracking number was scanned; before
+ * that it is *partly packed*. An SN scan alone never completes a split order.
+ */
+export function packState(order: Order, scans: Outbound[]): PackState {
+  const scanned = new Set(scans.map((s) => normLabel(s.content)))
+  if (!labelsOf(order).some((l) => scanned.has(l))) return 'none'
+  if ((order.info ?? []).length < 2) return 'packed'
+  const c = packageCoverage(order, scans)
+  return c.scanned < c.total ? 'partial' : 'packed'
+}
+
+/** Order SNs that count as packed (R4.1). */
 export function packedOrders(orders: Order[], scans: Outbound[]): Set<string> {
-  const scanned = new Set(scans.map((s) => s.content.trim().toLowerCase()))
-  return new Set(orders.filter((o) => labelsOf(o).some((l) => scanned.has(l))).map((o) => o.order_sn))
+  return new Set(orders.filter((o) => packState(o, scans) === 'packed').map((o) => o.order_sn))
 }
 
-/** How many open orders a close of these scans would mark done (preview; the server decides). */
+/** Order SNs that are partly packed split orders (R4.1). */
+export function partlyPackedOrders(orders: Order[], scans: Outbound[]): Set<string> {
+  return new Set(orders.filter((o) => packState(o, scans) === 'partial').map((o) => o.order_sn))
+}
+
+/**
+ * How many ongoing orders a close of these scans would mark done (preview; the server
+ * decides). The server completes every order matching a closed label, partly packed or not.
+ */
 export function ordersClosedBy(orders: Order[], scans: Outbound[]): number {
-  return packedOrders(orders, scans).size
+  return orders.filter((o) => scansFor(o, scans).length > 0).length
+}
+
+/**
+ * Q45: a scan with no tags at all borrows its paired order's courier, so the courier chip
+ * and *Close all "courier"* include it. Stored tags never change.
+ */
+export function effectiveTags(scan: Outbound, index: Map<string, Order[]>): { tags: string[]; fromOrder: boolean } {
+  if (scan.tags?.length) return { tags: scan.tags, fromOrder: false }
+  const courier = index.get(normLabel(scan.content))?.find((o) => o.shipping_carrier)?.shipping_carrier
+  return courier ? { tags: [courier], fromOrder: true } : { tags: [], fromOrder: false }
+}
+
+/** F4: late = ship-by passed while the order is still ongoing. */
+export function isLate(order: Order, now: Date = new Date()): boolean {
+  return parseUtc(order.ship_by).getTime() < now.getTime()
 }
 
 export type Category = 'all' | 'instant' | 'regular'
@@ -150,18 +244,23 @@ export function statusGroup(order: Order): string {
 
 const groupOrder = ['READY_TO_SHIP', 'PROCESSED']
 
-export function groupByStatus(orders: Order[]): Array<{ status: string; orders: Order[] }> {
+/**
+ * v1 grouping: Ready to ship, then Processed (Retry ship counts as Processed), then the rest.
+ * Inside a group, packed orders go last (R3), then the soonest ship-by first.
+ */
+export function groupByStatus(orders: Order[], packed: Set<string> = new Set()): Array<{ status: string; orders: Order[] }> {
   const groups = new Map<string, Order[]>()
   for (const o of orders) {
     const key = statusGroup(o)
     groups.set(key, [...(groups.get(key) ?? []), o])
   }
   const rank = (s: string) => (groupOrder.includes(s) ? groupOrder.indexOf(s) : groupOrder.length)
+  const sunk = (o: Order) => (packed.has(o.order_sn) ? 1 : 0)
   return [...groups.entries()]
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
     .map(([status, list]) => ({
       status,
-      orders: [...list].sort((a, b) => a.ship_by.localeCompare(b.ship_by) || a.order_sn.localeCompare(b.order_sn)),
+      orders: [...list].sort((a, b) => sunk(a) - sunk(b) || a.ship_by.localeCompare(b.ship_by) || a.order_sn.localeCompare(b.order_sn)),
     }))
 }
 
@@ -173,12 +272,15 @@ export function statusLabel(status: string): string {
     .join(' ')
 }
 
-/** Scan counts per tag for the close review; untagged scans count under "No tag". */
-export function countByTag(scans: Outbound[]): Array<{ tag: string; count: number }> {
+/**
+ * Scan counts per tag for the close review; untagged scans count under "No tag". [tagsOf]
+ * lets the review count a borrowed courier (Q45, see [effectiveTags]).
+ */
+export function countByTag(scans: Outbound[], tagsOf: (s: Outbound) => string[] = (s) => s.tags ?? []): Array<{ tag: string; count: number }> {
   const counts = new Map<string, number>()
   for (const s of scans) {
-    const tags = s.tags?.length ? s.tags : ['No tag']
-    for (const t of tags) counts.set(t, (counts.get(t) ?? 0) + 1)
+    const own = tagsOf(s)
+    for (const t of own.length ? own : ['No tag']) counts.set(t, (counts.get(t) ?? 0) + 1)
   }
   return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([tag, count]) => ({ tag, count }))
 }

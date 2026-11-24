@@ -266,21 +266,16 @@ async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
     shopee_service.conn_mgr.send_to_user.assert_awaited_once()
 
 
-def test_active_orders_query_cutoff_is_built_per_call():
-    """T1.1 / F-C1: two calls at different times carry different ship-by cutoffs."""
-    from datetime import UTC, datetime, timedelta
+def test_active_orders_query_has_no_ship_by_cutoff():
+    """V2_ORDERS_DELTA F4 (replaces T1.1's per-call cutoff): late orders stay active, so the
+    query carries no time parameter at all."""
+    from datetime import datetime
 
     from src.services.queries.orders import active_orders_query
 
-    early = datetime(2026, 1, 1, tzinfo=UTC)
-    late = early + timedelta(days=1)
-
-    def cutoff(query):
-        params = query.compile().params
-        return next(v for v in params.values() if isinstance(v, datetime))
-
-    assert cutoff(active_orders_query(early)) == early
-    assert cutoff(active_orders_query(late)) == late
+    params = active_orders_query().compile().params
+    assert not any(isinstance(v, datetime) for v in params.values())
+    assert "ship_by >=" not in str(active_orders_query())
 
 
 def test_redact_strips_signed_shopee_urls():

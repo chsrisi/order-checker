@@ -30,7 +30,9 @@ class OrderLogicTest {
     fun progressFollowsTheBomAndThePicks() {
         assertEquals(OrderState.NOT_STARTED, progress(order, emptyList()).state)
         val partial = progress(order, listOf(pick("CAKE-1", 1)))
-        assertEquals(OrderState.NOT_STARTED, partial.state) // no SKU complete yet
+        assertEquals(OrderState.PARTIAL, partial.state) // R4.3: any pick entry means Picking
+        assertEquals(0, partial.doneSkus)
+        assertEquals(OrderState.NOT_STARTED, progress(order, listOf(pick("CAKE-1", 2, orderSn = "X"))).state)
         assertEquals(LineState.PARTIAL, partial.lines.first { it.sku == "CAKE-1" }.state)
         val one = progress(order, listOf(pick("CAKE-1", 2)))
         assertEquals(OrderState.PARTIAL, one.state)
@@ -43,6 +45,24 @@ class OrderLogicTest {
         assertEquals(OrderState.EXTRA, extra.state)
         assertEquals("Candle", extra.lines.first { it.sku == "OTHER" }.name)
         assertEquals(0, extra.lines.first { it.sku == "CAKE-1" }.picked)
+    }
+
+    @Test
+    fun bomLinesSharingASkuAreOneRequirement() {
+        // V2_ORDERS_DELTA F2: the server sums per (sku, name, location), so one SKU can come on
+        // two lines; before, the order could never reach DONE.
+        val twice = order.copy(
+            itemList = listOf(
+                ShopeeOrderItemBOMResponse(componentSku = "MUG", quantity = 1, componentName = "Mug (listing 1)"),
+                ShopeeOrderItemBOMResponse(componentSku = "MUG", quantity = 2, componentName = "Mug (listing 2)"),
+            ),
+        )
+        val p = progress(twice, listOf(pick("MUG", 3)))
+        assertEquals(OrderState.DONE, p.state)
+        assertEquals(1, p.requiredSkus)
+        assertEquals(3, p.lines.single().required)
+        assertNull(overQuantityWarning(twice, listOf(pick("MUG", 3)), "MUG"))
+        assertEquals("Picking · 0/1 done", progressLabel(progress(twice, listOf(pick("MUG", 1)))))
     }
 
     @Test

@@ -31,29 +31,60 @@ val ORDER_SN_PATTERN = Regex("""^\d{6}.*""")
 fun displayCode(order: ShopeeOrderResponse): String =
     order.info.orEmpty().firstOrNull { !it.pickupCode.isNullOrEmpty() }?.pickupCode ?: order.orderSn
 
+private data class Requirement(val quantity: Int, val name: String?, val location: String?)
+
+/** BOM lines sharing a SKU are one requirement (V2_ORDERS_DELTA F2). */
+private fun requirements(order: ShopeeOrderResponse): Map<String, Requirement> {
+    val out = LinkedHashMap<String, Requirement>()
+    order.itemList.orEmpty().forEach { b ->
+        val sku = bomSku(b.componentSku)
+        val prev = out[sku]
+        out[sku] = prev?.copy(quantity = prev.quantity + b.quantity)
+            ?: Requirement(b.quantity, b.componentName?.takeIf { it.isNotEmpty() }, b.location?.takeIf { it.isNotEmpty() })
+    }
+    return out
+}
+
+/**
+ * Picking progress (V2_ORDERS_DELTA R4.3, same rule as the console): NOT_STARTED = no pick
+ * entry for the order; DONE = every required SKU exact; EXTRA = a SKU picked that the order
+ * lacks (wins); otherwise PARTIAL. [OrderProgress.doneSkus] counts SKUs picked exactly (Q46).
+ */
 fun progress(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>): OrderProgress {
-    val bom = order.itemList.orEmpty()
+    val bom = requirements(order)
     val mine = picks.filter { it.orderSn == order.orderSn }
     val skus = LinkedHashSet<String>().apply {
-        bom.forEach { add(bomSku(it.componentSku)) }
+        addAll(bom.keys)
         mine.forEach { add(it.sku) }
     }
     val lines = skus.map { sku ->
-        val req = bom.firstOrNull { bomSku(it.componentSku) == sku }
+        val req = bom[sku]
         val picked = mine.filter { it.sku == sku }.sumOf { it.qty }
-        val name = req?.componentName?.takeIf { it.isNotEmpty() }
+        val name = req?.name
             ?: mine.firstOrNull { it.sku == sku && !it.itemName.isNullOrEmpty() }?.itemName
             ?: "Unknown item"
-        SkuLine(sku, name, req?.location?.takeIf { it.isNotEmpty() }, req?.quantity ?: 0, picked)
+        SkuLine(sku, name, req?.location, req?.quantity ?: 0, picked)
     }
-    val done = lines.count { it.required == it.picked }
+    val required = lines.filter { it.required > 0 }
+    val done = required.count { it.picked == it.required }
     val state = when {
         lines.any { it.required == 0 } -> OrderState.EXTRA
-        done == 0 -> OrderState.NOT_STARTED
-        done < bom.size -> OrderState.PARTIAL
-        else -> OrderState.DONE
+        mine.isEmpty() -> OrderState.NOT_STARTED
+        done == required.size -> OrderState.DONE
+        else -> OrderState.PARTIAL
     }
-    return OrderProgress(lines, done, bom.size, state)
+    return OrderProgress(lines, done, required.size, state)
+}
+
+/** "Picking · 1/3 done": the state in words (C9) and the SKUs picked exactly (Q46). */
+fun progressLabel(p: OrderProgress): String {
+    val word = when (p.state) {
+        OrderState.NOT_STARTED -> "Not started"
+        OrderState.PARTIAL -> "Picking"
+        OrderState.DONE -> "Picked"
+        OrderState.EXTRA -> "Extra items"
+    }
+    return "$word · ${p.doneSkus}/${p.requiredSkus} done"
 }
 
 /**
@@ -61,7 +92,7 @@ fun progress(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>): Or
  * backlog: v1 compared the raw scan). Null when within the requirement or not part of the BOM.
  */
 fun overQuantityWarning(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>, resolvedSku: String): String? {
-    val required = order.itemList.orEmpty().firstOrNull { bomSku(it.componentSku) == resolvedSku }?.quantity ?: return null
+    val required = requirements(order)[resolvedSku]?.quantity ?: return null
     val picked = picks.filter { it.orderSn == order.orderSn && it.sku == resolvedSku }.sumOf { it.qty }
     return if (picked > required) "Scan quantity ($picked) exceeds requirement ($required) for SKU: $resolvedSku" else null
 }

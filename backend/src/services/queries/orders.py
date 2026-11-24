@@ -21,19 +21,19 @@ logger = logging.getLogger("backend.services.queries.orders")
 ACTIVE_ORDER_STATUSES = ("READY_TO_SHIP", "PROCESSED", "RETRY_SHIP")
 
 
-def active_orders_query(now: Optional[datetime] = None):
-    """Orders operators can still work on.
+def active_orders_query():
+    """Orders operators can still work on: not done here and still open on Shopee.
 
-    Built per call: the ship-by cutoff must be evaluated at query time, not at import time
-    (it used to be a module-level query, which froze "now" at server start).
+    Late orders (ship-by passed) stay in (V2_ORDERS_DELTA F4): the sync refreshes every open
+    order whatever its age (``local_active_order_sns``), so one that shipped or was cancelled
+    upstream leaves ``ACTIVE_ORDER_STATUSES`` on the next sync. The old ship-by cutoff only
+    hid late work.
     """
-    cutoff = now or datetime.now(UTC)
     return (
         select(ShopeeOrder)
         .filter(
             ShopeeOrder.done == False,  # noqa: E712
             ShopeeOrder.status.in_(ACTIVE_ORDER_STATUSES),
-            ShopeeOrder.ship_by >= cutoff,
         )
         .order_by(ShopeeOrder.ship_by.desc())
     )

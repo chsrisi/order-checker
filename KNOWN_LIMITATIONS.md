@@ -181,3 +181,20 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**: `frontend/admin-web/src/api/http.ts` (`send`),
   `frontend/admin-web/src/stores/shopeeConfig.ts` (`unlock`),
   `backend/src/routers/admin_shopee.py` (`unlock_shopee_config`)
+
+### 12. Orders That Can Never Show "Picked", and Orders That Stay Ongoing
+- **Issue (a)**: An order with a BOM line that has no SKU (a custom item: `component_sku` is
+  empty, shown as "No SKU") stays *Picking* in the console and the Android client: a pick always
+  resolves to a catalog SKU, so that line can never be picked.
+- **Issue (b)**: Since the ship-by cutoff was removed (V2_ORDERS_DELTA F4), an order stays
+  ongoing until the sync sees it leave READY_TO_SHIP / PROCESSED / RETRY_SHIP, or a close
+  completes it. An order whose detail Shopee stops returning, or a synthetic order from
+  `scripts.seed_dev` under `MOCK_ORDER_BYPASS`, stays ongoing for good.
+- **Impact**: Visible, not hidden: (a) the line is labelled "No SKU"; (b) the card is tagged
+  *Late*. The admin can hand-tick either one.
+- **Countermeasure (not applied)**: (a) let the BOM name a catalog SKU for custom items;
+  (b) if stuck orders show up in practice, a console action to mark one done, or a long safety
+  cutoff (for example 30 days past ship-by).
+- **Code References**: `frontend/admin-web/src/lib/orders.ts` (`progress`),
+  `frontend/client-android/.../ops/OrderLogic.kt` (`progress`),
+  `backend/src/services/queries/orders.py` (`active_orders_query`, `local_active_order_sns`)

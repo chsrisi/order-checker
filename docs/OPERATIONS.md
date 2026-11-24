@@ -263,7 +263,7 @@ It creates:
 - items `Z90_*`, including nested standard BOMs and marketplace BOMs `9000000xx`
 - stock: in multi mode, several bins plus one item with no stock (shortfall case)
 - orders `DEV0001`–`DEV0008`: unclaimed, claimed, split into two packages, done, retry-ship,
-  past ship-by, cancelled, and one past the 30-day retention
+  past ship-by (late, still listed), cancelled, and one past the 30-day retention
 
 The old untracked `temp/seed_mock_order.py` is superseded.
 
