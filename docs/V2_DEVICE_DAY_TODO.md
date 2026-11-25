@@ -20,6 +20,8 @@ device.
 - [x] Test operator account chosen
 
 > If the device day is weeks away, rebuild the APKs from the then-current code before the window.
+> **Required since T6.18 (2026-11-25):** APKs built before it call pick endpoints the backend no
+> longer has. Build 2.0.0 and the dummy update again, against a backend that includes T6.18.
 > Every published versionCode is permanent, so number them from the next unused code.
 
 ## B. Deploy v0.6.0 (RELEASE.md §5 "v0.6.0")

@@ -129,6 +129,13 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_operator(current_user: User = Depends(get_current_user)) -> User:
+    """Contract v2: admins administer, they do not work on orders (V2_PICKING_DELTA Q69, Q75)."""
+    if current_user.scope == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot work on orders")
+    return current_user
+
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 

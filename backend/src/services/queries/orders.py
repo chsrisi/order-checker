@@ -172,7 +172,7 @@ def _past_retention(order: ShopeeOrder, cutoff: datetime) -> bool:
     return not order.done and order.ship_by is not None and as_utc(order.ship_by) < cutoff
 
 
-def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> None:
+def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> list[str]:
     """Upsert order details from Shopee (T4.8 / F-M3).
 
     New orders are inserted with items, recipient and packages. Existing orders get their
@@ -180,7 +180,11 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
     note are updated only while the order is inside the retention window (A-10b), and a
     purged recipient row is never recreated. Packages whose tracking lookup failed are
     skipped and keep their previous values.
+
+    Returns who claimed an order that left the active list here, for example one cancelled or
+    shipped on Shopee: their lists are stale (V2_PICKING_DELTA Q83).
     """
+    left_active: set[str] = set()
     cutoff = as_utc(now or datetime.now(UTC)) - timedelta(days=config.RECIPIENT_RETENTION_DAYS)
     details = [d for chunk, _, _ in chunk_results for d in chunk]
     order_sns = [d.order_sn for d in details]
@@ -237,6 +241,12 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
                         recipient.name = order_detail.recipient_address.name
                         recipient.city = order_detail.recipient_address.city
 
+                if (
+                    not db_order.done
+                    and db_order.status in ACTIVE_ORDER_STATUSES
+                    and order_detail.order_status not in ACTIVE_ORDER_STATUSES
+                ):
+                    left_active.add(db_order.order_sn)
                 db_order.split_up = order_detail.split_up
                 db_order.status = order_detail.order_status
                 db_order.ship_by = order_detail.ship_by_date
@@ -273,7 +283,16 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
                             info.pickup_code = pickup_code
                         info.note = note
 
+        # Read after the updates hold the rows, so a claim made meanwhile counts too.
+        db.flush()
+        owners = db.execute(
+            select(ShopeeOrder.owner_user)
+            .where(ShopeeOrder.order_sn.in_(left_active), ShopeeOrder.owner_user.isnot(None))
+            .distinct()
+        ).scalars()
+        stale = sorted(owner for owner in owners if owner)
         db.commit()
+        return stale
 
 
 def local_active_order_sns(exclude: Iterable[str] = ()) -> list[str]:

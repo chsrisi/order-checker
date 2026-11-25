@@ -539,11 +539,13 @@ async def sync_shopee_orders(
                 failures = [o for o in outcomes if isinstance(o, BaseException)]
 
                 if chunk_results:
-                    await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                    stale = await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
                     # C1: also after a partial sync, for what it did store.
                     closed = await asyncio.to_thread(queries.close_shipped_outbound)
                     if closed["outbound"]:
                         await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+                    for owner in sorted({*stale, *closed["owners"]}):  # V2_PICKING_DELTA Q81, Q83
+                        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=owner)
                 if failures:  # partial sync: keep what arrived, never mark it complete
                     logger.warning(
                         "shopee_sync_partial",

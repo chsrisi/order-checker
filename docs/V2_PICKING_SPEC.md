@@ -1,6 +1,6 @@
 # v2 picking: pick straight into the order
 
-Spec (planning flow step 1), 2026-11-24. The code was read at `74d0692` (`feat/v2-parity`).
+Spec (planning flow step 1), 2026-11-24. The code was read at `74d0692` (`feat/v2-orders-auto-close`).
 Nothing is implemented. Findings marked *(read)* come from reading the code, not from a failing
 test. Decisions are in [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md), which wins over this file.
 

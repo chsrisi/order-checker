@@ -326,12 +326,13 @@ cache.
 | Capability | Operator | Admin |
 |---|---|---|
 | List active orders (HTTP and WS) | **only orders it claimed** | all active orders |
-| Claim an order | yes | yes (same rules) |
+| Claim an order | yes | v1 routes: yes (same rules); `/v2`: no (403) |
 | Pick entries: list | own | all |
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
+| `/v2` order picks and unassign | own orders | no (403) |
 | Outbound scans: list (open) | own | all open |
-| Outbound: create scan | yes | yes |
+| Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
 | Stocks: read, adjust, transfer | yes | yes |
 | Item search | yes | yes |
@@ -377,7 +378,9 @@ only reads the database.
    scan whose label is exactly the SN or a tracking number of an order in `SHIPPED`,
    `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
    database, not this sync's batch; cancelled and returned orders and unscanned ones are left
-   alone. If it closed any, admins get `outbound_update`. Logged as `outbound.auto_closed`.
+   alone. If it closed any, admins get `outbound_update`, and the
+   claimers of the orders it completed get `shopee_orders_update` (Q81), as do
+   the claimers of orders this sync took off the active list (cancelled, shipped; Q83). Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -528,8 +531,9 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
 5. Returns `{outbound, unknown, orders_done}`; invalidates the sync cache; broadcasts
-   `outbound_update` and `shopee_orders_update` **to admins only** (operators' lists update on
-   their next request).
+   `outbound_update` and `shopee_orders_update` to admins, and `shopee_orders_update` to each
+   operator who claimed an order it completed (V2_PICKING_DELTA Q81; operators' scan lists
+   update on their next request).
 
 `DELETE /admin/clear/outbound-items` deletes every scan (open and closed) and their tags;
 admins get `outbound_update`. `/admin/history/outbound` lists closed scans; exports: §9.
@@ -591,11 +595,13 @@ so every event reaches v1 and v2 devices and both admins alike.
 | user created/registered/reset/deleted | `users_update` | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
+| claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |
 | all scans cleared | `outbound_update` | admins |
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |
 | pick create / delete | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
-| pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
@@ -677,7 +683,7 @@ Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contrac
 committed export `backend/openapi/v2.json`.
 
 - `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
-  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  "Operator-client contract v2"), except picks, **reusing the v1 endpoint functions**, response models,
   summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
   operations.
 - Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
@@ -685,6 +691,9 @@ committed export `backend/openapi/v2.json`.
   `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
   ungated. The metadata file is re-read only when its mtime changes
   (`services/client_releases.py`).
+- Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
+  delete do not exist in v2. Claim, pick, unassign and outbound require an operator
+  (`require_operator`, `OPERATOR_ONLY`).
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
@@ -712,7 +721,8 @@ committed export `backend/openapi/v2.json`.
 | `set_admin_password` | apply the configured `ADMIN_PASSWORD` to the existing admin; refuses defaults; revokes its refresh tokens |
 | `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all pick entries and allocations **without** restoring stock; logs `cutover_clear` |
 | `stock_merge_single [--confirm]` | merge multi-bin SKUs onto their first bin before switching to `single` (dry run without `--confirm`) |
-| `seed_dev [--reset]` | synthetic orders/items for development; refuses under production rules |
+| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool) and **restore** their stock; counts only without `--confirm` |
+| `seed_dev [--reset] [--scenario picking]` | synthetic orders/items for development; refuses under production rules |
 | `ci_migration_gate.sh` | CI: upgrade from the previous release tag to head |
 
 ---
@@ -805,7 +815,8 @@ plan says so.
 4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
 5. Period closure pushes updates to admins only; operators see closed scans disappear on
-   their next `get_items`.
+   their next `get_items`. Orders too: the v2 app learns of a close from the 409 of its next
+   pick or unassign, and then reloads its orders.
 6. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
 
 ---

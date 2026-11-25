@@ -36,7 +36,7 @@ from .routers import (
     client_release,
     device,
 )
-from .routers.v2 import include_v2
+from .routers.v2 import include_v2, order_picks
 
 load_dotenv(find_dotenv())
 configure_logging()
@@ -243,13 +243,13 @@ app.include_router(websocket.v2_router)
 app.include_router(client_release.router)
 app.include_router(device.router)
 app.include_router(meta.router)
+app.include_router(order_picks.router)
 # Contract v2 mirrors the client operations registered above (T6.3).
 include_v2(
     app,
     [
         auth.router,
         outbound.router,
-        pick_items.router,
         shopee.router,
         items.router,
         stocks.router,

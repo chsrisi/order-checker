@@ -4,6 +4,7 @@
     APP_ENV=development uv run python -m scripts.seed_dev            # add (idempotent)
     APP_ENV=development uv run python -m scripts.seed_dev --reset    # remove, then add
     APP_ENV=development uv run python -m scripts.seed_dev --stock-mode single
+    APP_ENV=development uv run python -m scripts.seed_dev --scenario picking  # orders with picks
 
 Refuses to run unless APP_ENV=development (production rules otherwise apply).
 """
@@ -11,7 +12,7 @@ Refuses to run unless APP_ENV=development (production rules otherwise apply).
 import argparse
 import sys
 
-from .seed import SeedRefused, remove_seed, seed
+from .seed import SeedRefused, remove_seed, seed, seed_picking
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,11 +26,16 @@ def main(argv: list[str] | None = None) -> int:
         default="multi",
         help="stock layout: several bins per item (multi) or one (single)",
     )
+    parser.add_argument(
+        "--scenario", choices=("picking",), help="also add scannable orders with picks"
+    )
     args = parser.parse_args(argv)
     try:
         if args.reset:
             print(f"removed: {remove_seed()}")
         print(f"seeded: {seed(stock_mode=args.stock_mode)}")
+        if args.scenario == "picking":
+            print(f"picking scenario: {seed_picking()} orders")
     except SeedRefused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2

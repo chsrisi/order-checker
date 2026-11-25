@@ -1,7 +1,9 @@
 package com.bakingholic.orderchecker.ops
 
-import com.bakingholic.orderchecker.api.model.PickItemEntryResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
+
+/** What an order has of one SKU. The server's pick entry IDs stay inside [OpsRepository]. */
+data class OrderPick(val orderSn: String, val sku: String, val name: String?, val qty: Int)
 
 /** One SKU line of an order: what the BOM requires and what was picked (v1 orders_view). */
 data class SkuLine(val sku: String, val name: String, val location: String?, val required: Int, val picked: Int) {
@@ -50,7 +52,7 @@ private fun requirements(order: ShopeeOrderResponse): Map<String, Requirement> {
  * entry for the order; DONE = every required SKU exact; EXTRA = a SKU picked that the order
  * lacks (wins); otherwise PARTIAL. [OrderProgress.doneSkus] counts SKUs picked exactly (Q46).
  */
-fun progress(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>): OrderProgress {
+fun progress(order: ShopeeOrderResponse, picks: List<OrderPick>): OrderProgress {
     val bom = requirements(order)
     val mine = picks.filter { it.orderSn == order.orderSn }
     val skus = LinkedHashSet<String>().apply {
@@ -61,7 +63,7 @@ fun progress(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>): Or
         val req = bom[sku]
         val picked = mine.filter { it.sku == sku }.sumOf { it.qty }
         val name = req?.name
-            ?: mine.firstOrNull { it.sku == sku && !it.itemName.isNullOrEmpty() }?.itemName
+            ?: mine.firstOrNull { it.sku == sku && !it.name.isNullOrEmpty() }?.name
             ?: "Unknown item"
         SkuLine(sku, name, req?.location, req?.quantity ?: 0, picked)
     }
@@ -88,27 +90,31 @@ fun progressLabel(p: OrderProgress): String {
 }
 
 /**
- * The over-quantity warning after a pick, on the **resolved** SKU the server stored (spec §4.3
- * backlog: v1 compared the raw scan). Null when within the requirement or not part of the BOM.
+ * The warning after a pick (V2_PICKING_DELTA Q63: warn, never block), on the **resolved** SKU and
+ * the line's total the server answered with. Null when the order needs that many.
  */
-fun overQuantityWarning(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>, resolvedSku: String): String? {
-    val required = requirements(order)[resolvedSku]?.quantity ?: return null
-    val picked = picks.filter { it.orderSn == order.orderSn && it.sku == resolvedSku }.sumOf { it.qty }
-    return if (picked > required) "Scan quantity ($picked) exceeds requirement ($required) for SKU: $resolvedSku" else null
+fun pickWarning(order: ShopeeOrderResponse, resolvedSku: String, total: Int): String? {
+    val required = requirements(order)[resolvedSku]?.quantity
+        ?: return "$resolvedSku is not part of this order. Tap it and Remove if this was a mistake."
+    return if (total > required) "Scan quantity ($total) exceeds requirement ($required) for SKU: $resolvedSku" else null
 }
 
-/** v1 order search: SN, pickup code, BOM SKU or name, picked SKU or name (case-insensitive). */
-fun matchesOrder(order: ShopeeOrderResponse, picks: List<PickItemEntryResponse>, query: String): Boolean {
+/** Order search: SN, pickup code, tracking number, BOM or picked SKU or name (case-insensitive). */
+fun matchesOrder(order: ShopeeOrderResponse, picks: List<OrderPick>, query: String): Boolean {
     val q = query.trim().lowercase()
     if (q.isEmpty()) return true
     if (order.orderSn.lowercase().contains(q)) return true
-    if (displayCode(order).lowercase().contains(q)) return true
+    if (order.info.orEmpty().any { it.pickupCode.orEmpty().lowercase().contains(q) || it.trackingNumber.orEmpty().lowercase().contains(q) }) return true
     if (order.itemList.orEmpty().any { it.componentSku.lowercase().contains(q) || it.componentName.orEmpty().lowercase().contains(q) }) return true
-    return picks.any { it.orderSn == order.orderSn && (it.sku.lowercase().contains(q) || it.itemName.orEmpty().lowercase().contains(q)) }
+    return picks.any { it.orderSn == order.orderSn && (it.sku.lowercase().contains(q) || it.name.orEmpty().lowercase().contains(q)) }
 }
 
-/** Default quantity in the v1 unassign dialog: the excess when over, else everything picked. */
-fun unassignDefault(picked: Int, required: Int): Int = if (picked > required) picked - required else picked
+/** List: what still needs work, then the fully picked orders (Q76), each in the server's order. */
+fun splitPicked(orders: List<ShopeeOrderResponse>, picks: List<OrderPick>): Pair<List<ShopeeOrderResponse>, List<ShopeeOrderResponse>> =
+    orders.partition { progress(it, picks).state != OrderState.DONE }
+
+/** A quantity an operator typed: a whole number from 1 to [max], else null. */
+fun validQty(text: String, max: Int = Int.MAX_VALUE): Int? = text.trim().toIntOrNull()?.takeIf { it in 1..max }
 
 /** Distinct non-empty locations that hold [sku] (case-insensitive), for the stock form. */
 fun locationsFor(stocks: List<StockRow>, sku: String): List<String> =

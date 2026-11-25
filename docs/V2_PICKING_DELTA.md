@@ -196,3 +196,42 @@ r1 is kept only for comparison.
 |---|---|---|
 | Q80 | Supplier barcodes in the List search are pinned for later. The search is mainly for finding an order by its **order SN**. | 📌 |
 | – | Go-ahead: planned and built as T6.17–T6.20 (IMPLEMENTATION_PLAN). | ✅ |
+
+---
+
+## Round 7 (2026-11-25): built
+
+T6.17–T6.20 are built (IMPLEMENTATION_PLAN §7). Two findings from the emulator check:
+
+| Ref | Question | Recommendation | Status |
+|---|---|---|---|
+| Q81 | A close (manual or automatic) is not pushed to operators, so a closed order stays in their list until the next reload. The app now reloads on the 409 of its next pick or unassign. Push `shopee_orders_update` to the owners on a close too? v1 clients would receive it as well (an existing event, same shape). | **Yes**, as a small separate task. | ❓ |
+| Q82 | A pick has no upper quantity limit. A barcode of digits typed into Qty would be accepted. | Cap it in the app (for example 9,999). | ❓ |
+
+---
+
+## Round 8 (2026-11-25)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q81 | Accepted: a close (period or sync) sends `shopee_orders_update` to the operators who claimed the orders it completed, v1 clients included. Built as T6.24. | ✅ |
+| Q82 | No quantity cap now. Future to-do instead: **fix the stock logic to use the unit of measure (UOM)**. | 📌 |
+
+**Q82, for later.** `warehouse.items` has `uom`, `whole_uom`, `whole_deno` and the per-box/pack
+fields, but no stock, pick or BOM code reads them: every quantity is a plain number. The meaning
+of those fields, and the unit of an order line, a pick and a stock row, must be settled first.
+Needs its own spec.
+
+| Ref | Question | Recommendation | Status |
+|---|---|---|---|
+| Q83 | An order that leaves the active list in a sync **without** a close (cancelled, or shipped without a scan) is still not pushed to its owner. Push those too? | **Yes**, later; the app still reloads on a 409. | ❓ |
+
+---
+
+## Round 9 (2026-11-25)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q83 | Push those too: a sync that takes a claimed order off the active list (cancelled, shipped, …) sends `shopee_orders_update` to its owner. Built with T6.24. | ✅ |
+| – | UX acceptance of T6.20 is pinned for later. | 📌 |
+| – | Merge into `feat/v2-orders-auto-close` now. | ✅ |

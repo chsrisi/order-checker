@@ -390,3 +390,23 @@ async def test_auto_sync_rests_in_the_nightly_pause(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls
+
+
+@pytest.mark.asyncio
+async def test_a_close_tells_the_owners_and_keeps_them_out_of_its_response(monkeypatch):
+    """V2_PICKING_DELTA Q81."""
+    closed = {"outbound": 1, "unknown": 0, "orders_done": 2, "owners": ["alice", "bob"]}
+    monkeypatch.setattr(outbound_service.queries, "close_outbound_items", lambda **_: dict(closed))
+    monkeypatch.setattr(outbound_service.cache_mgr, "invalidate", lambda: None)
+    monkeypatch.setattr(outbound_service.conn_mgr, "broadcast", AsyncMock())
+    monkeypatch.setattr(outbound_service.conn_mgr, "send_to_user", AsyncMock())
+    assert await outbound_service.close_outbound_items(["x"], "admin") == {
+        "outbound": 1,
+        "unknown": 0,
+        "orders_done": 2,
+    }
+    told = outbound_service.conn_mgr.send_to_user.await_args_list
+    assert [(c.args[0].value, c.kwargs["username"]) for c in told] == [
+        ("shopee_orders_update", "alice"),
+        ("shopee_orders_update", "bob"),
+    ]

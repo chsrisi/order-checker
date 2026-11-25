@@ -190,6 +190,12 @@ classic admin. Notes for you to try:
   them in the list.
 - Typing a quantity or location opens the soft keyboard; the scan fields do not.
 
+**Picking round 2: built (2026-11-25, T6.20).** Picking and Outbound are separate Home entries.
+Picking has **Input** (Order: the scan box; Item: SKU, quantity, Submit Scan, the order's card)
+and **List** (scan or search; expanded cards; *Picked · n* collapsed at the bottom). A tap on a
+line selects its order and shows Remove → Unassign, which returns stock at once. Replaces the
+unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md).
+
 ### 2.4 Admin Workers (D9)
 
 - **Goal:** manage operator accounts in the console; see who is on which device.

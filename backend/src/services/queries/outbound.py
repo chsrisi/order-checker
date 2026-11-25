@@ -109,12 +109,17 @@ def create_outbound_item(content: str, owner_username: str, tags_in: List[str]) 
         return db_item
 
 
+def _owners(done_rows) -> List[str]:
+    """Who claimed the orders a close completed: their lists are stale (V2_PICKING_DELTA Q81)."""
+    return sorted({row.owner_user for row in done_rows if row.owner_user})
+
+
 def close_outbound_items(contents: List[str], admin_username: str) -> dict:
     logger.info(f"Admin {admin_username} closing period for {len(contents)} items")
     now = datetime.now(UTC)
     clean_contents = list(dict.fromkeys(c.strip() for c in contents if c and c.strip()))
     if not clean_contents:
-        return {"outbound": 0, "unknown": 0, "orders_done": 0}
+        return {"outbound": 0, "unknown": 0, "orders_done": 0, "owners": []}
 
     # Labels match exactly, after trimming (V2_ORDERS_DELTA Q57, which replaces Q44).
     with get_db() as db:
@@ -155,28 +160,28 @@ def close_outbound_items(contents: List[str], admin_username: str) -> dict:
             )
             matched_order_sns.update(tracking_matches)
 
-        orders_done_count = 0
+        done: list = []
         if matched_order_sns:
-            result_orders = db.execute(
+            done = db.execute(
                 update(ShopeeOrder)
                 .where(
                     ShopeeOrder.order_sn.in_(list(matched_order_sns)),
                     ShopeeOrder.done == False,  # noqa: E712
                 )
                 .values(done=True, done_at=now)
-                .returning(ShopeeOrder.order_sn)
-            )
-            orders_done_count = len(result_orders.all())
+                .returning(ShopeeOrder.order_sn, ShopeeOrder.owner_user)
+            ).all()
 
         db.commit()
         logger.info(
             f"Closed period: {outbound_count} outbound, {unknown_count} unknown, "
-            f"{orders_done_count} orders done"
+            f"{len(done)} orders done"
         )
         return {
             "outbound": outbound_count,
             "unknown": unknown_count,
-            "orders_done": orders_done_count,
+            "orders_done": len(done),
+            "owners": _owners(done),
         }
 
 
@@ -201,7 +206,7 @@ def close_shipped_outbound() -> dict:
     with get_db() as db:
         pairs = db.execute(shipped).all()
         if not pairs:
-            return {"outbound": 0, "orders_done": 0}
+            return {"outbound": 0, "orders_done": 0, "owners": []}
         closed = db.execute(
             update(OutboundItem)
             .where(
@@ -218,12 +223,12 @@ def close_shipped_outbound() -> dict:
                 ShopeeOrder.done == False,  # noqa: E712
             )
             .values(done=True, done_at=now)
-            .returning(ShopeeOrder.order_sn)
+            .returning(ShopeeOrder.order_sn, ShopeeOrder.owner_user)
         ).all()
         db.commit()
     result = {"outbound": len(closed), "orders_done": len(done)}
     logger.info("outbound_auto_closed", extra={"event": "outbound.auto_closed", **result})
-    return result
+    return {**result, "owners": _owners(done)}
 
 
 def clear_all_outbound_items() -> int:
