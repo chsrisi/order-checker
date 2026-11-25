@@ -225,3 +225,13 @@ Needs its own spec.
 | Ref | Question | Recommendation | Status |
 |---|---|---|---|
 | Q83 | An order that leaves the active list in a sync **without** a close (cancelled, or shipped without a scan) is still not pushed to its owner. Push those too? | **Yes**, later; the app still reloads on a 409. | ❓ |
+
+---
+
+## Round 9 (2026-11-25)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q83 | Push those too: a sync that takes a claimed order off the active list (cancelled, shipped, …) sends `shopee_orders_update` to its owner. Built with T6.21. | ✅ |
+| – | UX acceptance of T6.20 is pinned for later. | 📌 |
+| – | Merge into `feat/v2-orders-auto-close` now. | ✅ |

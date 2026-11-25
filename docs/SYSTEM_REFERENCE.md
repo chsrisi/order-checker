@@ -379,7 +379,8 @@ only reads the database.
    `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
    database, not this sync's batch; cancelled and returned orders and unscanned ones are left
    alone. If it closed any, admins get `outbound_update`, and the
-   claimers of the orders it completed get `shopee_orders_update` (Q81). Logged as `outbound.auto_closed`.
+   claimers of the orders it completed get `shopee_orders_update` (Q81), as do
+   the claimers of orders this sync took off the active list (cancelled, shipped; Q83). Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -594,7 +595,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 | user created/registered/reset/deleted | `users_update` | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
-| order completed by a close (period or sync) | `shopee_orders_update` | the operator who claimed it |
+| claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |
 | all scans cleared | `outbound_update` | admins |
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |
