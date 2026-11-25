@@ -1,7 +1,7 @@
 # v2 login request: ask an admin to approve a login
 
-Spec scaffold (planning flow step 1), 2026-11-25, checked against `63ee40b`. Nothing on the server
-is implemented. The client shows the button **disabled** ([V2_UX.md](V2_UX.md) §2.7). Decisions are in
+Spec scaffold (planning flow step 1), 2026-11-25, checked against `63ee40b`. Built as
+T6.21–T6.23 and T7.12. Decisions are in
 [V2_LOGIN_REQUEST_DELTA.md](V2_LOGIN_REQUEST_DELTA.md), which wins over this file.
 
 ## 1. Goal

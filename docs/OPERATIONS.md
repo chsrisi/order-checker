@@ -187,6 +187,11 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `KEY_RETENTION_SECONDS` | int | `REFRESH_TTL_SECONDS + ACCESS_TTL_SECONDS + JWT_LEEWAY_SECONDS` | No | How long a retired signing key stays published after its successor appears. It must cover the refresh-token lifetime, because refresh tokens are signed with the same keys. Lower values log idle devices out after a rotation. |
 | `LOGIN_MAX_FAILURES` | int | `10` | No | Failed logins per username (case-insensitive) before `/auth/login` and `/auth/admin` return 429. Counted in Redis; if Redis is down, logins are allowed (fail open). |
 | `LOGIN_LOCKOUT_SECONDS` | int | `900` | No | Failure-counting window and lockout duration. A successful login resets the counter. To unlock an operator early: `redis-cli DEL login_fail:<username>`. |
+| `LOGIN_REQUEST_TTL_SECONDS` | int | `120` | No | Time an admin has to decide a login request. |
+| `LOGIN_REQUEST_COLLECT_SECONDS` | int | `30` | No | Time the device has to collect an approved login. |
+| `LOGIN_REQUEST_MAX_PER_DEVICE` | int | `5` | No | Login requests per device in `LOGIN_REQUEST_RATE_WINDOW_SECONDS`. |
+| `LOGIN_REQUEST_RATE_WINDOW_SECONDS` | int | `600` | No | Window of the limit above. |
+| `LOGIN_REQUEST_MAX_PENDING` | int | `20` | No | Pending login requests overall. Audit: log events `auth.login_request.*`. |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |

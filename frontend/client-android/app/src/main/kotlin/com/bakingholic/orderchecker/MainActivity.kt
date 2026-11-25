@@ -82,7 +82,14 @@ private fun App(vm: AppViewModel) {
                     )
                     update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    screen is Screen.Login -> LoginScreen(screen as Screen.Login, knownWorkers, vm::login, vm::clearLoginError)
+                    screen is Screen.Login -> LoginScreen(
+                        state = screen as Screen.Login,
+                        known = knownWorkers,
+                        onLogin = vm::login,
+                        onRequest = vm::requestLogin,
+                        onCancelRequest = vm::cancelLoginRequest,
+                        onClearError = vm::clearLoginError,
+                    )
                     screen is Screen.Home -> MainShell(
                         ops = vm.ops,
                         username = user,

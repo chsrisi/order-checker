@@ -254,6 +254,9 @@ previous release tag.
 | `ws_token:<urlsafe32>` | JSON `{username, sid}` | `WS_TICKET_TTL_SECONDS` (30) | `POST /auth/ws-token`; consumed with `GETDEL` |
 | `cfg_token:<hex64>` | admin username | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` (120) | `POST /admin/shopee-config/unlock` |
 | `login_fail:<lowercased username>` | failure count | `LOGIN_LOCKOUT_SECONDS` (900), reset to a full window at the locking failure | failed logins |
+| `login_req:<id>` | login request (JSON, no tokens) | `LOGIN_REQUEST_TTL_SECONDS` (120); on a decision `LOGIN_REQUEST_COLLECT_SECONDS` (30) | asking device |
+| `login_req_decision:<id>` | `approved:<admin>` / `denied:<admin>`, set once (NX) | both of the above | admins |
+| `login_req_device:<device>`, `login_req_rate:<device>`, `login_req_nonce:<scope>:<nonce>`, `login_req_index` | current request, rate counter, seen nonces, open requests by expiry | request TTL; 600 s; 600 s (create: 30 days); none (pruned) | asking device |
 
 Redis needs ≥ 6.2 (`GETDEL`). Compose ships `redis:8.8-alpine`.
 
@@ -286,6 +289,15 @@ refresh and return to the login screen.
 unknown user and wrong password all return 401 "Incorrect username or password". Throttle:
 `LOGIN_MAX_FAILURES` (10) failed attempts per lowercased username within the window → 429
 with `Retry-After`; success resets; Redis down → throttle fails open.
+
+**Login requests** (T6.21, `login_request_service`): a registered, not revoked device asks for a
+worker; an admin approves in the console; the device collects one session. Every device call is
+signed with the device key over `oc-login-request:<create|poll|cancel>:<username or id>:<nonce>`
+and each nonce works once. One request per device (a new one replaces it), 5 per device in 10
+minutes, 20 pending. Unknown usernames and admin accounts get a request no admin sees. At
+collection the account must still exist with the same password, and the device must not be
+revoked. Deciding is one NX, collecting one GETDEL, so at most one session results. A password
+lockout does not block requests. Redis down → 503 (password login still works).
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
 under races), then checks expiry, the session (same `sid`, still live) and user existence, and
@@ -593,6 +605,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 | Trigger | Event | Recipients |
 |---|---|---|
 | user created/registered/reset/deleted | `users_update` | admins |
+| login request created, decided or cancelled | `login_requests_update` (all pending ones) | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
 | claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |

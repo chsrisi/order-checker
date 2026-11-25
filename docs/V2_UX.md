@@ -337,9 +337,10 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   across logout (maintainer, 2026-11-25). No server list, so F-M17 holds. A new scanner starts
   empty and needs manual input once per worker. A deleted worker's name stays until it drops
   out of the 20.
-- **Ask admin to approve** is shown disabled until
-  T6.23 (decided in [V2_LOGIN_REQUEST_DELTA.md](V2_LOGIN_REQUEST_DELTA.md)).
-- **Backend change:** none.
+- **Ask admin to approve** (T6.23): a waiting view with the 2-digit code, countdown and Cancel
+  (Back cancels too). Denied, expired, unregistered or revoked device: a message on the login
+  screen. The console (T7.12) shows a header button and cards on the Dashboard.
+- **Backend change:** login requests (T6.21, T6.22).
 
 **Round 1: built (2026-11-25), not yet accepted.**
 

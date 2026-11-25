@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.bakingholic.orderchecker.auth.AesGcmBox
 import com.bakingholic.orderchecker.auth.EncryptedTokenStore
 import com.bakingholic.orderchecker.auth.KnownWorkers
+import com.bakingholic.orderchecker.auth.LoginRequester
 import com.bakingholic.orderchecker.auth.SessionManager
 import com.bakingholic.orderchecker.core.AppInfo
 import com.bakingholic.orderchecker.meta.MetaRepository
@@ -83,10 +84,13 @@ class AppGraph(context: Context) {
     val pinGate = PinGate(BuildConfig.SETTINGS_PIN)
     val scanPrefs = ScanPrefs(context.settingsStore)
 
+    private val deviceKeys = KeystoreDeviceKeys()
+    val loginRequests = LoginRequester(api, session, deviceKeys)
+
     // Device identity (T6.13): Keystore key, registered after every login.
     val device = DeviceRegistrar(
         session,
-        KeystoreDeviceKeys(),
+        deviceKeys,
         appInfo,
         model = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
         androidVersion = Build.VERSION.RELEASE,

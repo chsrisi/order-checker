@@ -36,6 +36,8 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| GET | `/admin/login-requests` | Admin | Pending login requests, oldest first: `id`, `username`, `match_code`, device, IP, `created_at`, `expires_at` |
+| POST | `/admin/login-requests/{id}/approve`, `/deny` | Admin | Decide. 404 expired or cancelled, 409 already decided |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
 | GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`). Optional filters (since 2026-11-24): `closed_from`/`closed_to` (close time, inclusive; ISO 8601, UTC without an offset), `day_from`/`day_to` (business days by scan time, `YYYY-MM-DD`), `q` (label, worker or tag, case-insensitive) |
 | GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total. Same optional filters, `closed_from`/`closed_to` on `done_at`; `q` matches SN, worker, tracking number, pickup code, courier or buyer name (buyer names only within the retention window) |
@@ -101,6 +103,13 @@ endpoints) requires `X-Client-Version: <versionCode>`:
 
 The minimum comes from the published release metadata (OPERATIONS "Publishing a client
 release"); with nothing published there is no minimum.
+
+**Login requests (no token, gated, signed by the device key).**
+`POST /v2/auth/login-requests` `{username, public_key, nonce, signature}` →
+`{id, match_code, expires_in}`; 403 device not registered or revoked, 429 limits.
+`POST …/{id}/poll` `{nonce, signature}` → `{status, tokens}` with `pending`, `approved` (tokens,
+once), `denied` or `expired`. `POST …/{id}/cancel` is idempotent. 400 bad signature or reused
+nonce, 503 Redis down. Signed string: SYSTEM_REFERENCE §5.
 
 **Device registration (operator token, not gated).** `POST /v2/device/register`
 `{public_key, model, android_version, app_version_code, signature}` → the device
@@ -193,7 +202,7 @@ updates. Responses and server broadcasts have this envelope:
 {"type": "outbound_update", "data": []}
 ```
 
-Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
+Valid types are `users_update`, `login_requests_update` (admins), `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
 
