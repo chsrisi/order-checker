@@ -44,6 +44,8 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val deviceStatus = graph.device.status
     val scanSuffix: StateFlow<ScanSuffix> =
         graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
+    val knownWorkers: StateFlow<List<String>> =
+        graph.knownWorkers.names.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var registration: Job? = null
     val ops = OpsController(graph.ops, viewModelScope)
 
@@ -95,6 +97,11 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
                 Screen.Login(error = "Login failed: ${e.message}")
             }
         }
+    }
+
+    fun clearLoginError() {
+        val login = _screen.value as? Screen.Login ?: return
+        if (login.error != null) _screen.value = login.copy(error = null)
     }
 
     fun logout() {

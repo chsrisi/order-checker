@@ -323,6 +323,26 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 
 **Round 1: built (2026-11-24).**
 
+### 2.7 Client login (2026-11-25)
+
+- **Goal:** log in on a shared scanner without typing a username each time.
+- **Flow:**
+  - Start: **Worker** dropdown, *Log in* (primary), *Manual input* (secondary). The last worker
+    of this device is preselected.
+  - *Log in* → the picker stays, a password field (focused) and *Log in* appear, *Manual input*
+    is gone, and *Ask admin to approve* appears. Changing the worker clears the password.
+  - *Manual input* → username and password, as before.
+  - The system Back key returns to the start from both.
+- **Worker names:** the 20 most recent usernames that logged in **on this device**, kept locally
+  across logout (maintainer, 2026-11-25). No server list, so F-M17 holds. A new scanner starts
+  empty and needs manual input once per worker. A deleted worker's name stays until it drops
+  out of the 20.
+- **Ask admin to approve** is shown disabled until
+  T6.23 (decided in [V2_LOGIN_REQUEST_DELTA.md](V2_LOGIN_REQUEST_DELTA.md)).
+- **Backend change:** none.
+
+**Round 1: built (2026-11-25), not yet accepted.**
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock

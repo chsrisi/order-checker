@@ -62,6 +62,7 @@ private fun App(vm: AppViewModel) {
     val update by vm.updateState.collectAsStateWithLifecycle()
     val device by vm.deviceStatus.collectAsStateWithLifecycle()
     val scanSuffix by vm.scanSuffix.collectAsStateWithLifecycle()
+    val knownWorkers by vm.knownWorkers.collectAsStateWithLifecycle()
     val graph = vm.graph
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column {
@@ -81,7 +82,7 @@ private fun App(vm: AppViewModel) {
                     )
                     update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    screen is Screen.Login -> LoginScreen(screen as Screen.Login, vm::login)
+                    screen is Screen.Login -> LoginScreen(screen as Screen.Login, knownWorkers, vm::login, vm::clearLoginError)
                     screen is Screen.Home -> MainShell(
                         ops = vm.ops,
                         username = user,

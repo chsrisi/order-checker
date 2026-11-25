@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.bakingholic.orderchecker.auth.AesGcmBox
 import com.bakingholic.orderchecker.auth.EncryptedTokenStore
+import com.bakingholic.orderchecker.auth.KnownWorkers
 import com.bakingholic.orderchecker.auth.SessionManager
 import com.bakingholic.orderchecker.core.AppInfo
 import com.bakingholic.orderchecker.meta.MetaRepository
@@ -36,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -74,6 +76,7 @@ class AppGraph(context: Context) {
         onEvent = emit,
         onLocalLogout = { clearCaches() },
     )
+    val knownWorkers = KnownWorkers(context.settingsStore)
     val meta = MetaRepository(api)
     val ws = WsClient(http, session, appInfo, { profile }, { selector.order().firstOrNull() }, emit, scope)
     val ops = OpsRepository(session, ws, scope)
@@ -101,6 +104,8 @@ class AppGraph(context: Context) {
 
     init {
         scope.launch { profileStore.profile.collect { profile = it } }
+        // Every session, restored ones included, feeds the login picker.
+        scope.launch { session.user.filterNotNull().collect { knownWorkers.remember(it) } }
         scope.launch { updates.clearDownloads() }
         context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
