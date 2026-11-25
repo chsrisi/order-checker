@@ -17,11 +17,16 @@ import {
 } from 'naive-ui'
 import { useSession } from '../stores/session'
 import { useLive } from '../stores/live'
+import { useLoginRequests } from '../stores/loginRequests'
+import { usePolling } from '../lib/usePolling'
 import { dashboard, groups, type NavPage } from '../nav'
 import { useIsMobile } from '../lib/useIsMobile'
 
 const session = useSession()
 const live = useLive()
+const requests = useLoginRequests()
+usePolling(() => requests.load(), 15_000)
+usePolling(() => requests.tick(), 1_000)
 const route = useRoute()
 const router = useRouter()
 const mobile = useIsMobile()
@@ -69,6 +74,9 @@ async function onAccount(key: string) {
         <NText strong>{{ mobile ? title : 'Order Checker Console' }}</NText>
       </div>
       <div class="header-right">
+        <NButton v-if="requests.open.length" size="small" type="warning" @click="router.push({ name: 'dashboard' })">
+          {{ requests.open.length }} login request{{ requests.open.length === 1 ? '' : 's' }}
+        </NButton>
         <NTag :type="liveTag.type" size="small" round>{{ liveTag.text }}</NTag>
         <NDropdown :options="accountMenu" trigger="click" @select="onAccount">
           <NButton size="small" quaternary>{{ session.username }} ▾</NButton>

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NEmpty, NGrid, NGridItem, NH2, NText } from 'naive-ui'
+import LoginRequests from '../components/LoginRequests.vue'
 import DeviceCard from '../components/DeviceCard.vue'
 import { useDevices } from '../stores/devices'
 import { usePolling } from '../lib/usePolling'
@@ -26,6 +27,7 @@ const shortcuts = [
 
 <template>
   <div class="page">
+    <LoginRequests />
     <NH2 style="margin: 0 0 4px">Devices</NH2>
     <NText depth="3">{{ online }} of {{ devices.list.length }} online · refreshes every 30 s</NText>
     <NAlert v-if="devices.error" type="error" style="margin-top: 12px">{{ devices.error }}</NAlert>
