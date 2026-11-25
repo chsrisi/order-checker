@@ -10,6 +10,7 @@ from ..models import (
     AdminDayDetailResponse,
     AdminDayResponse,
     AdminLookupResponse,
+    AdminLoginRequest,
     AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
@@ -22,7 +23,13 @@ from ..models import (
 )
 from ..dependencies import require_admin
 from ..timezone import business_time
-from ..services import queries, auth_service, outbound_service, shopee_service
+from ..services import (
+    auth_service,
+    login_request_service,
+    outbound_service,
+    queries,
+    shopee_service,
+)
 from ..services.managers import conn_mgr
 
 logger = logging.getLogger("backend.routers.admin")
@@ -105,6 +112,54 @@ def list_devices(_admin: User = Depends(require_admin)):
         AdminDeviceResponse.model_validate(d).model_copy(update={"online": d.id in online})
         for d in queries.list_devices()
     ]
+
+
+@router.get(
+    "/login-requests",
+    response_model=List[AdminLoginRequest],
+    summary="List pending login requests",
+    description="Operators waiting on their login screen for an admin's approval, oldest first.",
+    responses={403: {"description": "Admin scope required"}, 503: {"description": "Redis unavailable"}},
+)
+async def list_login_requests(_admin: User = Depends(require_admin)):
+    return await login_request_service.pending()
+
+
+DECIDE_RESPONSES = {
+    403: {"description": "Admin scope required"},
+    404: {"description": "Request expired, cancelled or unknown"},
+    409: {"description": "Already decided"},
+    503: {"description": "Redis unavailable"},
+}
+LoginRequestId = Path(..., pattern=r"^[0-9a-f]{32}$")
+
+
+@router.post(
+    "/login-requests/{request_id}/approve",
+    response_model=MessageResponse,
+    summary="Approve a login request",
+    description="The device that asked can collect one session within a short window.",
+    responses=DECIDE_RESPONSES,
+)
+async def approve_login_request(
+    request_id: str = LoginRequestId, current_user: User = Depends(require_admin)
+):
+    await login_request_service.decide(request_id, "approved", current_user.username or "")
+    return {"message": "Login approved"}
+
+
+@router.post(
+    "/login-requests/{request_id}/deny",
+    response_model=MessageResponse,
+    summary="Deny a login request",
+    description="The waiting device is told and returns to its login screen.",
+    responses=DECIDE_RESPONSES,
+)
+async def deny_login_request(
+    request_id: str = LoginRequestId, current_user: User = Depends(require_admin)
+):
+    await login_request_service.decide(request_id, "denied", current_user.username or "")
+    return {"message": "Login denied"}
 
 
 @router.post(

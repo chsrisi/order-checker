@@ -202,12 +202,14 @@ def get_tokens(
     sid: str | None = None,
     ip_address: str | None = None,
     agent: str | None = None,
+    new_sid: str | None = None,
 ):
     """Issue a token pair. Without ``sid`` a new session starts (login, registration); with
-    ``sid`` the pair belongs to that existing, live session (refresh rotation)."""
+    ``sid`` the pair belongs to that existing, live session (refresh rotation). ``new_sid``
+    names the new session when the caller has to know its id."""
     logger.info(f"Generating tokens for user: {user.username} (scope: {user.scope})")
     new_session = sid is None
-    session_id = new_session_id() if new_session else sid
+    session_id = (new_sid or new_session_id()) if new_session else sid
     access_token = create_access_token(user.username, session_id)
     refresh_token, jti, expire = create_refresh_token(user.username, session_id)
 

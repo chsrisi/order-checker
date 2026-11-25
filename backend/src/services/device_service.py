@@ -31,8 +31,8 @@ def _b64(value: str) -> bytes:
         raise DomainException(status_code=400, detail="Invalid base64")
 
 
-def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str) -> None:
-    """400 unless ``signature`` is a valid ECDSA/SHA-256 signature over ``sid`` by the P-256
+def verify_signature(public_key_b64: str, signature_b64: str, message: str) -> None:
+    """400 unless ``signature`` is a valid ECDSA/SHA-256 signature over ``message`` by the P-256
     key in ``public_key`` (DER SubjectPublicKeyInfo)."""
     try:
         key = load_der_public_key(_b64(public_key_b64))
@@ -41,9 +41,14 @@ def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str)
     if not isinstance(key, ec.EllipticCurvePublicKey) or not isinstance(key.curve, ec.SECP256R1):
         raise DomainException(status_code=400, detail="Public key must be EC P-256")
     try:
-        key.verify(_b64(signature_b64), sid.encode(), ec.ECDSA(hashes.SHA256()))
+        key.verify(_b64(signature_b64), message.encode(), ec.ECDSA(hashes.SHA256()))
     except InvalidSignature:
         raise DomainException(status_code=400, detail="Invalid device signature")
+
+
+def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str) -> None:
+    """The registration signature covers the session id."""
+    verify_signature(public_key_b64, signature_b64, sid)
 
 
 def register(body: DeviceRegisterRequest, username: str, sid: str) -> Device:

@@ -109,3 +109,32 @@ def get_device(device_id: str) -> Optional[Device]:
         if device is not None:
             db.expunge(device)
         return device
+
+
+def get_device_by_public_key(public_key: str) -> Optional[Device]:
+    with get_db() as db:
+        device = (
+            db.execute(select(Device).where(Device.public_key == public_key)).scalars().first()
+        )
+        if device is not None:
+            db.expunge(device)
+        return device
+
+
+def bind_session_to_device(sid: str, device_id: str, username: str) -> bool:
+    """Bind a fresh session to its device. False when the device was revoked meanwhile."""
+    with get_db() as db:
+        device = (
+            db.execute(select(Device).where(Device.id == device_id).with_for_update())
+            .scalars()
+            .first()
+        )
+        if device is None or device.status == "revoked":
+            return False
+        device.current_username = username
+        device.last_seen_at = datetime.now(UTC)
+        db.execute(
+            update(AuthSession).where(AuthSession.id == sid).values(device_id=device_id)
+        )
+        db.commit()
+        return True

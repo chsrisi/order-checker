@@ -239,6 +239,116 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LoginRequestCreate": {
+        "properties": {
+          "nonce": {
+            "description": "Fresh per call; never reused.",
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "title": "Nonce",
+            "type": "string"
+          },
+          "public_key": {
+            "description": "Base64 DER SubjectPublicKeyInfo of the registered key.",
+            "maxLength": 1024,
+            "title": "Public Key",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string `oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "signature",
+          "username",
+          "public_key"
+        ],
+        "title": "LoginRequestCreate",
+        "type": "object"
+      },
+      "LoginRequestCreated": {
+        "properties": {
+          "expires_in": {
+            "description": "Seconds an admin has to decide.",
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_code": {
+            "description": "Two digits, also shown to the admin.",
+            "title": "Match Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "match_code",
+          "expires_in"
+        ],
+        "title": "LoginRequestCreated",
+        "type": "object"
+      },
+      "LoginRequestPoll": {
+        "properties": {
+          "status": {
+            "description": "`pending`, `approved`, `denied` or `expired` (also: cancelled, collected).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Token"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only with `approved`, once."
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LoginRequestPoll",
+        "type": "object"
+      },
+      "LoginRequestProof": {
+        "description": "A signature by the device key over ``oc-login-request:<action>:<subject>:<nonce>``:\naction ``create`` (subject: the username), ``poll`` or ``cancel`` (subject: the id).",
+        "properties": {
+          "nonce": {
+            "description": "Fresh per call; never reused.",
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "title": "Nonce",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string `oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "signature"
+        ],
+        "title": "LoginRequestProof",
+        "type": "object"
+      },
       "MessageResponse": {
         "properties": {
           "message": {
@@ -1051,6 +1161,245 @@
           }
         },
         "summary": "Log in an operator",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/login-requests": {
+      "post": {
+        "description": "From a registered, not revoked device. Replaces the device's previous request. The answer does not tell whether the account exists.",
+        "operationId": "create_login_request_v2_auth_login_requests_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginRequestCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "403": {
+            "description": "Device not registered, or revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "429": {
+            "description": "Too many requests from this device, or too many pending"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Ask an admin to approve a login",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/login-requests/{request_id}/cancel": {
+      "post": {
+        "description": "Idempotent: an ended request answers the same.",
+        "operationId": "cancel_login_request_v2_auth_login_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestProof"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Cancel a login request",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/login-requests/{request_id}/poll": {
+      "post": {
+        "description": "Returns the tokens once when approved. Poll every 2 s.",
+        "operationId": "poll_login_request_v2_auth_login_requests__request_id__poll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestProof"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginRequestPoll"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Check a login request",
         "tags": [
           "v2 \u00b7 authentication"
         ]

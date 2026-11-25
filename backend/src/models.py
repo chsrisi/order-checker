@@ -49,6 +49,7 @@ class WSMessageType(str, PyEnum):
     SHOPEE_ORDERS = "shopee_orders_update"
     PICK_ITEM_ENTRIES = "pick_item_entries_update"
     STOCKS = "stocks_update"
+    LOGIN_REQUESTS = "login_requests_update"
     ERROR = "error"
 
 
@@ -581,6 +582,54 @@ class UserAuth(BaseModel):
         if not re.match(r"^[a-zA-Z0-9_]+$", v):
             raise ValueError("Username can only contain alphanumeric characters, and underscores.")
         return v
+
+
+NONCE_PATTERN = r"^[A-Za-z0-9_-]{16,64}$"
+
+
+class LoginRequestProof(BaseModel):
+    """A signature by the device key over ``oc-login-request:<action>:<subject>:<nonce>``:
+    action ``create`` (subject: the username), ``poll`` or ``cancel`` (subject: the id)."""
+
+    nonce: str = Field(pattern=NONCE_PATTERN, description="Fresh per call; never reused.")
+    signature: str = Field(
+        max_length=512,
+        description=(
+            "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string "
+            "`oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`."
+        ),
+    )
+
+
+class LoginRequestCreate(LoginRequestProof):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    public_key: str = Field(
+        max_length=1024, description="Base64 DER SubjectPublicKeyInfo of the registered key."
+    )
+
+
+class LoginRequestCreated(BaseModel):
+    id: str
+    match_code: str = Field(description="Two digits, also shown to the admin.")
+    expires_in: int = Field(description="Seconds an admin has to decide.")
+
+
+class LoginRequestPoll(BaseModel):
+    status: str = Field(
+        description="`pending`, `approved`, `denied` or `expired` (also: cancelled, collected)."
+    )
+    tokens: Optional[Token] = Field(None, description="Only with `approved`, once.")
+
+
+class AdminLoginRequest(BaseModel):
+    id: str
+    username: str
+    match_code: str
+    device_id: str
+    device_name: str
+    ip_address: Optional[str] = None
+    created_at: UTCDateTime
+    expires_at: UTCDateTime
 
 
 class AdminUserCreate(UserAuth):

@@ -5,6 +5,8 @@ from .devices import (
     device_ids_for_sessions,
     list_devices,
     get_device,
+    get_device_by_public_key,
+    bind_session_to_device,
 )
 from .users import (
     get_user_data,
@@ -87,6 +89,8 @@ __all__ = [
     "device_ids_for_sessions",
     "list_devices",
     "get_device",
+    "get_device_by_public_key",
+    "bind_session_to_device",
     "get_db",
     "SessionLocal",
     "get_user_data",

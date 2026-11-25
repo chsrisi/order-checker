@@ -166,6 +166,62 @@
         "title": "AdminDeviceResponse",
         "type": "object"
       },
+      "AdminLoginRequest": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "match_code": {
+            "title": "Match Code",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "match_code",
+          "device_id",
+          "device_name",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "AdminLoginRequest",
+        "type": "object"
+      },
       "AdminLookupResponse": {
         "description": "Where an exact label is (V2_ORDERS_DELTA Q49): its orders and its scans, open or closed.",
         "properties": {
@@ -1891,6 +1947,165 @@
           }
         ],
         "summary": "Get completed Shopee order history",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/login-requests": {
+      "get": {
+        "description": "Operators waiting on their login screen for an admin's approval, oldest first.",
+        "operationId": "list_login_requests_admin_login_requests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminLoginRequest"
+                  },
+                  "title": "Response List Login Requests Admin Login Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List pending login requests",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/login-requests/{request_id}/approve": {
+      "post": {
+        "description": "The device that asked can collect one session within a short window.",
+        "operationId": "approve_login_request_admin_login_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Request expired, cancelled or unknown"
+          },
+          "409": {
+            "description": "Already decided"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve a login request",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/login-requests/{request_id}/deny": {
+      "post": {
+        "description": "The waiting device is told and returns to its login screen.",
+        "operationId": "deny_login_request_admin_login_requests__request_id__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Request expired, cancelled or unknown"
+          },
+          "409": {
+            "description": "Already decided"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deny a login request",
         "tags": [
           "admin"
         ]
