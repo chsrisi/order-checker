@@ -59,7 +59,7 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
         else -> say("$fallback ${result.detail}".trim(), isError = true)
     }
 
-    /** 409: what this screen shows is stale (a close is not pushed to operators), so reload it. */
+    /** 409: this screen is stale (an order can leave without a push, Q83), so reload it. */
     private fun orderFailed(result: ActionResult.Failed, fallback: String) {
         failed(result, fallback)
         if (result.code == 409) repo.requestSnapshots()

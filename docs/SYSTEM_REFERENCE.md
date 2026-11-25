@@ -378,7 +378,8 @@ only reads the database.
    scan whose label is exactly the SN or a tracking number of an order in `SHIPPED`,
    `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
    database, not this sync's batch; cancelled and returned orders and unscanned ones are left
-   alone. If it closed any, admins get `outbound_update`. Logged as `outbound.auto_closed`.
+   alone. If it closed any, admins get `outbound_update`, and the
+   claimers of the orders it completed get `shopee_orders_update` (Q81). Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -529,8 +530,9 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
 5. Returns `{outbound, unknown, orders_done}`; invalidates the sync cache; broadcasts
-   `outbound_update` and `shopee_orders_update` **to admins only** (operators' lists update on
-   their next request).
+   `outbound_update` and `shopee_orders_update` to admins, and `shopee_orders_update` to each
+   operator who claimed an order it completed (V2_PICKING_DELTA Q81; operators' scan lists
+   update on their next request).
 
 `DELETE /admin/clear/outbound-items` deletes every scan (open and closed) and their tags;
 admins get `outbound_update`. `/admin/history/outbound` lists closed scans; exports: §9.
@@ -592,6 +594,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 | user created/registered/reset/deleted | `users_update` | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
+| order completed by a close (period or sync) | `shopee_orders_update` | the operator who claimed it |
 | all scans cleared | `outbound_update` | admins |
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |

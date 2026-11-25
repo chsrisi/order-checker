@@ -544,6 +544,8 @@ async def sync_shopee_orders(
                     closed = await asyncio.to_thread(queries.close_shipped_outbound)
                     if closed["outbound"]:
                         await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+                    for owner in closed["owners"]:  # V2_PICKING_DELTA Q81
+                        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=owner)
                 if failures:  # partial sync: keep what arrived, never mark it complete
                     logger.warning(
                         "shopee_sync_partial",

@@ -910,11 +910,11 @@ stay possible. They are not a layout.
 - T6.15e Stocks: set, add, transfer, with location suggestions.
 - T6.15f Account and the connection banner.
 
-#### Picking simplification (T6.17–T6.20, V2_PICKING_SPEC, V2_PICKING_DELTA)
+#### Picking simplification (T6.17–T6.21, V2_PICKING_SPEC, V2_PICKING_DELTA)
 
 Picks go straight into an order, and unassigning returns stock. Precedence: V2_PICKING_DELTA >
 this plan > V2_PICKING_SPEC. Replaces "assign, unassign, delete" in T6.15b. Order: T6.17 → T6.18 →
-T6.19 → T6.20. v1 routes and `client_v1.json` stay unchanged.
+T6.19 → T6.20 → T6.21. v1 routes and `client_v1.json` stay unchanged.
 
 **T6.17 Stock engine: partial restore, order lock, strict stock**
 - Goal: pick into and remove from an order with correct stock under concurrency.
@@ -955,6 +955,15 @@ T6.19 → T6.20. v1 routes and `client_v1.json` stay unchanged.
 - Tests: `OrderLogicTest`, a controller test (no order, order leaves, 409, warnings).
 - Docs: V2_UX, SYSTEM_REFERENCE §12, V2_DEVICE_DAY_TODO (rebuild the APKs).
 - Accept: `lint`, unit tests and both builds pass; checked on the emulator against the T6.19 data.
+
+**T6.21 Closes reach operators**
+- Goal: an order completed by a close leaves its owner's list at once.
+- Refs: DELTA round 8 (Q81).
+- Change: period close and sync auto-close send `shopee_orders_update` to the claimers of the
+  orders they completed; close response unchanged.
+- Tests: owners per close (PostgreSQL), frames per owner, also after a partial sync.
+- Docs: SYSTEM_REFERENCE §7.1, §7.7, §8.
+- Accept: `client_v1.json` byte-identical.
 
 **T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)* — **postponed**
 (Delta 5). Checklist: [V2_DEVICE_DAY_TODO.md](V2_DEVICE_DAY_TODO.md). This round pilots one
@@ -1059,6 +1068,8 @@ device (Q20).
 - Admin shortfall/reconciliation report (Q5).
 - Picking (V2_PICKING_DELTA): supplier barcodes in the List search (Q80); cancelled orders with
   picks (Q65); choosing the bin of a pick or of an unassign (Q68); the v1-retirement clean-up (R1.4).
+- Stock logic by unit of measure (UOM): quantities are plain numbers today (V2_PICKING_DELTA Q82;
+  needs its own spec).
 - `timestamptz` migration.
 - Promote the structured `StocksLog` to the stock source of truth (only if needed).
 
@@ -1190,6 +1201,7 @@ same change as the task.
 | T6.18 | done | `client_v1.json` unchanged; `client_v2.json` and `openapi/v2.json` regenerated. Removing the v2 pick models breaks the old Android code, so T6.18 and T6.20 must land together |
 | T6.19 | done | Scenario orders use the fixed prefix `991231DEVPK` so seeding stays idempotent and removable |
 | T6.20 | built, UX acceptance pending | Checked on a throwaway API 30 emulator against a local backend with the T6.19 data: claim, pick, over-quantity alert, barcode, unknown code, unassign (two bins, mistyped 50), List search by SN and tracking number, live limit in the dialog, close while selected, strict stock, Outbound, logout; no soft keyboard while scanning. **Found and fixed there:** a scan field disabled while saving cannot take the focus back, so the next barcode went into Qty; a 409 now reloads the orders (closes are not pushed to operators) |
+| T6.21 | done | Backend only, no migration, no contract change. Not covered: orders leaving a list without a close (Q83) |
 | T7.1 | done | `frontend/admin-web` (Vue 3.5, Vite 8, Vue Router 5, Pinia 4, Naive UI 2.45, openapi-typescript 7). **Deviations:** TypeScript 5.9, not 7 (`openapi-typescript` needs 5); `schema.d.ts` is **committed** with a CI freshness check (`check:api`), since the Docker build context has no `backend/`; no ESLint (not on the Q13 list; `vue-tsc` strict is the lint); `@vue/test-utils` left out (its `js-beautify` chain had 5 moderate audit findings; logic tests need only Vitest). Docker: `console` stage from the named context `admin-web` (Compose `additional_contexts`), so the Flutter context is unchanged. nginx: `^~ /console/` (else the static-file regex wins), `absolute_redirect off` for `/console` → `/console/` (nginx put its internal port 80 into the Location), no `always` on the `immutable` header so 404s are not cached. Checked: `nginx -t`, routes and headers with `nginx:alpine` + the template |
 | T7.2 | done | Session store (access token in memory, refresh token in `sessionStorage`, one shared refresh, logout with server revoke), HTTP refresh-once, `/ws` client with endless backoff. Checked in headless Firefox (WebDriver BiDi) against a local v0.6.0 backend through the Vite proxy: wrong password message, login, reload keeps the session, access token stored nowhere, unknown path → overview, live updates connected; a server-side logout of the session returns the console to the login screen with "Session ended" in 1.5 s (socket closed → ticket 401 → refresh refused) |
 | T7.3–T7.9 | in progress | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35). **Workers and Orders round 1 built (2026-11-24, V2_UX §2.4–2.5, D9):** Workers (create, reset password, log out everywhere, delete with its consequences listed, devices per worker); Orders (ongoing split with outbound scans, inline filters, browser-saved hand-ticks, reviewed period close, CSV export, history by close / orders / scans with server-side filters). Backend: additive history filters and `GET /admin/history/closes`. Workers and Orders accepted (D10). **Settings round 1 built (2026-11-24, V2_UX §2.6):** Shopee connection with in-place re-unlock that keeps edits; no backend change. **Orders round 4 (2026-11-24, V2_ORDERS_SPEC / V2_ORDERS_DELTA):** steps 1–4 built: R4 picking states and the F2 fix in both v2 apps, split orders partly packed, desktop paired rows (two lists deprecated), late orders kept (ship-by cutoff removed, F4), case-insensitive close (Q44), borrowed courier (Q45), History pairs, search and exact lookup (Q49, additive `q` on closes, courier and buyer in order search, `GET /admin/lookup`), server auto-sync (Q48). **Orders rounds 3–4 (2026-11-24):** auto-close of shipped orders on sync (C1), History by day (C2, replaces `/admin/history/closes`), nightly sync pause (C3), timestamptz migration `f6c9a4b2d3e5` (Q54), exact labels (Q57, replaces Q44), frozen close review (F7). Still placeholders: Stock & finder, BOM |
