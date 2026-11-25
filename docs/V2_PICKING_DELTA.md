@@ -214,7 +214,7 @@ T6.17–T6.20 are built (IMPLEMENTATION_PLAN §7). Two findings from the emulato
 
 | Ref | Decision | Status |
 |---|---|---|
-| Q81 | Accepted: a close (period or sync) sends `shopee_orders_update` to the operators who claimed the orders it completed, v1 clients included. Built as T6.21. | ✅ |
+| Q81 | Accepted: a close (period or sync) sends `shopee_orders_update` to the operators who claimed the orders it completed, v1 clients included. Built as T6.24. | ✅ |
 | Q82 | No quantity cap now. Future to-do instead: **fix the stock logic to use the unit of measure (UOM)**. | 📌 |
 
 **Q82, for later.** `warehouse.items` has `uom`, `whole_uom`, `whole_deno` and the per-box/pack
@@ -232,6 +232,6 @@ Needs its own spec.
 
 | Ref | Decision | Status |
 |---|---|---|
-| Q83 | Push those too: a sync that takes a claimed order off the active list (cancelled, shipped, …) sends `shopee_orders_update` to its owner. Built with T6.21. | ✅ |
+| Q83 | Push those too: a sync that takes a claimed order off the active list (cancelled, shipped, …) sends `shopee_orders_update` to its owner. Built with T6.24. | ✅ |
 | – | UX acceptance of T6.20 is pinned for later. | 📌 |
 | – | Merge into `feat/v2-orders-auto-close` now. | ✅ |
