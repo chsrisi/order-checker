@@ -145,7 +145,8 @@ To configure file-backed secrets for all super-sensitive credentials:
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | string | `sqlite:///./local.db` | Production | PostgreSQL connection string (`postgresql+psycopg://user:pass@host:5432/dbname`). In Docker, `localhost`/`127.0.0.1`/`db` hostnames are automatically rewritten to `DB_HOST`. In production, prefer passing via Docker Secret `database_url`. |
 | `DB_HOST` | string | `backend-postgres-1` | No | Docker network hostname for the PostgreSQL service used in database URL host resolution. |
-| `REDIS_URL` | string | `redis://localhost:6379/0` | Yes | Redis connection URL (`redis://redis:6379/0` in Compose). **Not rewritten like `DATABASE_URL`:** Compose fills `${REDIS_URL}` from `backend/.env`, so a `localhost` value there reaches the server container, where nothing listens ("connection refused"). For the Compose stack use `redis://redis:6379/0`; `localhost` is only for a backend run on the host. Used for dynamic token storage, WebSocket tickets, and admin configuration sessions. |
+| `REDIS_HOST` | string | `redis` | No | Docker network hostname of the Redis service, used the same way for `REDIS_URL`. |
+| `REDIS_URL` | string | `redis://localhost:6379/0` | Yes | Redis connection URL (`redis://redis:6379/0` in Compose). Inside a container, a `localhost`/`127.0.0.1` host is rewritten to `REDIS_HOST`, like `DATABASE_URL` (Compose fills `${REDIS_URL}` from `backend/.env`, which usually says `localhost` for host runs). Used for dynamic token storage, WebSocket tickets, and admin configuration sessions. |
 
 ---
 

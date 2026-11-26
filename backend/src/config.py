@@ -61,7 +61,7 @@ def get_config_value(key: str, default: str | None = None) -> str | None:
 
     # 3. Dynamic adjustment for database URL inside Docker
     if val and key.upper() == "DATABASE_URL":
-        if os.path.exists("/.dockerenv") or os.path.exists("/run/secrets"):
+        if _in_container():
             original = val
             db_host = os.getenv("DB_HOST", "backend-postgres-1")
             val = re.sub(
@@ -76,7 +76,23 @@ def get_config_value(key: str, default: str | None = None) -> str | None:
                     f"Resolved database URL host from localhost/127.0.0.1/db/postgres-1/postgres_container to '{db_host}' for Docker: {censored}"
                 )
 
+    # 4. The same for Redis: inside a container, localhost is the container itself.
+    if val and key.upper() == "REDIS_URL" and _in_container():
+        redis_host = os.getenv("REDIS_HOST", "redis")
+        resolved = re.sub(
+            r"^(rediss?://(?:[^@/]*@)?)(localhost|127\.0\.0\.1)(?=[:/]|$)",
+            lambda m: m.group(1) + redis_host,
+            val,
+        )
+        if resolved != val:
+            logger.info(f"Resolved Redis URL host from localhost to '{redis_host}' for Docker")
+            val = resolved
+
     return val
+
+
+def _in_container() -> bool:
+    return os.path.exists("/.dockerenv") or os.path.exists("/run/secrets")
 
 
 def get_config_int(key: str, default: int) -> int:
