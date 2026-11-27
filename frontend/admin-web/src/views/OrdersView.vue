@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { NAlert, NRadioButton, NRadioGroup, NTabPane, NTabs } from 'naive-ui'
 import OngoingOrders from '../components/orders/OngoingOrders.vue'
 import OutboundScans from '../components/orders/OutboundScans.vue'
@@ -19,6 +20,18 @@ orders.start()
 const board = useOrdersBoard()
 const mobile = useIsMobile()
 const tab = ref('ongoing')
+// `?find=<order or label>` (links from Stock & finder): History with that search.
+const route = useRoute()
+const find = ref<string | null>(null)
+watch(
+  () => route.query.find,
+  (value) => {
+    if (typeof value !== 'string' || !value) return
+    find.value = value
+    tab.value = 'history'
+  },
+  { immediate: true },
+)
 watch(
   mobile,
   (isMobile) => {
@@ -55,7 +68,7 @@ watch(
         </div>
       </template>
     </NTabPane>
-    <NTabPane name="history" tab="History"><OrderHistory /></NTabPane>
+    <NTabPane name="history" tab="History"><OrderHistory :find="find" /></NTabPane>
   </NTabs>
 </template>
 

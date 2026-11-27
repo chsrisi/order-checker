@@ -38,7 +38,7 @@ export const groups: NavGroup[] = [
     key: 'warehouse',
     label: 'Warehouse',
     pages: [
-      { name: 'stock', path: '/warehouse', label: 'Stock & finder', ready: false, classic: 'Stocks and Finder' },
+      { name: 'stock', path: '/warehouse', label: 'Stock & finder', ready: true },
       { name: 'bom', path: '/warehouse/bom', label: 'BOM', ready: false, classic: 'BOM' },
     ],
   },

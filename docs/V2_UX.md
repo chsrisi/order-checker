@@ -478,6 +478,19 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   | F7 | Show legacy log rows (before T4.3, free text only)? | **Yes**, as their message, marked "older entry". |
   | F8 | A link from an order or task in Changes to that order or task? | **Yes**: orders open the Orders lookup, tasks the task detail (after step 9). |
 
+**Round 1: built (2026-11-27), checked in the browser (desktop and phone width) against a local
+`single`-mode backend; waiting for your UX acceptance.** What was built:
+- Warehouse → *Stock & finder* is now a real page.
+- Stock tab: the table on desktop and cards on mobile. The search and chips work as briefed.
+  A barcode is looked up through `/items/find` only when the text matches nothing in the table.
+- The item card is a side panel on desktop and a full-width drawer on mobile. *Needed by*
+  counts the component lines of ongoing orders.
+- Changes tab: shows the last 7 days (F6), and legacy rows are tagged *older entry* (F7).
+- Moves read "moved from 201 to 203" and are shown on both rows. A pick names its order:
+  the endpoint returns `order_sn` through the pick entry, which is null once the entry is gone.
+  The order links open Orders → History with that order searched (`/orders?find=…`).
+- Task links wait for step 9: the row already reads "counted for task N".
+
 **Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
 
 ## 3. Later (not scheduled)
