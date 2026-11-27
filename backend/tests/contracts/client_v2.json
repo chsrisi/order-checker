@@ -950,6 +950,105 @@
       },
       "success_200": true
     },
+    "POST /v2/device/state": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "device_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "nullable": false,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "required": true,
+            "type": "string"
+          },
+          "nonce": {
+            "nullable": false,
+            "pattern": "^[0-9]{10}-[A-Za-z0-9_]{8,48}$",
+            "required": true,
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 512,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "assignment": {
+            "nullable": true,
+            "properties": {
+              "mode": {
+                "nullable": false,
+                "required": true,
+                "type": "string"
+              },
+              "tokens": {
+                "nullable": true,
+                "properties": {
+                  "access_token": {
+                    "nullable": false,
+                    "required": true,
+                    "type": "string"
+                  },
+                  "refresh_token": {
+                    "nullable": false,
+                    "required": true,
+                    "type": "string"
+                  },
+                  "token_type": {
+                    "nullable": false,
+                    "required": false,
+                    "type": "string"
+                  }
+                },
+                "required": false,
+                "type": "object"
+              },
+              "username": {
+                "nullable": false,
+                "required": true,
+                "type": "string"
+              }
+            },
+            "required": false,
+            "type": "object"
+          },
+          "logout_reason": {
+            "nullable": true,
+            "properties": {
+              "kind": {
+                "nullable": false,
+                "required": true,
+                "type": "string"
+              },
+              "username": {
+                "nullable": true,
+                "required": false,
+                "type": "string"
+              }
+            },
+            "required": false,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
     "POST /v2/outbound": {
       "params": {
         "X-Client-Version": {

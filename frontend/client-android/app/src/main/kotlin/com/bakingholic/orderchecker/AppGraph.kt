@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import com.bakingholic.orderchecker.device.DataStoreRegistrationStore
 import com.bakingholic.orderchecker.device.DeviceRegistrar
+import com.bakingholic.orderchecker.device.DeviceStatePoller
 import com.bakingholic.orderchecker.device.KeystoreDeviceKeys
 import android.net.ConnectivityManager
 import android.net.Network
@@ -88,14 +89,18 @@ class AppGraph(context: Context) {
     val loginRequests = LoginRequester(api, session, deviceKeys)
 
     // Device identity (T6.13): Keystore key, registered after every login.
+    private val registrations = DataStoreRegistrationStore(context.settingsStore)
     val device = DeviceRegistrar(
         session,
         deviceKeys,
         appInfo,
         model = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
         androidVersion = Build.VERSION.RELEASE,
-        store = DataStoreRegistrationStore(context.settingsStore),
+        store = registrations,
     )
+
+    // Worker switch from the console (T8.7): polled from the login screen.
+    val deviceState = DeviceStatePoller(api, session, deviceKeys, registrations)
 
     // OTA updater (T6.12): independent of the login state.
     val updates = UpdateManager(

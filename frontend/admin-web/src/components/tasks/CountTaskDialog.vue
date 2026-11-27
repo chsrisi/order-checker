@@ -6,7 +6,7 @@ import WorkerSelect from './WorkerSelect.vue'
 import { binsOf, countBody, countProblem, type CountForm } from '../../lib/tasks'
 import type { Schemas } from '../../api'
 
-/** New count task (V2_UX §2.8): item, the bin in `multi` mode, the worker. Blind for the worker. */
+/** New count task (V2_UX §2.12): item, the bin in `multi` mode, the worker. Blind for the worker. */
 const props = defineProps<{ show: boolean; mode: 'single' | 'multi'; submit: (body: unknown) => Promise<void> }>()
 const emit = defineEmits<{ 'update:show': [boolean] }>()
 

@@ -1,7 +1,13 @@
 from .engine import get_db, SessionLocal
 from .devices import (
+    DeviceNotFound,
     DeviceRevoked,
+    DeviceStatusConflict,
     register_device,
+    set_device_status,
+    set_device_label,
+    revoke_device_sessions,
+    touch_device,
     device_ids_for_sessions,
     list_devices,
     get_device,
@@ -25,6 +31,7 @@ from .users import (
     revoke_user_sessions,
 )
 from .history import HistoryFilter, get_day, get_day_history, lookup_label
+from .stock_changes import StockChangeFilter, get_stock_changes
 from .outbound import (
     get_outbounds_data,
     get_all_outbound_data,
@@ -84,7 +91,15 @@ from .csv_export import (
 )
 
 __all__ = [
+    "StockChangeFilter",
+    "get_stock_changes",
+    "DeviceNotFound",
     "DeviceRevoked",
+    "DeviceStatusConflict",
+    "set_device_status",
+    "set_device_label",
+    "revoke_device_sessions",
+    "touch_device",
     "register_device",
     "device_ids_for_sessions",
     "list_devices",

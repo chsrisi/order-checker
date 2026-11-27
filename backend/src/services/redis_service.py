@@ -101,6 +101,19 @@ class RedisManager:
             raise RuntimeError("Redis client is not initialized")
         return await self._client.zrange(key, 0, -1)
 
+    async def zrangebyscore(self, key: str, low: float, high: float) -> list[str]:
+        """Members with ``low <= score <= high``, lowest score first."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zrangebyscore(key, low, high)
+
+    async def exists(self, key: str) -> bool:
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return bool(await self._client.exists(key))
+
     async def zremrangebyscore(self, key: str, low: float, high: float):
         self.initialize()
         if self._client is None:

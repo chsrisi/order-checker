@@ -12,12 +12,15 @@ from ..models import (
     AdminDayResponse,
     AdminLookupResponse,
     AdminLoginRequest,
+    AdminDeviceAssign,
+    AdminDeviceUpdate,
     AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
     DeleteCountResponse,
     MessageResponse,
     OutboundResponse,
+    StockChangeResponse,
     ShopeeOrderResponse,
     User,
     UserResponse,
@@ -26,12 +29,13 @@ from ..dependencies import require_admin
 from ..timezone import business_time
 from ..services import (
     auth_service,
+    device_assignment_service,
+    device_service,
     login_request_service,
     outbound_service,
     queries,
     shopee_service,
 )
-from ..services.managers import conn_mgr
 
 logger = logging.getLogger("backend.routers.admin")
 
@@ -103,17 +107,140 @@ async def reset_user_password(
     summary="List v2 devices",
     description=(
         "Registered v2 operator devices, most recently seen first: status, current operator, "
-        "model, Android version, app versionCode, last contact, and `online` (a session of the "
-        "device has an open live-update socket right now). Read-only until step 8."
+        "model, Android version, app versionCode, last contact, `online` (a session of the "
+        "device has an open live-update socket right now), `reachable` (it polled from its "
+        "login screen within 30 s), a waiting worker switch (`assignment`) and what happened "
+        "to the last one. Live updates: the admin WebSocket frame `devices_update` carries "
+        "this same list."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
-def list_devices(_admin: User = Depends(require_admin)):
-    online = queries.device_ids_for_sessions(conn_mgr.live_session_ids())
-    return [
-        AdminDeviceResponse.model_validate(d).model_copy(update={"online": d.id in online})
-        for d in queries.list_devices()
-    ]
+async def list_devices(_admin: User = Depends(require_admin)):
+    return await device_assignment_service.admin_devices()
+
+
+DEVICE_ACTION_RESPONSES = {
+    403: {"description": "Admin scope required"},
+    404: {"description": "Device not found"},
+    409: {"description": "Not allowed from the device's current status"},
+}
+DeviceId = Path(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+async def _device_action(device_id: str, status: str, admin: User) -> AdminDeviceResponse:
+    await device_service.set_status(device_id, status, admin.username or "")
+    if status == "revoked":
+        await device_assignment_service.drop_for_revoked(device_id, admin.username or "")
+    else:
+        await device_assignment_service.announce()
+    return await device_assignment_service.admin_device(device_id)
+
+
+@router.post(
+    "/devices/{device_id}/approve",
+    response_model=AdminDeviceResponse,
+    summary="Approve a device",
+    description=(
+        "`pending` → `active`: the scanner is trusted (a direct worker switch needs it). "
+        "Idempotent on an `active` device; a `revoked` device answers 409."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def approve_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "active", current_user)
+
+
+@router.post(
+    "/devices/{device_id}/revoke",
+    response_model=AdminDeviceResponse,
+    summary="Revoke a device",
+    description=(
+        "`pending` or `active` → `revoked`, final: every session on the device ends at once "
+        "(its sockets close) and it can no longer log in, register or ask for a login. The "
+        "workers stay logged in on their other devices. Idempotent on a `revoked` device."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def revoke_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "revoked", current_user)
+
+
+@router.patch(
+    "/devices/{device_id}",
+    response_model=AdminDeviceResponse,
+    summary="Rename a device",
+    description="Sets the name the console shows (`label`, at most 40 characters; empty clears it).",
+    responses={403: {"description": "Admin scope required"}, 404: {"description": "Device not found"}},
+)
+async def update_device(
+    body: AdminDeviceUpdate,
+    device_id: str = DeviceId,
+    current_user: User = Depends(require_admin),
+):
+    return await device_assignment_service.rename(device_id, body, current_user.username or "")
+
+
+@router.post(
+    "/devices/{device_id}/logout",
+    response_model=MessageResponse,
+    summary="Log out this device",
+    description=(
+        "Ends every session on the device at once (its sockets close) and drops a waiting "
+        "worker switch. The workers stay logged in on their other devices. The device's login "
+        "screen is told why on its next state poll."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device not found"},
+        409: {"description": "Device is revoked"},
+    },
+)
+async def logout_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    count = await device_assignment_service.logout(device_id, current_user.username or "")
+    return {"message": f"{count} session(s) revoked"}
+
+
+@router.post(
+    "/devices/{device_id}/assign",
+    response_model=AdminDeviceResponse,
+    summary="Switch the worker on a device",
+    description=(
+        "Ends the device's sessions and leaves an assignment that the device collects on its "
+        "next state poll, within `DEVICE_ASSIGNMENT_TTL_SECONDS` (600). `direct` logs the "
+        "worker in without a password and needs an `active` device; `preselect` selects the "
+        "worker on the login screen. A new assignment replaces the previous one. The worker's "
+        "sessions on other devices are untouched."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device or client account not found"},
+        409: {"description": "Device is revoked, or not approved (direct mode)"},
+        503: {"description": "Redis unavailable (nothing was changed)"},
+    },
+)
+async def assign_device(
+    body: AdminDeviceAssign,
+    device_id: str = DeviceId,
+    current_user: User = Depends(require_admin),
+):
+    return await device_assignment_service.assign(device_id, body, current_user.username or "")
+
+
+@router.delete(
+    "/devices/{device_id}/assign",
+    response_model=AdminDeviceResponse,
+    summary="Cancel a worker switch",
+    description="Drops the waiting assignment; idempotent. The device stays logged out.",
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device not found"},
+        503: {"description": "Redis unavailable"},
+    },
+)
+async def cancel_device_assignment(
+    device_id: str = DeviceId, current_user: User = Depends(require_admin)
+):
+    return await device_assignment_service.cancel(device_id, current_user.username or "")
 
 
 @router.get(
@@ -255,6 +382,40 @@ def get_outbound_history(
     )
     response.headers["X-Total-Count"] = str(total)
     return items
+
+
+@router.get(
+    "/stock-changes",
+    response_model=List[StockChangeResponse],
+    summary="Stock change history",
+    description=(
+        "Every stock change from the stock log, newest first, paged (`X-Total-Count`). "
+        "Filters: `sku` and `actor` (exact, case-insensitive), `reason` (repeatable), and a "
+        "`from` / `to` time range (inclusive). Rows from before the structured log have only "
+        "`message`."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_stock_changes(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500, description="Page size (newest first)."),
+    offset: int = HISTORY_OFFSET,
+    current_user: User = Depends(require_admin),
+    sku: Optional[str] = Query(None, max_length=200),
+    actor: Optional[str] = Query(None, max_length=64),
+    reason: Optional[List[str]] = Query(None, max_length=20, description="Any of these reasons."),
+    since: Optional[datetime] = Query(None, alias="from", description="At or after this time."),
+    until: Optional[datetime] = Query(None, alias="to", description="At or before this time."),
+):
+    rows, total = queries.get_stock_changes(
+        limit=limit,
+        offset=offset,
+        f=queries.StockChangeFilter(
+            sku=sku, actor=actor, reasons=tuple(reason or ()), since=since, until=until
+        ),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 @router.get(

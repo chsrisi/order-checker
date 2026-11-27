@@ -95,6 +95,35 @@
         "title": "ContractRange",
         "type": "object"
       },
+      "DeviceLogoutReason": {
+        "properties": {
+          "kind": {
+            "description": "`logout`: the admin logged this device out. `switch`: the admin switched it to `username`.",
+            "enum": [
+              "logout",
+              "switch"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "DeviceLogoutReason",
+        "type": "object"
+      },
       "DeviceRegisterRequest": {
         "properties": {
           "android_version": {
@@ -224,6 +253,99 @@
           "enrolled_at"
         ],
         "title": "DeviceResponse",
+        "type": "object"
+      },
+      "DeviceStateAssignment": {
+        "properties": {
+          "mode": {
+            "description": "`direct`: `tokens` hold the new session. `preselect`: select the worker and ask for the password.",
+            "enum": [
+              "direct",
+              "preselect"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Token"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only with `direct`, handed over once."
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "mode"
+        ],
+        "title": "DeviceStateAssignment",
+        "type": "object"
+      },
+      "DeviceStateRequest": {
+        "description": "A signature by the registered device key over ``oc-device:state:<device_id>:<nonce>``.",
+        "properties": {
+          "device_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "nonce": {
+            "description": "`<unix seconds>-<8\u201348 random [A-Za-z0-9_]>`, fresh per call. Refused when the time is more than 5 minutes off the server's, or the nonce was used before.",
+            "pattern": "^[0-9]{10}-[A-Za-z0-9_]{8,48}$",
+            "title": "Nonce",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string `oc-device:state:<device_id>:<nonce>`.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "nonce",
+          "signature"
+        ],
+        "title": "DeviceStateRequest",
+        "type": "object"
+      },
+      "DeviceStateResponse": {
+        "properties": {
+          "assignment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceStateAssignment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A worker switch by the admin, handed over once."
+          },
+          "logout_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceLogoutReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the device was last logged out by the admin, given once (W8)."
+          }
+        },
+        "title": "DeviceStateResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2132,7 +2254,7 @@
             "description": "Invalid bearer token"
           },
           "403": {
-            "description": "Device revoked"
+            "description": "Device revoked (the calling session is revoked too)"
           },
           "422": {
             "content": {
@@ -2151,6 +2273,83 @@
           }
         ],
         "summary": "Register this device",
+        "tags": [
+          "v2 \u00b7 device"
+        ]
+      }
+    },
+    "/v2/device/state": {
+      "post": {
+        "description": "No user token: signed with the registered device key (T8.4a). The login screen calls it every 5 s while in the foreground, at most once per 2 s. Returns a worker switch by the admin once (`direct`: with the new session's tokens, bound to this device), and why the device was last logged out by the admin, once.",
+        "operationId": "device_state_v2_device_state_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature, nonce reused or more than 5 minutes off the server's time"
+          },
+          "403": {
+            "description": "Device not registered, or revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "429": {
+            "description": "Polling faster than once per 2 s"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Poll this device's state",
         "tags": [
           "v2 \u00b7 device"
         ]

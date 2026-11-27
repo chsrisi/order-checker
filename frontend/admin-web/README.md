@@ -54,10 +54,17 @@ fails when the committed file is stale.
   the desktop sidebar and the mobile drawer (below 768 px); pages not rebuilt yet route to
   `PlaceholderView` with a link to the classic admin.
 - `src/components/AppShell.vue` (header, sidebar/drawer), `src/views/` (one per screen),
-  `src/router/` (routes generated from `nav.ts`), `src/stores/devices.ts` (polled every 30 s).
+  `src/router/` (routes generated from `nav.ts`), `src/stores/devices.ts` (live from the admin
+  frame `devices_update`, reloaded over HTTP on every socket reconnect, polled every 30 s as a
+  fallback).
+- Device actions and the worker switch (T8.6, V2_UX §2.12): the rules (status line, actions per
+  status, switch state, the dialog's worker list and summary) are pure functions in
+  `src/lib/devices.ts` with tests; `src/lib/useDeviceActions.ts` runs them (Revoke asks first,
+  Approve and Log out act at once); `SwitchWorkerDialog.vue` and `RenameDeviceDialog.vue` are
+  rendered by the Dashboard and the Devices page; `DeviceCard.vue` is shared by both.
   Built pages: Dashboard, Workers, Devices, Settings (Shopee connection; config token in memory
   only), Orders (`src/components/orders/`), Warehouse → Tasks (`src/components/tasks/`).
-- Tasks (T9.3, V2_UX §2.8): `stores/tasks.ts` keeps the default list from `tasks_update` frames
+- Tasks (T9.3, V2_UX §2.12): `stores/tasks.ts` keeps the default list from `tasks_update` frames
   (filtered by worker and type in `lib/tasks.ts`); a status filter loads `/admin/tasks?status=…`
   and reloads on each frame. Claimed orders (`/admin/order-tasks`) reload 300 ms after an order or
   pick event. The stock location mode comes from `/meta` (the count form asks for a bin only in

@@ -23,6 +23,16 @@ class LoginFormTest {
     }
 
     @Test
+    fun anAdminPreselectionOpensThatWorkersPasswordStep() {
+        // T8.7: also for a worker who never logged in on this device.
+        val form = LoginForm().pick("bob").copy(password = "typed").preselect("eko")
+        assertEquals(LoginStep.PASSWORD, form.step)
+        assertEquals("eko", form.worker(known))
+        assertNull(form.credentials(known)) // the password typed for bob is gone
+        assertEquals("eko" to "pw", form.copy(password = "pw").credentials(known))
+    }
+
+    @Test
     fun withoutAKnownWorkerLoginStaysOnThePicker() {
         assertEquals(LoginForm(), LoginForm().askPassword(emptyList()))
     }

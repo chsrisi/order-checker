@@ -22,7 +22,7 @@ import { countResult, entered, leaves, statusOf, type TaskDetail } from '../../l
 import { formatShort } from '../../lib/time'
 import { useTasks } from '../../stores/tasks'
 
-/** A task's lines, picks, stock log and the admin actions its state allows (V2_UX §2.8). */
+/** A task's lines, picks, stock log and the admin actions its state allows (V2_UX §2.12). */
 const props = defineProps<{ task: TaskDetail }>()
 
 const tasks = useTasks()

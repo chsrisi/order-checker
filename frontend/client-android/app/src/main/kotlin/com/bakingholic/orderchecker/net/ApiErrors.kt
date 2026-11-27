@@ -18,5 +18,8 @@ class ApiException(val code: Int, val detail: String?) : Exception("HTTP $code: 
 sealed interface AppEvent {
     data object LoggedOut : AppEvent
 
+    /** The server revoked this device (T8.1): logged out locally, no retry. */
+    data object DeviceRevoked : AppEvent
+
     data class UpgradeRequired(val minSupportedVersionCode: Int?) : AppEvent
 }

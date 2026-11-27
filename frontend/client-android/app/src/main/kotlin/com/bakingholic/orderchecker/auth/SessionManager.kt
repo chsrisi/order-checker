@@ -53,6 +53,15 @@ class SessionManager(
         clearLocal(report = false)
     }
 
+    /**
+     * The device was revoked (T8.1): the server already ended this session, so only clear it
+     * locally and report [AppEvent.DeviceRevoked] instead of [AppEvent.LoggedOut].
+     */
+    suspend fun endBecauseDeviceRevoked() {
+        clearLocal(report = false)
+        onEvent(AppEvent.DeviceRevoked)
+    }
+
     /** Ends a session that was issued but is not wanted any more (best effort). */
     suspend fun giveBack(token: Token) = endOnServer(token.refreshToken)
 

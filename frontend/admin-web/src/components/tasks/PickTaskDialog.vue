@@ -6,7 +6,7 @@ import WorkerSelect from './WorkerSelect.vue'
 import { api, type Schemas } from '../../api'
 import { bomLeaves, pickBody, pickProblem, type PickForm } from '../../lib/tasks'
 
-/** New manual picking task (V2_UX §2.8): lines (bundles shown as they will be picked), worker. */
+/** New manual picking task (V2_UX §2.12): lines (bundles shown as they will be picked), worker. */
 const props = defineProps<{ show: boolean; submit: (body: unknown) => Promise<void> }>()
 const emit = defineEmits<{ 'update:show': [boolean] }>()
 

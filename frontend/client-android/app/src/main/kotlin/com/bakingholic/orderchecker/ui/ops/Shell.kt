@@ -28,8 +28,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -68,6 +70,8 @@ fun MainShell(
     onFallback: Boolean,
     onLogout: () -> Unit,
     footer: @Composable () -> Unit,
+    notice: String? = null,
+    onNoticeShown: () -> Unit = {},
 ) {
     var destination by rememberSaveable { mutableStateOf(Destination.HOME) }
     val snackbar = remember { SnackbarHostState() }
@@ -77,6 +81,13 @@ fun MainShell(
     LaunchedEffect(ops) {
         ops.messages.collect { message ->
             if (message.alert) alert = message else snackbar.showSnackbar(message.text)
+        }
+    }
+    val noticeScope = rememberCoroutineScope()
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            onNoticeShown() // changes the key, so show it outside this effect
+            noticeScope.launch { snackbar.showSnackbar(notice) }
         }
     }
     BackHandler(enabled = destination != Destination.HOME) { destination = Destination.HOME }

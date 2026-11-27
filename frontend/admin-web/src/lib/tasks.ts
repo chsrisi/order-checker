@@ -1,6 +1,6 @@
 import type { Schemas } from '../api'
 
-/** Tasks page helpers (T9.3, V2_UX §2.8). Pure, so the page logic is testable. */
+/** Tasks page helpers (T9.3, V2_UX §2.12). Pure, so the page logic is testable. */
 export type Task = Schemas['TaskResponse']
 export type TaskDetail = Schemas['AdminTaskDetailResponse']
 export type TaskLine = Schemas['TaskLineResponse']

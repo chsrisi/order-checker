@@ -21,6 +21,9 @@ data class LoginForm(
     fun askPassword(known: List<String>): LoginForm =
         worker(known)?.let { copy(step = LoginStep.PASSWORD, picked = it, password = "") } ?: this
 
+    /** The admin chose [name] (T8.7): their password step, as if picked by hand. */
+    fun preselect(name: String) = copy(step = LoginStep.PASSWORD, picked = name, password = "")
+
     fun manual() = copy(step = LoginStep.MANUAL, password = "")
 
     fun back() = copy(step = LoginStep.PICK, password = "")
