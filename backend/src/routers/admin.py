@@ -12,6 +12,7 @@ from ..models import (
     AdminLookupResponse,
     AdminLoginRequest,
     AdminDeviceAssign,
+    AdminDeviceUpdate,
     AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
@@ -159,6 +160,21 @@ async def approve_device(device_id: str = DeviceId, current_user: User = Depends
 )
 async def revoke_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
     return await _device_action(device_id, "revoked", current_user)
+
+
+@router.patch(
+    "/devices/{device_id}",
+    response_model=AdminDeviceResponse,
+    summary="Rename a device",
+    description="Sets the name the console shows (`label`, at most 40 characters; empty clears it).",
+    responses={403: {"description": "Admin scope required"}, 404: {"description": "Device not found"}},
+)
+async def update_device(
+    body: AdminDeviceUpdate,
+    device_id: str = DeviceId,
+    current_user: User = Depends(require_admin),
+):
+    return await device_assignment_service.rename(device_id, body, current_user.username or "")
 
 
 @router.post(

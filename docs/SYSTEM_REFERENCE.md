@@ -332,6 +332,8 @@ devices work as before (password login, login requests). Each action is logged
   last admin wins). The new worker's sessions on other devices are untouched.
 - `DELETE /admin/devices/{id}/assign` cancels; idempotent.
 - Revoking a device (T8.1) drops its assignment (`invalid`).
+- `PATCH /admin/devices/{id}` `{label}` names the device for the console (T8.6; at most 40,
+  trimmed, empty clears it; log event `device.renamed`).
 
 Device side: `POST /v2/device/state` `{device_id, nonce, signature}`, ECDSA over
 `oc-device:state:<device_id>:<nonce>` with the registered key (P-25). The nonce is
@@ -659,7 +661,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 |---|---|---|
 | user created/registered/reset/deleted | `users_update` | admins |
 | login request created, decided or cancelled | `login_requests_update` (all pending ones) | admins |
-| device approved, revoked or logged out; assignment created, replaced, cancelled, collected, expired or invalidated | `devices_update` (the whole `GET /admin/devices` list) | admins |
+| device approved, revoked, renamed or logged out; assignment created, replaced, cancelled, collected, expired or invalidated | `devices_update` (the whole `GET /admin/devices` list) | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
 | claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |

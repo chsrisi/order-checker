@@ -464,7 +464,15 @@ Mobile card                          Switch worker… (MT67-1)
   | 4 | How long to show "✓ *eko* logged in"? | **1 minute**, then the normal status line. The outcome stays readable in the device's details for an hour (`last_assignment`). |
   | 5 | Switch from the Workers page too ("Put on a scanner…")? | **Not now.** One place first; add it if you look for it there. |
 
-**Status: brief, awaiting your review (2026-11-27). Not built.**
+**Brief and all five recommendations accepted (maintainer, 2026-11-27).**
+
+**Round 1: built (2026-11-27), not yet accepted.** As the brief, plus:
+- An expired or dropped switch stays on the card for 10 minutes (a collected one for 1 minute),
+  with **Try again** in place of the button after an expiry.
+- Another admin's waiting switch names them ("⟳ ana is switching to rudi…"), so a replaced
+  switch shows on the card without a separate message.
+- The Dashboard hides revoked devices; the Devices page has "Show revoked (n)".
+- Rename… is also on `pending` devices; a revoked device has no actions.
 
 ## 3. Later (not scheduled)
 

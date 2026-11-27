@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename a device
+         * @description Sets the name the console shows (`label`, at most 40 characters; empty clears it).
+         */
+        patch: operations["update_device_admin_devices__device_id__patch"];
+        trace?: never;
+    };
     "/admin/devices/{device_id}/approve": {
         parameters: {
             query?: never;
@@ -848,6 +868,14 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** AdminDeviceUpdate */
+        AdminDeviceUpdate: {
+            /**
+             * Label
+             * @description The name the console shows, e.g. `MT67-2`. Empty or null clears it.
+             */
+            label?: string | null;
+        };
         /** AdminLoginRequest */
         AdminLoginRequest: {
             /**
@@ -1401,6 +1429,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    update_device_admin_devices__device_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeviceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeviceResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

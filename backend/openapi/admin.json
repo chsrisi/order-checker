@@ -306,6 +306,25 @@
         "title": "AdminDeviceResponse",
         "type": "object"
       },
+      "AdminDeviceUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name the console shows, e.g. `MT67-2`. Empty or null clears it.",
+            "title": "Label"
+          }
+        },
+        "title": "AdminDeviceUpdate",
+        "type": "object"
+      },
       "AdminLoginRequest": {
         "properties": {
           "created_at": {
@@ -1517,6 +1536,73 @@
           }
         ],
         "summary": "List v2 devices",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}": {
+      "patch": {
+        "description": "Sets the name the console shows (`label`, at most 40 characters; empty clears it).",
+        "operationId": "update_device_admin_devices__device_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDeviceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename a device",
         "tags": [
           "admin"
         ]

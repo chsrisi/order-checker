@@ -225,6 +225,20 @@ class AdminDeviceResponse(DeviceResponse):
     last_assignment: Optional[AdminDeviceLastAssignment] = None
 
 
+class AdminDeviceUpdate(BaseModel):
+    label: Optional[str] = Field(
+        None,
+        max_length=40,
+        description="The name the console shows, e.g. `MT67-2`. Empty or null clears it.",
+    )
+
+    @field_validator("label")
+    @classmethod
+    def strip_label(cls, v: Optional[str]) -> Optional[str]:
+        v = v.strip() if v is not None else None
+        return v or None
+
+
 class AdminDeviceAssign(BaseModel):
     username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     mode: Literal["direct", "preselect"] = Field(

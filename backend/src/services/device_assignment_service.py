@@ -26,6 +26,7 @@ from ..models import (
     AdminDeviceAssignment,
     AdminDeviceLastAssignment,
     AdminDeviceResponse,
+    AdminDeviceUpdate,
     Device,
     DeviceLogoutReason,
     DeviceStateAssignment,
@@ -142,6 +143,16 @@ async def _end_sessions(device_id: str) -> list[str]:
     for sid in sids:
         await conn_mgr.disconnect_session(sid)
     return sids
+
+
+async def rename(device_id: str, body: AdminDeviceUpdate, admin: str) -> AdminDeviceResponse:
+    """Set the device's console name (T8.6, V2_UX §2.8 open point 2)."""
+    device = await asyncio.to_thread(queries.set_device_label, device_id, body.label)
+    if device is None:
+        raise DomainException(status_code=404, detail="Device not found")
+    _log("renamed", device_id, admin=admin, label=body.label)
+    await announce()
+    return await admin_device(device_id)
 
 
 async def logout(device_id: str, admin: str) -> int:

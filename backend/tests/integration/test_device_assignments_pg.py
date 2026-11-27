@@ -444,3 +444,21 @@ def test_no_token_in_a_log_line_or_a_stored_value(client, env, caplog):
         "alice",
         "eko",
     )
+
+
+# --- rename (T8.6) ---------------------------------------------------------------------------
+
+
+def test_rename_a_device(client, env):
+    env.frames.reset_mock()
+    r = client.patch("/admin/devices/dev1", headers=env.admin, json={"label": "  MT67-2 "})
+    assert (r.status_code, r.json()["label"]) == (200, "MT67-2")
+    assert device_row(client, env)["label"] == "MT67-2"
+    assert len(device_frames(env)) == 1
+    r = client.patch("/admin/devices/dev1", headers=env.admin, json={"label": ""})
+    assert r.json()["label"] is None
+    assert client.patch("/admin/devices/dev1", headers=env.admin, json={"label": "x" * 41}).status_code == 422
+    assert client.patch("/admin/devices/nope", headers=env.admin, json={"label": "a"}).status_code == 404
+    _sid, tokens = logged_in("alice", "dev2")
+    operator = {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert client.patch("/admin/devices/dev1", headers=operator, json={"label": "a"}).status_code == 403

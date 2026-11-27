@@ -155,6 +155,19 @@ def set_device_status(device_id: str, status: str) -> tuple[Device, bool, list[s
         return device, changed, sids
 
 
+def set_device_label(device_id: str, label: Optional[str]) -> Optional[Device]:
+    """Name a device for the console (T8.6). None when the device is unknown."""
+    with get_db() as db:
+        device = db.get(Device, device_id)
+        if device is None:
+            return None
+        device.label = label
+        db.commit()
+        db.refresh(device)
+        db.expunge(device)
+        return device
+
+
 def list_devices() -> List[Device]:
     with get_db() as db:
         devices = (
