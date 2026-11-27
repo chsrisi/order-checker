@@ -409,6 +409,8 @@ Round 2 plus one change, in every layout (paired rows, two lists, mobile):
   orders would join the ongoing list like Shopee's, so their outbound scans stop showing up as
   strays (§2.1). It would need per-marketplace order sync and statuses, a marketplace mark on the
   order card and in the filters, and history that tells the marketplaces apart.
+  (2026-11-26: draft assessment in `MARKETPLACE_REVIEW.md`. Tokopedia's own API is gone, so this
+  means the TikTok Shop Partner Center API, which covers both.)
 - **Future milestone, same urgency as Tokopedia / TikTok Shop: barcode rules as configuration.**
   (Added 2026-11-25.) The rules are hardcoded today: the SKU shape, the `*` cut and the supplier
   barcode forms in `queries/warehouse.py` (SYSTEM_REFERENCE §7.4), and the order SN pattern

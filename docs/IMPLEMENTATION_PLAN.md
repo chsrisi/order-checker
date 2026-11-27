@@ -1088,6 +1088,24 @@ device (Q20).
 
 ## 5. Backlog (not scheduled)
 
+**Next up (added 2026-11-26, to be specced soon, not yet planned):**
+
+- **Worker session switch from the console.** The admin switches which worker is logged in on
+  a device, from the console. Scope to settle in its brief: switch the worker on the device
+  directly, or end the session and preselect a worker on the login screen. Builds on Devices
+  (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
+- **Edit the "previously logged in" worker list from the client's hidden settings.** Delete
+  entries from the login picker's local list of the 20 most recent workers (V2_UX §2.7).
+  Device-local only, no backend change.
+- **New feature: tasks.** Not yet defined. It needs its own spec (planning flow step 1) before
+  any planning.
+
+**Parked:**
+
+- **Tokopedia / TikTok Shop integration.** Draft assessment in `MARKETPLACE_REVIEW.md`, waiting
+  for the maintainer's review. Not before v2 parity. Do "barcode rules as configuration"
+  (V2_ORDERS_SPEC §12) first or in the same step.
+
 - **Client v2 (next client major).**
   - Unlimited reconnect backoff (F-H8).
   - URL-encode queries.
