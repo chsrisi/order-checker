@@ -15,11 +15,21 @@ def _seed(pg_session_factory):
     with pg_session_factory() as db:
         add_item(db, "SKU-A", name="Mug")
         add_item(db, "SKU-B", name="Coaster")
-        db.add(StocksLog(message="legacy free-text row", timestamp=datetime.now(UTC) - timedelta(days=30)))
+        db.add(
+            StocksLog(
+                message="legacy free-text row", timestamp=datetime.now(UTC) - timedelta(days=30)
+            )
+        )
         db.commit()
-    queries.update_or_move_stock(sku_in="SKU-A", stock_qty=10, username="eko", mode="set", location="201")
-    queries.update_or_move_stock(sku_in="SKU-A", stock_qty=5, username="dina", mode="add", location="201")
-    queries.update_or_move_stock(sku_in="SKU-B", stock_qty=3, username="eko", mode="set", location="203")
+    queries.update_or_move_stock(
+        sku_in="SKU-A", stock_qty=10, username="eko", mode="set", location="201"
+    )
+    queries.update_or_move_stock(
+        sku_in="SKU-A", stock_qty=5, username="dina", mode="add", location="201"
+    )
+    queries.update_or_move_stock(
+        sku_in="SKU-B", stock_qty=3, username="eko", mode="set", location="203"
+    )
 
 
 def test_changes_are_newest_first_with_item_names_and_a_total(pg_session_factory):
@@ -74,6 +84,11 @@ def test_a_pick_names_its_order(pg_session_factory):
         db.commit()
     queries.pick_for_order("261127PICK01", "SKU-A", 2, "op")
     page, _ = queries.get_stock_changes(limit=1, f=StockChangeFilter(reasons=("pick",)))
-    assert (page[0]["sku"], page[0]["before"], page[0]["after"], page[0]["order_sn"]) == ("SKU-A", 15, 13, "261127PICK01")
+    assert (page[0]["sku"], page[0]["before"], page[0]["after"], page[0]["order_sn"]) == (
+        "SKU-A",
+        15,
+        13,
+        "261127PICK01",
+    )
     other, _ = queries.get_stock_changes(limit=10, f=StockChangeFilter(reasons=("adjust_set",)))
     assert {r["order_sn"] for r in other} == {None}

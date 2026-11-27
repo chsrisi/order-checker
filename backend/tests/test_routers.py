@@ -158,13 +158,26 @@ def test_admin_stock_changes_passes_filters_and_total(monkeypatch):
     response = Response()
     since = datetime(2026, 11, 20, tzinfo=UTC)
     rows = admin.get_stock_changes(
-        response, 25, 50, actor("admin", "admin"), sku="SKU-A", actor="eko",
-        reason=["pick", "adjust_set"], since=since, until=None,
+        response,
+        25,
+        50,
+        actor("admin", "admin"),
+        sku="SKU-A",
+        actor="eko",
+        reason=["pick", "adjust_set"],
+        since=since,
+        until=None,
     )
     assert rows == ["row"] and response.headers["X-Total-Count"] == "42"
     assert (seen["limit"], seen["offset"]) == (25, 50)
     f = seen["f"]
-    assert (f.sku, f.actor, f.reasons, f.since, f.until) == ("SKU-A", "eko", ("pick", "adjust_set"), since, None)
+    assert (f.sku, f.actor, f.reasons, f.since, f.until) == (
+        "SKU-A",
+        "eko",
+        ("pick", "adjust_set"),
+        since,
+        None,
+    )
 
 
 def test_admin_lookup_returns_orders_and_scans(monkeypatch):
