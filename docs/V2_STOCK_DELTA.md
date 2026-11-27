@@ -82,3 +82,11 @@ Today a location is a **room number**, and the format will change. So nothing sh
   script changes of SPEC §4 (findings 9, 10) are part of T6.25.
 - `WAREHOUSE_MAP_SPEC.md` keeps its text. Where this delta differs (`/v2/layout`, the volume, the
   location rule, entry points, the flag, events), this delta wins, as a banner there says.
+
+## Round 2 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| K1–K4 | V2_UX §2.10 (guided Stockkeeping) reviewed. Every recommendation accepted: location first in every action, next item at the same location, *Use 201* / *Move it first* in single mode, the large-change warning at 50 %. | ✅ |
+| F5–F8 | V2_UX §2.11 (console Stock & finder) reviewed. Every recommendation accepted: two tabs with a shared item card, Changes defaulting to 7 days, legacy rows shown as their message, links to orders and tasks. | ✅ |
+| – | Go-ahead to build T6.15e and T7.13. Coordinate the shared count screen directly with the step 9 session. | ✅ |

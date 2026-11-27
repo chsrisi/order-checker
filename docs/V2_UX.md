@@ -417,7 +417,7 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   | K3 | Single mode, an item recorded elsewhere: *Use 201* / *Move it first*? | **Yes**, as above. Never move silently. |
   | K4 | The "large change" warning at 50 %? | **Yes**, a fixed rule for round 1; a setting if it's wrong. |
 
-**Round 1: brief, waiting for your review.**
+**Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
 
 ### 2.11 Admin Stock & finder (T7.13, V2_STOCK_SPEC §3.3)
 
@@ -472,7 +472,7 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   | F7 | Show legacy log rows (before T4.3, free text only)? | **Yes**, as their message, marked "older entry". |
   | F8 | A link from an order or task in Changes to that order or task? | **Yes**: orders open the Orders lookup, tasks the task detail (after step 9). |
 
-**Round 1: brief, waiting for your review.**
+**Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
 
 ## 3. Later (not scheduled)
 
