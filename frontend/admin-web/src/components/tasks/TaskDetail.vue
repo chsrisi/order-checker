@@ -111,9 +111,9 @@ const lineColumns: DataTableColumns<Row> = [
 type LogRow = TaskDetail['stock_log'][number]
 const logColumns: DataTableColumns<LogRow> = [
   { title: 'When', key: 'timestamp', render: (r) => formatShort(r.timestamp) },
+  { title: 'Change', key: 'delta', align: 'right', render: (r) => (r.delta ?? 0) > 0 ? `+${r.delta}` : String(r.delta ?? 0) },
   { title: 'Item', key: 'sku' },
   { title: 'Where', key: 'location', render: (r) => r.location ?? '—' },
-  { title: 'Change', key: 'delta', align: 'right', render: (r) => (r.delta ?? 0) > 0 ? `+${r.delta}` : String(r.delta ?? 0) },
   { title: 'Why', key: 'reason' },
   { title: 'By', key: 'actor' },
 ]
