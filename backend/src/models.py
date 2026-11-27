@@ -1,7 +1,7 @@
 from __future__ import annotations
 import re
 from enum import Enum as PyEnum
-from datetime import datetime, UTC
+from datetime import date, datetime, UTC
 from typing import List, Optional, Union, Annotated, Any, Literal
 
 from sqlalchemy import CheckConstraint, Integer, String, DateTime, ForeignKey, Boolean, BigInteger, Float, Index, text
@@ -20,21 +20,18 @@ from pydantic import (
     Field,
 )
 
-
-def _assume_utc(value: datetime) -> datetime:
-    """Stored timestamps are naive UTC (``DateTime`` columns); make that explicit."""
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+from .timezone import as_utc
 
 
 def _iso_utc_z(value: datetime) -> str:
-    return _assume_utc(value).isoformat().replace("+00:00", "Z")
+    return as_utc(value).isoformat().replace("+00:00", "Z")
 
 
 # F-M6 / T4.6: every API and WS datetime is UTC with a ``Z`` suffix, e.g.
 # ``2026-11-20T21:05:00.123456Z``, which Dart's DateTime.parse reads as UTC.
 UTCDateTime = Annotated[
     datetime,
-    AfterValidator(_assume_utc),
+    AfterValidator(as_utc),
     PlainSerializer(_iso_utc_z, return_type=str, when_used="json"),
     # keep the documented contract shape (string, date-time) for the serialized form
     WithJsonSchema({"type": "string", "format": "date-time"}, mode="serialization"),
@@ -52,6 +49,7 @@ class WSMessageType(str, PyEnum):
     SHOPEE_ORDERS = "shopee_orders_update"
     PICK_ITEM_ENTRIES = "pick_item_entries_update"
     STOCKS = "stocks_update"
+    LOGIN_REQUESTS = "login_requests_update"
     ERROR = "error"
 
 
@@ -107,10 +105,10 @@ class AuthSession(Base):
     __table_args__ = {"schema": "auth"}
     id: Mapped[str] = mapped_column(String, primary_key=True)
     username: Mapped[str] = mapped_column(ForeignKey("auth.users.username"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     ip_address: Mapped[Optional[str]] = mapped_column(String)
     agent: Mapped[Optional[str]] = mapped_column(String)
     # The v2 device this session registered from (T6.6); NULL for v1 apps and the admin.
@@ -147,8 +145,8 @@ class Device(Base):
     current_username: Mapped[Optional[str]] = mapped_column(
         ForeignKey("auth.users.username", ondelete="SET NULL")
     )
-    enrolled_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class DeviceRegisterRequest(BaseModel):
@@ -177,8 +175,8 @@ class DeviceResponse(BaseModel):
     android_version: Optional[str] = None
     app_version_code: Optional[int] = None
     current_username: Optional[str] = None
-    enrolled_at: datetime
-    last_seen_at: Optional[datetime] = None
+    enrolled_at: UTCDateTime
+    last_seen_at: Optional[UTCDateTime] = None
 
 
 class AdminDeviceResponse(DeviceResponse):
@@ -197,9 +195,9 @@ class RefreshToken(Base):
     session_id: Mapped[str] = mapped_column(
         ForeignKey("auth.sessions.id", ondelete="CASCADE"), index=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     ip_address: Mapped[Optional[str]] = mapped_column(String)
     agent: Mapped[Optional[str]] = mapped_column(String)
 
@@ -210,12 +208,12 @@ class ShopeeOrder(Base):
     __table_args__ = {"schema": "shopee"}
     order_sn: Mapped[str] = mapped_column(String, index=True, primary_key=True)
     split_up: Mapped[bool] = mapped_column(Boolean)
-    ship_by: Mapped[datetime] = mapped_column(DateTime)
+    ship_by: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     owner_user: Mapped[Optional[str]] = mapped_column(ForeignKey("auth.users.username"))
     status: Mapped[str] = mapped_column(String)
     shipping_carrier: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     done: Mapped[bool] = mapped_column(Boolean, default=False)
-    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     owner: Mapped[Optional["User"]] = relationship("User", back_populates="orders")
     item_list: Mapped[List["ShopeeOrderItemList"]] = relationship(
@@ -279,10 +277,10 @@ class OutboundItem(Base):
     __table_args__ = {"schema": "orders"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     content: Mapped[str] = mapped_column(String, index=True)  # The scanned text
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
-    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     owner: Mapped["User"] = relationship("User", back_populates="outbounds")
     tags_rel: Mapped[List["OutboundTag"]] = relationship(
@@ -317,7 +315,7 @@ class PickItemEntry(Base):
     order_sn: Mapped[Optional[str]] = mapped_column(
         ForeignKey("shopee.orders.order_sn"), nullable=True
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
 
     owner: Mapped["User"] = relationship("User", back_populates="pies")
@@ -345,7 +343,7 @@ class PickStockAllocation(Base):
     sku: Mapped[str] = mapped_column(String)
     location: Mapped[Optional[str]] = mapped_column(String)
     qty: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     entry: Mapped["PickItemEntry"] = relationship("PickItemEntry", back_populates="allocations")
 
@@ -452,7 +450,7 @@ class StocksLog(Base):
     __table_args__ = {"schema": "warehouse"}
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     message: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     sku: Mapped[Optional[str]] = mapped_column(String, index=True)
     location: Mapped[Optional[str]] = mapped_column(String)
     delta: Mapped[Optional[int]] = mapped_column(Integer)
@@ -584,6 +582,54 @@ class UserAuth(BaseModel):
         if not re.match(r"^[a-zA-Z0-9_]+$", v):
             raise ValueError("Username can only contain alphanumeric characters, and underscores.")
         return v
+
+
+NONCE_PATTERN = r"^[A-Za-z0-9_-]{16,64}$"
+
+
+class LoginRequestProof(BaseModel):
+    """A signature by the device key over ``oc-login-request:<action>:<subject>:<nonce>``:
+    action ``create`` (subject: the username), ``poll`` or ``cancel`` (subject: the id)."""
+
+    nonce: str = Field(pattern=NONCE_PATTERN, description="Fresh per call; never reused.")
+    signature: str = Field(
+        max_length=512,
+        description=(
+            "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string "
+            "`oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`."
+        ),
+    )
+
+
+class LoginRequestCreate(LoginRequestProof):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    public_key: str = Field(
+        max_length=1024, description="Base64 DER SubjectPublicKeyInfo of the registered key."
+    )
+
+
+class LoginRequestCreated(BaseModel):
+    id: str
+    match_code: str = Field(description="Two digits, also shown to the admin.")
+    expires_in: int = Field(description="Seconds an admin has to decide.")
+
+
+class LoginRequestPoll(BaseModel):
+    status: str = Field(
+        description="`pending`, `approved`, `denied` or `expired` (also: cancelled, collected)."
+    )
+    tokens: Optional[Token] = Field(None, description="Only with `approved`, once.")
+
+
+class AdminLoginRequest(BaseModel):
+    id: str
+    username: str
+    match_code: str
+    device_id: str
+    device_name: str
+    ip_address: Optional[str] = None
+    created_at: UTCDateTime
+    expires_at: UTCDateTime
 
 
 class AdminUserCreate(UserAuth):
@@ -753,6 +799,22 @@ class PickItemEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrderPickRequest(BaseModel):
+    """v2: add to, or take off, one order (the order is in the path)."""
+
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Warehouse SKU or recognized barcode."
+    )
+    qty: int = Field(gt=0)
+
+
+class OrderPickResponse(BaseModel):
+    order_sn: str
+    sku: str = Field(description="The resolved warehouse SKU.")
+    qty: int = Field(ge=0, description="What the order now has of this SKU.")
+    item_name: Optional[str] = None
+
+
 class PickItemEntryAssign(BaseModel):
     order_sn: str = Field(
         min_length=1, max_length=ORDER_SN_MAX_LENGTH, description="Claimed Shopee order number."
@@ -835,15 +897,22 @@ class AdminLookupResponse(BaseModel):
     scans: List[OutboundResponse] = Field(
         description="Scans of the label, open and closed, newest first."
     )
+    day: Optional[date] = Field(None, description="The History day it left on, if it left.")
 
 
-class AdminCloseResponse(BaseModel):
-    """One period close (Delta 9, Q42): every scan and order it closed shares ``closed_at``."""
+class AdminDayResponse(BaseModel):
+    """One business day of History (V2_ORDERS_DELTA C2): scans count on the day they were made."""
 
-    closed_at: datetime
+    day: date
     outbound: int = Field(ge=0, description="Scans closed.")
-    orders_done: int = Field(ge=0, description="Orders marked complete.")
+    orders_done: int = Field(ge=0, description="Completed orders with a scan of that day.")
     tags: List[str] = Field(description="Distinct tags of the closed scans.")
+
+
+class AdminDayDetailResponse(BaseModel):
+    day: date
+    orders: List[ShopeeOrderResponse]
+    scans: List[OutboundResponse]
 
 
 class OutboundCloseResponse(BaseModel):

@@ -70,8 +70,9 @@ describe('orders', () => {
 
   it('counts an order as packed when its SN or tracking number was scanned', () => {
     const plain = order('B')
-    expect([...packedOrders([cake, plain], [scan('spx-9')])]).toEqual(['A'])
+    expect([...packedOrders([cake, plain], [scan('SPX-9')])]).toEqual(['A'])
     expect([...packedOrders([cake, plain], [scan(' B ')])]).toEqual(['B'])
+    expect([...packedOrders([cake, plain], [scan('b'), scan('spx-9')])]).toEqual([]) // labels match exactly (Q57)
     expect(ordersClosedBy([cake, plain], [scan('nothing')])).toBe(0)
     expect(pickupCode(cake)).toBe('PK-7')
     const index = labelIndex([cake, plain])
@@ -117,7 +118,7 @@ describe('orders', () => {
     ])
     // Q45: the review counts a borrowed courier, not "No tag"
     const index = ordersByLabel([order('C', { shipping_carrier: 'J&T' })])
-    expect(countByTag([scan('c')], (s) => effectiveTags(s, index).tags)).toEqual([{ tag: 'J&T', count: 1 }])
+    expect(countByTag([scan('C')], (s) => effectiveTags(s, index).tags)).toEqual([{ tag: 'J&T', count: 1 }])
   })
 
   it('R4.3: Not started only without any pick; Picking counts SKUs touched', () => {
@@ -147,8 +148,8 @@ describe('orders', () => {
   it('R4.1: a split order is packed only when every package tracking number is scanned', () => {
     const split = order('S', { info: [{ id: 1, tracking_number: 'T1' }, { id: 2, tracking_number: 'T2' }] })
     expect(packState(split, [])).toBe('none')
-    expect(packState(split, [scan('t1')])).toBe('partial')
-    expect(packState(split, [scan('s')])).toBe('partial') // an SN scan can't say which package
+    expect(packState(split, [scan('T1')])).toBe('partial')
+    expect(packState(split, [scan('S')])).toBe('partial') // an SN scan can't say which package
     expect(packState(split, [scan('T1'), scan('T2')])).toBe('packed')
     expect([...packedOrders([split], [scan('T1')])]).toEqual([])
     // the server still completes it on close (rule 6), so the preview counts it
@@ -157,12 +158,12 @@ describe('orders', () => {
 
   it('pairs scans with orders, finds strays, and borrows the courier for untagged scans (Q45)', () => {
     const jt = order('J', { shipping_carrier: 'J&T Express', info: [{ id: 1, tracking_number: 'JX1' }] })
-    const both = [scan('J'), scan('jx1', ['Morning']), scan('TOKO-1')]
-    expect(scansFor(jt, both).map((s) => s.content)).toEqual(['J', 'jx1'])
+    const both = [scan('J'), scan('JX1', ['Morning']), scan('TOKO-1')]
+    expect(scansFor(jt, both).map((s) => s.content)).toEqual(['J', 'JX1'])
     expect(strayScans([jt], both).map((s) => s.content)).toEqual(['TOKO-1'])
     const index = ordersByLabel([jt])
     expect(effectiveTags(scan('J'), index)).toEqual({ tags: ['J&T Express'], fromOrder: true })
-    expect(effectiveTags(scan('jx1', ['Morning']), index)).toEqual({ tags: ['Morning'], fromOrder: false })
+    expect(effectiveTags(scan('JX1', ['Morning']), index)).toEqual({ tags: ['Morning'], fromOrder: false })
     expect(effectiveTags(scan('TOKO-1'), index)).toEqual({ tags: [], fromOrder: false })
   })
 

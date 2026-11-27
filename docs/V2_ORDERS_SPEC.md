@@ -402,13 +402,22 @@ Round 2 plus one change, in every layout (paired rows, two lists, mobile):
   May → *Mei*, Aug → *Agu*, Oct → *Okt*, Dec → *Des*), the Shopee status names and the close
   review's sentences, which build plurals. Naive UI ships both locales (`enUS`/`idID` and
   `dateEnUS`/`dateIdID`). Scanner labels, SKUs and buyer notes stay as they are.
-- **To-do: light/dark toggle.** Today the theme follows the system setting. Add a switch with
-  *System*, *Light* and *Dark*, remembered per browser. Both themes are already supported, and
+- **Done (2026-11-27): light/dark toggle.** Account menu → Theme: *System*, *Light* and
+  *Dark*, remembered per browser. Both themes are already supported, and
   C9 (never colour alone) still applies.
 - **Future milestone, not a major focus for v2: Tokopedia and TikTok Shop API integration.** Their
   orders would join the ongoing list like Shopee's, so their outbound scans stop showing up as
   strays (§2.1). It would need per-marketplace order sync and statuses, a marketplace mark on the
   order card and in the filters, and history that tells the marketplaces apart.
+  (2026-11-26: draft assessment in `MARKETPLACE_REVIEW.md`. Tokopedia's own API is gone, so this
+  means the TikTok Shop Partner Center API, which covers both.)
+- **Future milestone, same urgency as Tokopedia / TikTok Shop: barcode rules as configuration.**
+  (Added 2026-11-25.) The rules are hardcoded today: the SKU shape, the `*` cut and the supplier
+  barcode forms in `queries/warehouse.py` (SYSTEM_REFERENCE §7.4), and the order SN pattern
+  (`^\d{6}`) in the Android client's `OrderLogic.kt` and the v1 client's `orders_view.dart`. Move
+  them behind one abstraction so a new supplier or label format needs no code change. Where the
+  rules live and who edits them is to be decided when this is planned. Today's rules become the
+  defaults, with unchanged results.
 
 ## 13. Round 4 (2026-11-24): `prototypes/orders/admin-orders-r4.html`
 

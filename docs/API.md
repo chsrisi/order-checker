@@ -36,11 +36,14 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
 | GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| GET | `/admin/login-requests` | Admin | Pending login requests, oldest first: `id`, `username`, `match_code`, device, IP, `created_at`, `expires_at` |
+| POST | `/admin/login-requests/{id}/approve`, `/deny` | Admin | Decide. 404 expired or cancelled, 409 already decided |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
-| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`). Optional filters (since 2026-11-24): `closed_from`/`closed_to` (close time, inclusive; ISO 8601, UTC without an offset), `closed_at` (one exact close), `q` (label, worker or tag, case-insensitive) |
-| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total. Same optional filters on `done_at`; `q` matches SN, worker, tracking number, pickup code, courier or buyer name (buyer names only within the retention window) |
-| GET | `/admin/history/closes` | Admin | One row per period close, newest first: `{closed_at, outbound, orders_done, tags}` (a close stamps its scans and orders with one time). `limit` 1–500 (default 50), `offset`, `closed_from`/`closed_to`, `q` (only closes holding a matching scan or order, with their full counts); `X-Total-Count` |
-| GET | `/admin/lookup?label=` | Admin | Where an exact label is (V2_ORDERS_DELTA Q49): `{label, orders, scans}`, the orders whose SN or a tracking number is the label (ongoing or done; `done_at` is its close) and its scans, open or closed, newest first. Trimmed, case-insensitive, exact |
+| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`). Optional filters (since 2026-11-24): `closed_from`/`closed_to` (close time, inclusive; ISO 8601, UTC without an offset), `day_from`/`day_to` (business days by scan time, `YYYY-MM-DD`), `q` (label, worker or tag, case-insensitive) |
+| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total. Same optional filters, `closed_from`/`closed_to` on `done_at`; `q` matches SN, worker, tracking number, pickup code, courier or buyer name (buyer names only within the retention window) |
+| GET | `/admin/history/days` | Admin | One row per business day (`BUSINESS_UTC_OFFSET`), newest first: `{day, outbound, orders_done, tags}`. A closed scan counts on the day it was **made**. `limit` 1–500 (default 50), `offset`, `day_from`/`day_to`, `q` (only days holding a matching scan or order, with their full counts); `X-Total-Count`. Replaces `/admin/history/closes` (V2_ORDERS_DELTA C2) |
+| GET | `/admin/history/days/{day}` | Admin | `{day, orders, scans}`: all of one day, unpaged |
+| GET | `/admin/lookup?label=` | Admin | Where an exact label is (V2_ORDERS_DELTA Q49): `{label, orders, scans}`, the orders whose SN or a tracking number is the label (ongoing or done; `done_at` is its close), its scans, open or closed, newest first, and `day` (the History day it left on, or null). Exact after trimming |
 | GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |
@@ -74,14 +77,20 @@ operations are also served under `/v2` for the v2 operator app, by **the same ha
 | v2 path | Same as |
 |---|---|
 | `POST /v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/logout`, `/v2/auth/ws-token` | `/auth/...` |
-| `POST /v2/outbound` | `POST /outbound` |
-| `POST /v2/pick-items`, `/v2/pick-items/{id}/assign`, `/v2/pick-items/unassign`, `DELETE /v2/pick-items/{id}` | `/pick-items...` |
-| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...` |
+| `POST /v2/outbound` | `POST /outbound`, but 403 for admins |
+| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...`, but acquire answers 403 to admins |
 | `GET /v2/items/find` | `GET /items/find` |
 | `POST /v2/stocks/update` | `POST /stocks/update` |
 | `GET /v2/meta` | `GET /meta` |
 
-Not under `/v2`: registration, JWKS (the v2 app does not verify tokens locally), and every
+v2 only (V2_PICKING_DELTA; admins get 403):
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks` `{sku, qty}` | Pick into a claimed order → `{order_sn, sku, qty, item_name}` with the resolved SKU and the line's total. 404 unknown item or order; 409 completed, not active on Shopee, or not enough stock (`STOCK_STRICT`) |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign` `{sku, qty}` | Take a quantity off the order and return it to stock. 404 not picked; 409 completed, or more than is picked |
+
+Not under `/v2`: the v1 `/pick-items` operations, registration, JWKS (the v2 app does not verify tokens locally), and every
 admin operation (the admin API stays at the root).
 
 **Version gate.** Every `/v2` operation except `/v2/meta` (and the update and device-registration
@@ -94,6 +103,13 @@ endpoints) requires `X-Client-Version: <versionCode>`:
 
 The minimum comes from the published release metadata (OPERATIONS "Publishing a client
 release"); with nothing published there is no minimum.
+
+**Login requests (no token, gated, signed by the device key).**
+`POST /v2/auth/login-requests` `{username, public_key, nonce, signature}` →
+`{id, match_code, expires_in}`; 403 device not registered or revoked, 429 limits.
+`POST …/{id}/poll` `{nonce, signature}` → `{status, tokens}` with `pending`, `approved` (tokens,
+once), `denied` or `expired`. `POST …/{id}/cancel` is idempotent. 400 bad signature or reused
+nonce, 503 Redis down. Signed string: SYSTEM_REFERENCE §5.
 
 **Device registration (operator token, not gated).** `POST /v2/device/register`
 `{public_key, model, android_version, app_version_code, signature}` → the device
@@ -186,7 +202,7 @@ updates. Responses and server broadcasts have this envelope:
 {"type": "outbound_update", "data": []}
 ```
 
-Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
+Valid types are `users_update`, `login_requests_update` (admins), `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
 

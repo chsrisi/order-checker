@@ -43,5 +43,6 @@ def get_meta() -> MetaResponse:
             "self_registration": config.ALLOW_REGISTRATION,
             "pick_stock_restore": True,
             "utc_datetimes": True,
+            "strict_stock": config.strict_stock(),
         },
     )

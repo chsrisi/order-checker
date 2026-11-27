@@ -239,6 +239,116 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LoginRequestCreate": {
+        "properties": {
+          "nonce": {
+            "description": "Fresh per call; never reused.",
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "title": "Nonce",
+            "type": "string"
+          },
+          "public_key": {
+            "description": "Base64 DER SubjectPublicKeyInfo of the registered key.",
+            "maxLength": 1024,
+            "title": "Public Key",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string `oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "signature",
+          "username",
+          "public_key"
+        ],
+        "title": "LoginRequestCreate",
+        "type": "object"
+      },
+      "LoginRequestCreated": {
+        "properties": {
+          "expires_in": {
+            "description": "Seconds an admin has to decide.",
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_code": {
+            "description": "Two digits, also shown to the admin.",
+            "title": "Match Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "match_code",
+          "expires_in"
+        ],
+        "title": "LoginRequestCreated",
+        "type": "object"
+      },
+      "LoginRequestPoll": {
+        "properties": {
+          "status": {
+            "description": "`pending`, `approved`, `denied` or `expired` (also: cancelled, collected).",
+            "title": "Status",
+            "type": "string"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Token"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only with `approved`, once."
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LoginRequestPoll",
+        "type": "object"
+      },
+      "LoginRequestProof": {
+        "description": "A signature by the device key over ``oc-login-request:<action>:<subject>:<nonce>``:\naction ``create`` (subject: the username), ``poll`` or ``cancel`` (subject: the id).",
+        "properties": {
+          "nonce": {
+            "description": "Fresh per call; never reused.",
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "title": "Nonce",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string `oc-login-request:<create|poll|cancel>:<username or request id>:<nonce>`.",
+            "maxLength": 512,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "signature"
+        ],
+        "title": "LoginRequestProof",
+        "type": "object"
+      },
       "MessageResponse": {
         "properties": {
           "message": {
@@ -285,6 +395,66 @@
           "features"
         ],
         "title": "MetaResponse",
+        "type": "object"
+      },
+      "OrderPickRequest": {
+        "description": "v2: add to, or take off, one order (the order is in the path).",
+        "properties": {
+          "qty": {
+            "exclusiveMinimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "Warehouse SKU or recognized barcode.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "title": "OrderPickRequest",
+        "type": "object"
+      },
+      "OrderPickResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "qty": {
+            "description": "What the order now has of this SKU.",
+            "minimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "The resolved warehouse SKU.",
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "sku",
+          "qty"
+        ],
+        "title": "OrderPickResponse",
         "type": "object"
       },
       "OutboundCreate": {
@@ -374,154 +544,6 @@
           "owner_user"
         ],
         "title": "OutboundResponse",
-        "type": "object"
-      },
-      "PickItemEntryAssign": {
-        "properties": {
-          "order_sn": {
-            "description": "Claimed Shopee order number.",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Order Sn",
-            "type": "string"
-          },
-          "qty": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Quantity to assign; defaults to the full entry.",
-            "title": "Qty"
-          }
-        },
-        "required": [
-          "order_sn"
-        ],
-        "title": "PickItemEntryAssign",
-        "type": "object"
-      },
-      "PickItemEntryCreate": {
-        "properties": {
-          "order_sn": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Sn"
-          },
-          "qty": {
-            "description": "Quantity to add to the pick list.",
-            "exclusiveMinimum": 0.0,
-            "title": "Qty",
-            "type": "integer"
-          },
-          "sku": {
-            "description": "Warehouse SKU or recognized barcode.",
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Sku",
-            "type": "string"
-          }
-        },
-        "required": [
-          "sku",
-          "qty"
-        ],
-        "title": "PickItemEntryCreate",
-        "type": "object"
-      },
-      "PickItemEntryResponse": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "item_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Item Name"
-          },
-          "order_sn": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Sn"
-          },
-          "owner_user": {
-            "title": "Owner User",
-            "type": "string"
-          },
-          "qty": {
-            "title": "Qty",
-            "type": "integer"
-          },
-          "sku": {
-            "title": "Sku",
-            "type": "string"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "title": "Timestamp",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "sku",
-          "qty",
-          "timestamp",
-          "owner_user"
-        ],
-        "title": "PickItemEntryResponse",
-        "type": "object"
-      },
-      "PickItemEntryUnassign": {
-        "properties": {
-          "order_sn": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Order Sn",
-            "type": "string"
-          },
-          "qty": {
-            "exclusiveMinimum": 0.0,
-            "title": "Qty",
-            "type": "integer"
-          },
-          "sku": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Sku",
-            "type": "string"
-          }
-        },
-        "required": [
-          "order_sn",
-          "sku",
-          "qty"
-        ],
-        "title": "PickItemEntryUnassign",
         "type": "object"
       },
       "RefreshTokenRequest": {
@@ -1144,6 +1166,245 @@
         ]
       }
     },
+    "/v2/auth/login-requests": {
+      "post": {
+        "description": "From a registered, not revoked device. Replaces the device's previous request. The answer does not tell whether the account exists.",
+        "operationId": "create_login_request_v2_auth_login_requests_post",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginRequestCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "403": {
+            "description": "Device not registered, or revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "429": {
+            "description": "Too many requests from this device, or too many pending"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Ask an admin to approve a login",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/login-requests/{request_id}/cancel": {
+      "post": {
+        "description": "Idempotent: an ended request answers the same.",
+        "operationId": "cancel_login_request_v2_auth_login_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestProof"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Cancel a login request",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
+    "/v2/auth/login-requests/{request_id}/poll": {
+      "post": {
+        "description": "Returns the tokens once when approved. Poll every 2 s.",
+        "operationId": "poll_login_request_v2_auth_login_requests__request_id__poll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestProof"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginRequestPoll"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "X-Client-Version missing, bad signature or key, or nonce reused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "summary": "Check a login request",
+        "tags": [
+          "v2 \u00b7 authentication"
+        ]
+      }
+    },
     "/v2/auth/logout": {
       "post": {
         "description": "Ends the refresh token's session: its access and refresh tokens stop working at once and its WebSocket connections are closed.",
@@ -1630,6 +1891,9 @@
           "401": {
             "description": "Invalid bearer token"
           },
+          "403": {
+            "description": "Admin accounts cannot work on orders"
+          },
           "409": {
             "description": "Duplicate open scan"
           },
@@ -1655,324 +1919,6 @@
         "summary": "Record an outbound scan",
         "tags": [
           "v2 \u00b7 outbound"
-        ]
-      }
-    },
-    "/v2/pick-items": {
-      "post": {
-        "description": "Resolves the SKU/barcode and merges the quantity into a matching user/order entry.",
-        "operationId": "v2_create_pie_v2_pick_items_post",
-        "parameters": [
-          {
-            "description": "Required. The app's integer versionCode.",
-            "in": "header",
-            "name": "X-Client-Version",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Required. The app's integer versionCode.",
-              "title": "X-Client-Version"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PickItemEntryCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PickItemEntryResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "description": "Missing or malformed X-Client-Version header"
-          },
-          "404": {
-            "description": "SKU/barcode not found, or `order_sn` not claimed by the caller"
-          },
-          "409": {
-            "description": "`order_sn` is already completed"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "426": {
-            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Add a pick-list entry",
-        "tags": [
-          "v2 \u00b7 pick items"
-        ]
-      }
-    },
-    "/v2/pick-items/unassign": {
-      "post": {
-        "description": "Moves up to the requested quantity from an order-specific entry back to the user's general pick list.",
-        "operationId": "v2_unassign_pie_v2_pick_items_unassign_post",
-        "parameters": [
-          {
-            "description": "Required. The app's integer versionCode.",
-            "in": "header",
-            "name": "X-Client-Version",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Required. The app's integer versionCode.",
-              "title": "X-Client-Version"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PickItemEntryUnassign"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "description": "Missing or malformed X-Client-Version header"
-          },
-          "404": {
-            "description": "Assigned entry not found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "426": {
-            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Return picked quantity from an order",
-        "tags": [
-          "v2 \u00b7 pick items"
-        ]
-      }
-    },
-    "/v2/pick-items/{entry_id}": {
-      "delete": {
-        "description": "Operators may delete their own entries; administrators may delete any entry. The stock the entry deducted is returned to inventory.",
-        "operationId": "v2_delete_pie_v2_pick_items__entry_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entry_id",
-            "required": true,
-            "schema": {
-              "title": "Entry Id",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Required. The app's integer versionCode.",
-            "in": "header",
-            "name": "X-Client-Version",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Required. The app's integer versionCode.",
-              "title": "X-Client-Version"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "description": "Missing or malformed X-Client-Version header"
-          },
-          "404": {
-            "description": "Entry not found or not owned by user"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "426": {
-            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Delete a pick entry",
-        "tags": [
-          "v2 \u00b7 pick items"
-        ]
-      }
-    },
-    "/v2/pick-items/{entry_id}/assign": {
-      "post": {
-        "description": "Moves all or part of an unassigned entry to an order claimed by the authenticated operator.",
-        "operationId": "v2_assign_pie_v2_pick_items__entry_id__assign_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entry_id",
-            "required": true,
-            "schema": {
-              "title": "Entry Id",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Required. The app's integer versionCode.",
-            "in": "header",
-            "name": "X-Client-Version",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Required. The app's integer versionCode.",
-              "title": "X-Client-Version"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PickItemEntryAssign"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PickItemEntryResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "description": "Invalid quantity"
-          },
-          "404": {
-            "description": "Entry or claimed order not found"
-          },
-          "409": {
-            "description": "Order already completed"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "426": {
-            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Assign a pick entry to an order",
-        "tags": [
-          "v2 \u00b7 pick items"
         ]
       }
     },
@@ -2106,6 +2052,9 @@
           "400": {
             "description": "Missing or malformed X-Client-Version header"
           },
+          "403": {
+            "description": "Admin accounts cannot work on orders"
+          },
           "404": {
             "description": "Order not found"
           },
@@ -2134,6 +2083,192 @@
         "summary": "Claim a Shopee order",
         "tags": [
           "v2 \u00b7 Shopee"
+        ]
+      }
+    },
+    "/v2/shopee/orders/{order_sn}/picks": {
+      "post": {
+        "description": "Resolves the SKU/barcode, adds the quantity to the order and deducts stock bin by bin. Returns the resolved SKU and what the order now has of it.",
+        "operationId": "pick_v2_shopee_orders__order_sn__picks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_sn",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Order Sn",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderPickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPickResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on orders"
+          },
+          "404": {
+            "description": "SKU/barcode not found, or order not claimed by the caller"
+          },
+          "409": {
+            "description": "Order completed or no longer active on Shopee, or not enough stock (only with `STOCK_STRICT`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pick an item into an order",
+        "tags": [
+          "v2 \u00b7 order picks"
+        ]
+      }
+    },
+    "/v2/shopee/orders/{order_sn}/picks/unassign": {
+      "post": {
+        "description": "Returns the quantity to stock at once. `sku` is the stored SKU of the line. Allowed on a cancelled order, not on a completed one. Returns what is left (`qty` may be 0).",
+        "operationId": "unassign_v2_shopee_orders__order_sn__picks_unassign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_sn",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Order Sn",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderPickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderPickResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on orders"
+          },
+          "404": {
+            "description": "Order not claimed by the caller, or nothing of the SKU picked"
+          },
+          "409": {
+            "description": "Order completed, or more than is picked; nothing changes"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove a picked quantity from an order",
+        "tags": [
+          "v2 \u00b7 order picks"
         ]
       }
     },

@@ -84,7 +84,7 @@ This document tracks known architectural, library, and system limitations within
   - Row locks, per-bin allocations (`orders.pick_stock_allocations`) and a structured
     `stocks_log`.
   - A delete restores exactly what was deducted.
-  - Shortfalls still never block a pick (HTTP 200, logged `pick_shortfall`). See OPERATIONS
+  - Shortfalls still never block a pick (HTTP 200, logged `pick_shortfall`; see #14). See OPERATIONS
     "Inventory".
 - **Remaining limits**:
   - Stock is *deducted* at pick time, not reserved until outbound close (stock Q6). Revisit
@@ -115,7 +115,7 @@ This document tracks known architectural, library, and system limitations within
 ### 7. Flutter Web Cross-Platform WebSocket Channel (admin web only)
 - **Scope**: only the **admin** app runs in a browser. The operator client's web build was
   dropped (delta D2.1), so its `IOWebSocketChannel.connect` (`dart:io`) is correct for its
-  Android and Windows targets. Earlier review item F-H7 no longer applies to it.
+  Android target (the Windows build was dropped too, TH.3). Earlier review item F-H7 no longer applies to it.
 - **Rule for browser code**: `IOWebSocketChannel.connect` (from `package:web_socket_channel/io.dart`)
   crashes with `UnsupportedError` in a browser. Use `WebSocketChannel.connect(uri)` from
   `package:web_socket_channel/web_socket_channel.dart`, which picks `HtmlWebSocketChannel` on
@@ -125,12 +125,12 @@ This document tracks known architectural, library, and system limitations within
 ---
 
 ### 8. Operator Client API Is Frozen (Manual Client Updates)
-- **Issue**: The operator client (`frontend/client`, Android/Windows scanners) is distributed and updated manually. It cannot be updated over the air, and its `BASE_URL`/`WS_URL` are baked into each build. Every backend version must keep working with every client build still in the field.
+- **Issue**: The operator client (`frontend/client`, Android scanners) is distributed and updated manually. It cannot be updated over the air, and its `BASE_URL`/`WS_URL` are baked into each build. Every backend version must keep working with every client build still in the field.
 - **Policy**:
   - The client-facing API is **contract v1**. The exact surface is listed in `docs/SYSTEM_REFERENCE.md` §10 (originally `docs/archive/BRANCH_SPLIT_REVIEW.md` §2).
   - Keep client API changes to a minimum. Only **additive** changes are allowed: new optional response fields, new endpoints, timezone offsets on datetimes, and new WebSocket event types whose `data` is a JSON **array of objects**.
   - **Breaking changes require a major version bump** and a manual client rollout. Examples: renaming or removing a path, field, or WS command; success codes other than `200`; making a field nullable; sending non-list WS `data` to client sockets; changing `acquire` 404 semantics. During the rollout the backend must serve the old and new contracts side by side, using path-versioned `/v2/...` routes that mirror the whole operator-client surface (V2-5 + `docs/V2_DELTA.md` D1, superseding A-5's "changed operations only"). Contract v2 is guarded by `tests/test_client_contract_v2.py` (snapshot `tests/contracts/client_v2.json`).
-  - Supported targets: operator client on **Android and Windows** only (the client web build is dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
+  - Supported targets: operator client on **Android** only (the client web and Windows builds are dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
   - **Production is not strictly uptime-sensitive.** Short outages and maintenance windows are acceptable. After a backend restart longer than about 10 s, the client WebSocket stops retrying, and operators must tap *retry* on the connection banner. This is an operational note, not a deploy constraint.
   - Deploy constraints that still apply: keep the WS handshake rejection as HTTP 403. Do not change `JWT_ISSUER`/`JWT_AUDIENCE` (or `APP_ENV`, which sets their defaults) and do not replace `data/keys` outside a planned forced-relogin window (`docs/RELEASE.md`). Backend version bumps no longer change token identity (T3.1). **Exception: v0.6.0** adds sessions and makes the `sid` claim required, so every device logs in once in that window (RELEASE.md "v0.6.0").
   - Decisions after the initial review are recorded in `docs/archive/BRANCH_SPLIT_DELTA.md` (archived 2026-11-21).
@@ -198,3 +198,49 @@ This document tracks known architectural, library, and system limitations within
 - **Code References**: `frontend/admin-web/src/lib/orders.ts` (`progress`),
   `frontend/client-android/.../ops/OrderLogic.kt` (`progress`),
   `backend/src/services/queries/orders.py` (`active_orders_query`, `local_active_order_sns`)
+
+### 13. An Order Shipped on Shopee Locks Its Picks Without an Admin
+- **Issue**: A Shopee sync closes an open outbound scan whose order is SHIPPED,
+  TO_CONFIRM_RECEIVE or COMPLETED, and marks the order done (V2_ORDERS_DELTA C1). Operators can
+  then no longer create or assign picks for it (409), even when it was packed but not fully picked.
+- **Impact**: None where packed means done and ready to ship (the maintainer's operation, F11).
+  In a strict operation, where every pick must be recorded before dispatch, the missing picks
+  (and their stock deduction) can no longer be entered on the order.
+- **Countermeasure (not applied)**: only auto-complete fully picked orders and leave the others
+  for an admin to close, or allow picks on done orders.
+- **Code References**: `backend/src/services/queries/outbound.py` (`close_shipped_outbound`),
+  `backend/src/services/queries/pick_items.py` (`OrderClosedError`)
+
+### 14. Picks Can Exceed Recorded Stock (Shortfall)
+- **Issue**: By default a pick never fails for lack of stock. What is available is deducted; the rest is
+  logged as `pick_shortfall` and has no allocation, so it is never restored. An order can
+  therefore show more picked than was deducted, and a mistyped quantity can empty every bin of a SKU.
+- **Impact**: By design: recorded counts can be behind the shelf, and picking should not stop.
+  There is no shortfall report (#5); use the `stocks_log` rows with `reason = pick_shortfall`.
+- **Countermeasure**: `STOCK_STRICT=1` rejects such picks (off by default, OPERATIONS "Strict
+  stock"). v2 unassign removes the shortfall first, so undoing a mistyped quantity is exact.
+- **Code References**: `backend/src/services/queries/stocks.py` (`deduct_for_pick`,
+  `move_pick_quantity`, `restore_for_pick`)
+
+### 15. Picks of a Cancelled Order Keep Their Stock Deducted
+- **Issue**: An order cancelled on Shopee leaves the operator's list with its picks still on it.
+  The stock stays deducted, and neither client shows those picks, so nobody can return them there.
+- **Impact**: Recorded stock is too low once the goods are back on the shelf. An operator can
+  correct the count in Stockkeeping. Deleting the pick afterwards would count it twice.
+- **Countermeasure (not applied)**: a list of cancelled orders with picks, where the operator
+  unassigns them (`docs/V2_PICKING_DELTA.md` Q65). Not automatic: only a person knows whether the
+  goods are back.
+- **Code References**: `backend/src/services/queries/orders.py` (`active_orders_query`),
+  `backend/src/services/queries/pick_items.py` (`_active_order`)
+
+### 16. The Bin of a Pick Is Assumed, Not Recorded (`multi` Mode)
+- **Issue**: The operator never says which bin an item came from. The server deducts by location
+  name, unlocated stock last, and stores that as the pick's allocation. Deleting a pick, and v2
+  unassign, return stock to that **assumed** bin.
+- **Impact**: If the item came from, or goes back to, another bin, the per-bin counts drift from
+  the shelf. The SKU's total stays right. `single` mode is not affected.
+- **Countermeasure**: transfer the stock in Stockkeeping. For future reference, not planned:
+  (a) determine the bin when picking (scan or choose it), or (b) have the operator choose the bin
+  when unassigning (`docs/V2_PICKING_DELTA.md` Round 2, Q68).
+- **Code References**: `backend/src/services/queries/stocks.py` (`deduction_order`,
+  `deduct_for_pick`, `restore_target`)

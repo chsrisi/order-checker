@@ -15,6 +15,7 @@ from src.models import (
     BOMHeaderMarketplace,
     OutboundItem,
     PickItemEntry,
+    PickStockAllocation,
     RefreshToken,
     ShopeeOrder,
     ShopeeOrderInfo,
@@ -28,6 +29,7 @@ from src.services.queries.engine import get_db
 
 SKU_PREFIX = "Z90_"
 ORDER_PREFIX = "DEV"
+PICKING_ORDER_PREFIX = "991231DEVPK"  # matches the client's order-label rule ^\d{6}
 USER_PREFIX = "dev_"
 DEV_PASSWORD = "dev-password"  # development only; production refuses this script
 
@@ -53,6 +55,64 @@ STOCK = {
     "multi": [("Z90_001", "A-01", 20), ("Z90_001", "B-02", 5), ("Z90_002", "A-02", 3)],
     "single": [("Z90_001", "A-01", 25), ("Z90_002", "A-02", 3)],
 }
+
+
+# Scenario "picking" (T6.19, V2_PICKING_SPEC §6): (order suffix, status, owner, done, items, picks).
+# items: (shopee_id, qty); picks: {sku: (qty, [(bin, deducted)])}. The stock is as it is *after*
+# these picks.
+PICKING = [
+    ("01", "READY_TO_SHIP", None, False, [(900000001, 1)], {}),
+    (
+        "02",
+        "READY_TO_SHIP",
+        "dev_op1",
+        False,
+        [(900000001, 3)],
+        {"Z90_001": (5, [("A-01", 3), ("B-02", 2)])},
+    ),
+    (
+        "03",
+        "PROCESSED",
+        "dev_op1",
+        False,
+        [(900000001, 1)],
+        {"Z90_001": (2, [("A-01", 2)]), "Z90_002": (1, [("A-02", 1)])},
+    ),
+    (
+        "04",
+        "READY_TO_SHIP",
+        "dev_op1",
+        False,
+        [(900000002, 1)],
+        {"Z90_003": (5, [("D-01", 5)])},
+    ),
+    (
+        "05",
+        "READY_TO_SHIP",
+        "dev_op1",
+        False,
+        [(900000002, 2)],
+        {"Z90_003": (4, [("D-01", 3)])},
+    ),
+    (
+        "06",
+        "RETRY_SHIP",
+        "dev_op1",
+        False,
+        [(900000002, 1)],
+        {"Z90_003": (2, [("D-01", 2)]), "Z90_002": (1, [("A-02", 1)])},
+    ),
+    (
+        "07",
+        "CANCELLED",
+        "dev_op1",
+        False,
+        [(900000001, 1)],
+        {"Z90_001": (2, [("A-01", 2)])},
+    ),
+    ("08", "SHIPPED", "dev_op1", True, [(900000001, 1)], {"Z90_001": (2, [("A-01", 2)])}),
+]
+PICKING_POOL = ("dev_op1", "Z90_002", 1, "A-02")  # a v1 pool row: hidden in v2
 
 
 class SeedRefused(RuntimeError):
@@ -246,11 +306,76 @@ def seed(stock_mode: str = "multi", now: datetime | None = None) -> dict[str, in
     return counts
 
 
+def seed_picking(now: datetime | None = None) -> int:
+    """Orders with picks for trying the v2 Picking screen. Needs ``seed()`` first; idempotent."""
+    _guard()
+    now = now or datetime.now(UTC)
+    created = 0
+    with get_db() as db:
+        for suffix, status, owner, done, items, picks in PICKING:
+            sn = PICKING_ORDER_PREFIX + suffix
+            if db.get(ShopeeOrder, sn) is not None:
+                continue
+            db.add(
+                ShopeeOrder(
+                    order_sn=sn,
+                    split_up=False,
+                    ship_by=now + timedelta(days=1),
+                    owner_user=owner,
+                    status=status,
+                    shipping_carrier="Synthetic Express",
+                    done=done,
+                    done_at=now if done else None,
+                )
+            )
+            db.flush()
+            db.add(
+                ShopeeOrderInfo(
+                    order_sn=sn,
+                    package_number=f"PKG-{sn}",
+                    logistics_status="LOGISTICS_READY",
+                    tracking_number=f"DEVTRKPK{suffix}",
+                    pickup_code=f"PK{suffix}",
+                )
+            )
+            for shopee_id, qty in items:
+                item_name, model_name, _ = MARKETPLACE_BOMS[shopee_id]
+                db.add(
+                    ShopeeOrderItemList(
+                        order_sn=sn,
+                        item_id=shopee_id,
+                        item_name=item_name,
+                        model_id=shopee_id,
+                        model_name=model_name,
+                        model_quantity_purchased=qty,
+                    )
+                )
+            for sku, (qty, allocations) in picks.items():
+                entry = PickItemEntry(sku=sku, qty=qty, order_sn=sn, owner_user=owner)
+                for location, deducted in allocations:
+                    entry.allocations.append(
+                        PickStockAllocation(sku=sku, location=location, qty=deducted)
+                    )
+                db.add(entry)
+            created += 1
+        if created:
+            owner, sku, qty, location = PICKING_POOL
+            pool = PickItemEntry(sku=sku, qty=qty, order_sn=None, owner_user=owner)
+            pool.allocations.append(PickStockAllocation(sku=sku, location=location, qty=qty))
+            db.add(pool)
+        db.commit()
+    return created
+
+
 def remove_seed() -> dict[str, int]:
     _guard()
     removed: dict[str, int] = {}
+    seeded_orders = or_(
+        ShopeeOrder.order_sn.like(f"{ORDER_PREFIX}%"),
+        ShopeeOrder.order_sn.like(f"{PICKING_ORDER_PREFIX}%"),
+    )
     with get_db() as db:
-        sns = select(ShopeeOrder.order_sn).where(ShopeeOrder.order_sn.like(f"{ORDER_PREFIX}%"))
+        sns = select(ShopeeOrder.order_sn).where(seeded_orders)
         users = select(User.username).where(User.username.like(f"{USER_PREFIX}%"))
         steps = [
             (
@@ -275,7 +400,7 @@ def remove_seed() -> dict[str, int]:
                     ShopeeOrderRecipientAddress.order_sn.in_(sns)
                 ),
             ),
-            ("orders", delete(ShopeeOrder).where(ShopeeOrder.order_sn.like(f"{ORDER_PREFIX}%"))),
+            ("orders", delete(ShopeeOrder).where(seeded_orders)),
             (
                 "refresh_tokens",
                 delete(RefreshToken).where(RefreshToken.username.like(f"{USER_PREFIX}%")),

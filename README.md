@@ -16,7 +16,7 @@ administrators.
 
 ```text
 backend/          FastAPI API, SQLAlchemy models, Alembic migrations, Docker stack
-frontend/client/  Flutter operator app v1 (Android, Windows), contract v1, frozen
+frontend/client/  Flutter operator app v1 (Android only), contract v1, frozen
 frontend/client-android/  Kotlin + Compose operator app v2 (Android 11+), contract v2, OTA updates
 frontend/admin/   Flutter administration app (web, served by nginx)
 frontend/admin-web/  Vue admin console v2, served at /console/ by the same nginx (in progress)
@@ -67,7 +67,7 @@ Requirements: Docker with Compose, Flutter 3.x/Dart 3.9+ for the UIs.
 
    ```bash
    cd frontend/admin && flutter pub get && flutter run -d chrome      # admin (web)
-   cd frontend/client && flutter pub get && flutter run -d windows    # operator (or an Android device)
+   cd frontend/client && flutter pub get && flutter run                # operator, on an Android device or emulator
    ```
 
 Shopee access and refresh tokens can be entered from the admin app's protected

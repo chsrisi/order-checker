@@ -118,6 +118,12 @@ that applies unless you say otherwise.
 | P-19 | Admin "log out everywhere" (T6.2) | `POST /admin/users/{username}/logout`, client accounts only (like reset and delete). | Also for the admin account itself. |
 | P-20 | Vue admin token storage (T7.2) | Access token in memory, refresh token in `sessionStorage`: closing the tab logs out, with less XSS exposure. | `localStorage` (survives browser restarts). |
 | P-21 | Existing refresh tokens at T6.2 | Deleted by the migration, so everyone logs in once (Q24). | Backfill a session per refresh row (no relogin, more code). |
+| P-22 | Login request limits (T6.21) | One pending per device, 5 per device in 10 min, 20 pending overall; env-configurable. | Per IP (the warehouse shares one network). |
+| P-23 | Device assignments (T8.4a) | Redis, one per device (a new one replaces it), TTL `DEVICE_ASSIGNMENT_TTL_SECONDS=600` (W4). No migration. | A table with assignment history. |
+| P-24 | Device status transitions (T8.1) | Approve: `pending` → `active` only. Revoke: `pending` or `active` → `revoked`, final (W7). Both idempotent: repeating one answers 200 with the current device. Other transitions → 409. | Allow `active` → `pending` ("unapprove"). |
+| P-25 | Device state proof (T8.4a) | ECDSA over `oc-device:state:<device_id>:<nonce>`, nonce claimed once in Redis (like login requests). Max 1 poll per 2 s per device; faster → 429. | A device token (Q9; deferred by W3). |
+| P-26 | Device actions in the console (T8.6) | Revoke and Switch confirm in a dialog that says what happens; Approve and Log out this device act at once. | Confirm every action. |
+| P-27 | `last_seen_at` from the state poll (T8.4a) | Written at most once per 60 s (as P-16); the console shows "logged out, reachable" when the device polled within 30 s without a live socket. | Leave the console's status as it is. |
 
 ---
 
@@ -585,7 +591,11 @@ flowchart TD
   T67 --> DD
   T611 --> T615["T6.15 client parity, rebuilt (Delta 5)"]
   T67 --> S7["Step 7: Vue admin, rebuilt (Delta 5)"]
-  DD --> S8["Step 8: device control"]
+  T623["T6.21–T6.23 login requests"] --> T81["T8.1 approve, revoke"]
+  T81 --> T84a["T8.4a device logout, assignment"]
+  T84a --> T86["T8.6 console device actions"]
+  T84a --> T87["T8.7 Android switch"]
+  DD --> S8["Step 8, rest: T8.2–T8.3, T8.4b, T8.5"]
 ```
 
 Hard ordering constraints:
@@ -899,16 +909,110 @@ Later UX rounds ship over OTA. The lists below are the **v1 functional inventory
 stay possible. They are not a layout.
 - T6.15a scan input component: keyboard wedge, a focused field that submits on the configured
   suffix, focus restored after every action; no soft keyboard.
-- T6.15b Orders · Inbound:
+- T6.15b Orders · Inbound (**superseded** by T6.17–T6.20, V2_DELTA Delta 12):
   - scan an order (`^\d{6}`) → acquire (404 → sync and retry once) → select it;
   - scan SKUs and quantity → pick;
   - assign, unassign, delete;
   - whole-card scrolling;
   - the over-quantity warning compares resolved SKUs.
-- T6.15c Orders · Outbound: scan a label, history with a tag filter.
-- T6.15d Item finder.
-- T6.15e Stocks: set, add, transfer, with location suggestions.
+- T6.15c Orders · Outbound: scan a label, history with a tag filter (**superseded**: built in
+  T6.20).
+- T6.15d Item finder (**not now**: how it is used is unclear; proposal in V2_UX §3.1, Q84).
+- T6.15e Stocks: set, add, transfer, with location suggestions. No brief yet; it needs one
+  first.
 - T6.15f Account and the connection banner.
+
+#### Picking simplification (T6.17–T6.20, T6.24; V2_PICKING_SPEC, V2_PICKING_DELTA)
+
+Picks go straight into an order, and unassigning returns stock. Precedence: V2_PICKING_DELTA >
+this plan > V2_PICKING_SPEC. Replaces "assign, unassign, delete" in T6.15b. Order: T6.17 → T6.18 →
+T6.19 → T6.20 → T6.24 (T6.21–T6.23: login requests). v1 routes and `client_v1.json` stay unchanged.
+
+**T6.17 Stock engine: partial restore, order lock, strict stock**
+- Goal: pick into and remove from an order with correct stock under concurrency.
+- Refs: SPEC §4.2–4.3, P2–P7; Q62, Q64, Q73; DELTA R1.5.
+- Change: `restore_pick_quantity` (shortfall first, newest allocation first); `pick_for_order` and
+  `unassign_from_order` that lock the order row first and merge duplicate rows (P6);
+  `delete_user_by_username` locks the worker's orders first; `STOCK_STRICT` (default `0`) for
+  every pick, v1 included; `/meta` `features.strict_stock`.
+- Tests: SPEC §8 engine and races, in both location modes × both strict values.
+- Docs: `.env.example`, OPERATIONS, SYSTEM_REFERENCE §7.5–7.6, KNOWN_LIMITATIONS #14.
+- Accept: no migration; v1 tests unchanged; PostgreSQL races pass.
+
+**T6.18 `/v2` order picks and operator-only order work**
+- Goal: the v2 API of SPEC §4.1, closed to admins.
+- Refs: Q59–Q61, Q69, Q75.
+- Change: `POST /v2/shopee/orders/{order_sn}/picks` and `…/picks/unassign`; the four `/v2/pick-items`
+  operations removed; claim, pick, unassign and outbound answer 403 to admins in v2;
+  `client_v2.json` and `openapi/v2.json` regenerated.
+- Tests: every row of SPEC §4.2 over HTTP; 404 on the removed paths; 403; v1 unassign still moves
+  to the pool.
+- Docs: API, SYSTEM_REFERENCE §6, §10A.
+- Accept: `client_v1.json` byte-identical.
+
+**T6.19 Release script and seed scenario**
+- Goal: free pool rows at v1 retirement, and test the app with realistic data.
+- Refs: SPEC §4.5, §6; Q66, Q72.
+- Change: `scripts.release_unassigned_picks` (count, `--confirm`); `seed_dev --scenario picking`.
+- Tests: the script restores pool rows only; the scenario is idempotent and removable.
+- Docs: OPERATIONS, SYSTEM_REFERENCE §11.
+
+**T6.20 Android: Picking (Input, List) and Outbound screens**
+- Goal: the client of mock r2.
+- Refs: SPEC §5, DELTA rounds 3–5 (Q63, Q70, Q71, Q76–Q79).
+- Change: Home with Picking, Outbound, Stockkeeping, Finder; Input (Order: scan box; Item: SKU,
+  quantity, Submit, the order's card); List (scan/type search incl. tracking number, expanded
+  cards, *Picked · n* collapsed at the bottom); tap a line → select + Remove → Unassign dialog;
+  selection cleared when the order leaves the list; warnings for extra SKUs; pool code removed.
+- Tests: `OrderLogicTest`, a controller test (no order, order leaves, 409, warnings).
+- Docs: V2_UX, SYSTEM_REFERENCE §12, V2_DEVICE_DAY_TODO (rebuild the APKs).
+- Accept: `lint`, unit tests and both builds pass; checked on the emulator against the T6.19 data.
+
+**T6.24 Closes reach operators**
+- Goal: an order completed by a close, or dropped by a sync (Q83), leaves its owner's list at once.
+- Refs: DELTA rounds 8–9 (Q81, Q83).
+- Change: period close and sync auto-close send `shopee_orders_update` to the claimers of the
+  orders they completed; close response unchanged.
+- Tests: owners per close (PostgreSQL), frames per owner, also after a partial sync.
+- Docs: SYSTEM_REFERENCE §7.1, §7.7, §8.
+- Accept: `client_v1.json` byte-identical.
+
+#### Login requests (T6.21–T6.23, T7.12; V2_LOGIN_REQUEST_SPEC, V2_LOGIN_REQUEST_DELTA)
+
+A worker asks from the login screen, an admin approves in the console. Precedence:
+V2_LOGIN_REQUEST_DELTA > this plan > V2_LOGIN_REQUEST_SPEC. Order: T6.21 → T6.22 → T6.23 and T7.12
+(either order). After T6.18, which changes the same v2 snapshot. `client_v1.json` stays unchanged.
+
+**T6.21 Login request store and service**
+- Goal: the state machine of SPEC §3 under the rules of SPEC §4.
+- Refs: L1–L4, L7, L8; P-22; DELTA R1.2.
+- Change: `login_request_mgr` (Redis, atomic transitions, TTLs, limits, nonces); a service that
+  verifies the device signature and status, re-checks the user on collection and ends in
+  `get_tokens`; the new session is bound to the device.
+- Tests: every transition; approve/approve, approve/cancel and collect/collect races; bad, replayed
+  and wrong-key signatures; unknown, revoked device; unknown and admin username; user deleted or
+  reset in between; expiry of both windows; limits; Redis down → 503.
+- Docs: SYSTEM_REFERENCE §4–5, OPERATIONS, `.env.example`.
+- Accept: no migration; no token in a log line or stored value.
+
+**T6.22 Routes and contract**
+- Goal: the endpoints of SPEC §3.
+- Refs: L5, L6; P-11.
+- Change: three gated `/v2/auth/login-requests` operations; three `/admin/login-requests`
+  operations; an admin-only WebSocket message `login_requests_update`; `client_v2.json`,
+  `openapi/{v2,admin}.json` regenerated.
+- Tests: HTTP flow end to end; 403 for non-admins; operators never receive the message.
+- Docs: API, SYSTEM_REFERENCE §6, §10A.
+- Accept: `client_v1.json` byte-identical.
+
+**T6.23 Android: ask for approval**
+- Goal: enable the login screen's button (V2_UX §2.7).
+- Refs: L1, L3, L4, L6.
+- Change: signed create, poll and cancel; waiting view (code, countdown, Cancel); denied, expired
+  and unregistered-device messages; success continues like a password login. Leaving cancels.
+- Tests: poll state machine, cancel, expiry, network loss while waiting.
+- Docs: V2_UX, SYSTEM_REFERENCE §12.
+- Accept: emulator end to end with the console; a new install gets a clear message.
 
 **T6.16 Device day** *(maintainer, runbook in RELEASE.md written by T6.7)* — **postponed**
 (Delta 5). Checklist: [V2_DEVICE_DAY_TODO.md](V2_DEVICE_DAY_TODO.md). This round pilots one
@@ -950,22 +1054,94 @@ device (Q20).
     server. During the overlap the admin API only changes additively (spec §5).
 - **T7.10 Devices view:** the read-only list from `GET /admin/devices`.
 - **T7.11 Retire the Flutter admin** once every v1 admin operation is covered in Vue and used for 2 weeks (Q8,
-  pinned): Vue moves to `/` and `frontend/admin/` is removed.
+  pinned): Vue moves to `/` and `frontend/admin/` is removed. BOM inspection is to be
+  deprecated, not rebuilt (V2_DELTA Delta 13, Q85: the view only, the BOM backend stays), so the
+  remaining gap is Stocks and Finder.
+- **T7.12 Login requests (V2_LOGIN_REQUEST_DELTA L4, L5).** Badge in the shell, list on the
+  Dashboard (worker, device, IP, age, code), Approve and Deny; live via `login_requests_update`.
+  Tests: list logic, expiry. Accept: usable on mobile and desktop (D7).
 
-### Step 8: device control (spec §4A, W5(b)–(d), Q9) — later
+### Step 8: device control (spec §4A, W5(b)–(d), Q9) — brought forward (V2_DELTA Delta 13)
 
-- **T8.1 Approve and revoke.**
-  - Admin endpoints and Vue screens.
-  - Revoking a device kills all its sessions (T6.2 machinery) and its device token.
-  - Approving issues a **device token**: random, stored hashed in `auth.devices.token_hash`,
-    and kept by the device encrypted with a Keystore key.
-- **T8.2 Device credential on the update endpoints** (Q5 follow-up): `/v2/client/*` also
-  accepts the device token, and the public access is removed once both devices have one.
+The worker switch from the console needs part of it: T8.1, T8.4a, T8.6 and T8.7 below. T8.2,
+T8.3, T8.4b and T8.5 stay later.
+
+#### Worker switch (T8.1, T8.4a, T8.6, T8.7; V2_WORKER_SWITCH_SPEC, V2_WORKER_SWITCH_DELTA)
+
+An admin approves and revokes devices, logs one device out, and switches its worker. Precedence:
+V2_WORKER_SWITCH_DELTA > this plan > V2_WORKER_SWITCH_SPEC. Order: T8.1 → T8.4a → T8.6 and T8.7
+(either order; both need T8.4a's routes). `client_v1.json` stays unchanged. Branch off `dev`
+once the login-request work (T6.21–T6.23) is merged there.
+
+**T8.1 Approve and revoke (without the device token, W3)**
+- Goal: device status means something: `active` is trusted for a direct switch, `revoked` is
+  locked out.
+- Refs: SPEC §2 finding, §4.4; W2, W7, W9; P-24; DELTA R1.2.
+- Change: `POST /admin/devices/{id}/approve` and `/revoke`; revoking revokes the device's
+  sessions and closes their sockets (`disconnect_session`); `/v2/device/register` from a revoked
+  device also revokes the calling session; the Android app on 403 "Device revoked" logs out
+  locally with a message; log events with admin and device.
+- Tests: every transition and its 409; revoke ends all sessions on that device only (the same
+  worker on another device stays logged in); a revoked device refused on register (and its
+  session gone), refresh, login requests; v1 sessions untouched; Android: 403 on register logs
+  out.
+- Docs: SYSTEM_REFERENCE §4–5 (devices, sessions), API.
+- Accept: no migration; `client_v1.json` byte-identical; v2 snapshot unchanged (admin routes
+  only, plus the register behaviour).
+
+**T8.4a Per-device logout and assignment (T8.4 part: `logout`, `assign_user`)**
+- Goal: the server side of SPEC §4.1–4.3.
+- Refs: W1, W4, W5, W8; P-23, P-25, P-27.
+- Change: `POST /admin/devices/{id}/logout`; `POST /admin/devices/{id}/assign` (`username`,
+  `mode`: `direct` | `preselect`), which ends the device's sessions and stores the assignment;
+  `DELETE /admin/devices/{id}/assign` (cancel); the signed `POST /v2/device/state` (gated like the
+  rest of `/v2`) returning nothing, the assignment, and in direct mode a token pair, collected
+  once and bound to the device; the reason for the last logout (W8); an admin-only WS message
+  `devices_update` when an assignment is collected, replaced or expires; `online` gains
+  `reachable` (P-27).
+- Tests: direct and preselect; collected once (two polls race); bad signature, replayed nonce,
+  another device's key; `pending` device refused for direct (W2), allowed for preselect; a
+  revoked device gets nothing; expiry; a new assignment replaces the old; worker deleted, reset or
+  turned admin in between; admin username refused; the new worker's sessions on other devices
+  untouched; poll rate limit; Redis down → 503 on state and assign, password login still works.
+- Docs: SYSTEM_REFERENCE §5–6, §10A; API; OPERATIONS (`DEVICE_ASSIGNMENT_TTL_SECONDS`).
+- Accept: no migration; v2 snapshot grows by one operation; `client_v1.json` byte-identical; no
+  token in a log line or a stored value.
+
+**T8.6 Console: device actions**
+- Goal: SPEC §4.4 on the Devices page and the Dashboard cards.
+- Refs: W1, W2, W4; P-26; brief in V2_UX first (Q28).
+- Change: actions per status; the worker picker (search, current worker marked, mode choice
+  with direct as the default); "waiting for the device" until collected or expired, live from
+  `devices_update`; confirmations; "logged out, reachable" status.
+- Tests: actions shown per status; the waiting state on collect, replace and expiry; picker
+  filtering.
+- Docs: V2_UX brief, admin-web README.
+- Accept: usable on mobile and desktop (D7); your UX acceptance on the dev server.
+
+**T8.7 Android: switch on the login screen**
+- Goal: SPEC §4.5.
+- Refs: W1, W5, W8.
+- Change: the signed state poll every 5 s while the login screen is in the foreground; direct →
+  the path of an approved login request ("Logged in by the admin as …"); preselect → that worker
+  selected, password step open; the logout reason under "Session ended".
+- Tests: the poll stops in the background and after login; direct, preselect, nothing; expiry;
+  network loss; the reason text.
+- Docs: V2_UX §2.7, client-android README.
+- Accept: emulator end to end with the console: switch while logged in, while logged out, and
+  while the app is closed then opened within 10 minutes.
+
+#### Later in step 8
+
+- **T8.2 Device credential on the update endpoints** (Q5 follow-up): approving issues a
+  **device token** (random, stored hashed in `auth.devices.token_hash`, kept by the device
+  encrypted with a Keystore key; moved here from T8.1 by W3). `/v2/client/*` also accepts it,
+  and the public access is removed once both devices have one. Revoking clears the token.
 - **T8.3 QR enrollment:** a short-lived code generated in the admin; the QR carries the server
   profile too (V2_SERVER_ADDRESS §4.2).
-- **T8.4 Device WS channel and commands:** `logout`, `assign_user`, `update_now`,
-  `refresh_config`, with acknowledgement; desired state through `GET /v2/device/state`; audit
-  of user and device.
+- **T8.4b Remaining device commands:** `update_now`, `refresh_config`, added to the device
+  state of T8.4a (a device WebSocket only if polling proves too slow); audit of user and
+  device.
 - **T8.5 Per-device config:** `GET /v2/device/config`, including server-profile pushes for
   stage 2.
 
@@ -992,6 +1168,38 @@ device (Q20).
 
 ## 5. Backlog (not scheduled)
 
+**Next up (added 2026-11-26, to be specced soon, not yet planned). Order (V2_DELTA Delta 13):**
+worker-list deletion and the theme toggle, then the worker-switch spec (with step 8), then the
+tasks spec. Stockkeeping, Stock & finder and localization (Android first) come close together.
+Later: barcode rules (after localization), then marketplaces and UOM at the same priority.
+
+
+- **Worker session switch from the console.** The admin switches which worker is logged in on
+  a device, from the console. Scope to settle in its brief: switch the worker on the device
+  directly, or end the session and preselect a worker on the login screen. Builds on Devices
+  (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
+  Its spec brings step 8 forward (device trust T8.1, device commands T8.4; Delta 13).
+  **Planned 2026-11-27:** step 8 "Worker switch" (T8.1, T8.4a, T8.6, T8.7); spec and delta
+  [V2_WORKER_SWITCH_SPEC.md](V2_WORKER_SWITCH_SPEC.md), [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md).
+- ~~**Edit the "previously logged in" worker list from the client's hidden settings.**~~
+  **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
+  Device-local only, no backend change.
+- **New feature: tasks.** Not yet defined. It needs its own spec (planning flow step 1) before
+  any planning.
+- ~~**Console light/dark toggle**~~ **Done 2026-11-27** (V2_ORDERS_SPEC §12): account menu →
+  Theme, *System*, *Light* and *Dark*, remembered per browser. Front end only.
+- **Localization, English and Indonesian** (V2_ORDERS_SPEC §12): every string, dates, Shopee
+  status names and plurals. Both apps, Android first (Q86).
+- **Finder** (client and console): proposal in V2_UX §3.1 (Q84). Not now.
+- **Admin BOM view deprecation** (Q85): goes with the Flutter admin (T7.11); the BOM backend stays.
+
+**Parked:**
+
+- **Tokopedia / TikTok Shop integration.** Draft assessment in `MARKETPLACE_REVIEW.md`, waiting
+  for the maintainer's review. After "barcode rules as configuration" (V2_ORDERS_SPEC §12),
+  which comes after localization (V2_DELTA Delta 13). UOM stock logic (Q82) has the same
+  priority: both need the modernised barcode system first.
+
 - **Client v2 (next client major).**
   - Unlimited reconnect backoff (F-H8).
   - URL-encode queries.
@@ -1011,6 +1219,10 @@ device (Q20).
   then.
 - Multi-worker readiness: Redis pub/sub fan-out and a distributed sync lock.
 - Admin shortfall/reconciliation report (Q5).
+- Picking (V2_PICKING_DELTA): supplier barcodes in the List search (Q80); cancelled orders with
+  picks (Q65); choosing the bin of a pick or of an unassign (Q68); the v1-retirement clean-up (R1.4).
+- Stock logic by unit of measure (UOM): quantities are plain numbers today (V2_PICKING_DELTA Q82;
+  needs its own spec).
 - `timestamptz` migration.
 - Promote the structured `StocksLog` to the stock source of truth (only if needed).
 
@@ -1050,7 +1262,8 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | Q1 MT67 keyboard wedge (Q22 broadcast API pinned) | T6.15a, T6.14 |
 | Q6 option C, stage 1 | T6.11 (stage 2: backlog, V2_SERVER_ADDRESS §7) |
 | Q7 directories | T6.10, T7.1 |
-| Q9 device token | T8.1 |
+| Q9 device token (revisited: key signatures now, token in T8.2; V2_WORKER_SWITCH_DELTA W3) | T8.1, T8.2 |
+| Worker switch W1–W9 (V2_WORKER_SWITCH_DELTA), P-23–P-27 | T8.1, T8.4a, T8.6, T8.7 |
 | Q10, Q19, Q24 sessions, instant revocation | T6.2 |
 | Q11 no local JWKS | T6.11 |
 | Q12 Android deps, Q18 identity and signing | T6.10 |
@@ -1122,7 +1335,7 @@ same change as the task.
 | TF.4 | done | migration `c3f8a2d5e6b1` drops `orders.pick_item_entries_log`; never written, superseded by `stocks_log` (`ref_type='pick_entry'`). Gate passed for empty → head and `v0.4.0` → head |
 | TF.5 | done | admin web stuck on an old build: nginx served unhashed Flutter `.js` as `immutable` for a year. Now `no-cache` (ETag revalidation); security headers repeated per location (nginx drops inherited `add_header`); `.env*` kept out of the image; builder pinned to `cirruslabs/flutter:3.44.0` (no newer image exists; CI runs 3.47.5). One hard reload per admin browser after the v0.5.0 deploy (RELEASE.md) |
 | TF.6 | done | backend version 0.5.0; client toolchain files synced to Flutter 3.47.5 (migrator output, `pubspec.lock`) |
-| TH.3 | todo | decided in V2_DELTA D1 (2026-11-22); independent of the v2 work |
+| TH.3 | done | `frontend/client/windows/` deleted (2026-11-27); README, ARCHITECTURE, KNOWN_LIMITATIONS #7/#8, SYSTEM_REFERENCE §1/§12.1 say Android only; `flutter analyze && flutter test` clean. SYSTEM_REFERENCE §2 and TESTING had no Windows mention |
 | T6.0 | done | committed on `feat/v2-step6` |
 | T6.1 | done | shared `tests/contract_harness.py`; v1 snapshot regenerated byte-identical; `openapi/{v2,admin}.json` (info.version stripped to avoid churn on bumps) |
 | T6.2 | done | migration `d4a7e2c9b1f0`. **Deviations:** `sessions.device_id` is added by T6.6 together with its FK (no column without FK meanwhile); sessions gain `expires_at` (extended on rotation) so cleanup has one rule. Revocation sets `revoked_at` and deletes refresh rows; logout ends the whole session. `scripts.set_admin_password` revokes admin sessions. Ticket value is JSON `{username, sid}`; pre-session tickets are rejected. Not yet done: the emulator check of a v1 device after "log out everywhere" (Accept) — run with T6.14 |
@@ -1136,15 +1349,27 @@ same change as the task.
 | T6.12 | done | **Accept met** on the API 30 emulator: build 1 updated itself to build 2 published with `scripts.publish_client_release` (permission grant restarts the app on Android 11; one confirm tap). Negative check on device: an APK published under a higher code but really older is refused ("not newer") through the real PackageManager. **Finding:** Google Play Protect may show "App scan recommended" for the first sideloaded update → "Install without scanning"; check whether the MT67 has Play services (device day). Downloads are cleared at the next start, since a successful install kills the process first |
 | T6.13 | done | Emulator registered as `pending` (model, Android 11, versionCode) with a real Keystore signature verified by the backend; a second login reuses the device and binds the new session. Registration is skipped when the stored record already matches the current `sid`. Accept for the second device (spare MT67) belongs to T6.16 |
 | T6.14 | in progress | **Emulator part done (2026-11-22, API 30 image with Play services)**, signed R8 release builds (`rehearsal` build type = release + cleartext to `10.0.2.2`, throwaway key; production release rules unchanged): 1–2 install 1, `appops` grant, login, device `pending` ✅; 3 update 1→2, then 3 with `--min-supported 3` → blocking screen → update ✅; 4 logged out, update to 4 from the login screen ✅; 5 tampered `sha256` → "damaged", APK with another key → "not signed with this app's key", app stays on 4 ✅. **Finding:** Play Protect shows "App scan recommended" on **every** update (new APK hash), passed with More details → Install without scanning: one extra step per update on Play-services devices. **Open:** the MT67 part (step 6) with the real key, on the device day, which is postponed (Delta 5 Q27; V2_DEVICE_DAY_TODO.md) |
-| T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds |
+| T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds **Login picker built (2026-11-25, V2_UX §2.7)**; admin approval: T6.23. **2026-11-27 (Delta 12):** T6.15b/c superseded by T6.17–T6.20; T6.15d Finder not now (Q84); next is a Stockkeeping (T6.15e) brief. |
 | T6.16 | postponed | Delta 5 Q27. v0.6.0 tagged and deployed (2026-11-22). Still to do: v1 and laptop smoke tests, then publishing 2.0.0. Checklist: V2_DEVICE_DAY_TODO.md. One device this round (Q20) |
+| T6.17 | done | No migration. `release_unassigned_picks` query added here too (script: T6.19). Each rule was broken on purpose and a test failed: order lock, deletion lock, shortfall first, newest first, status check, strict, duplicate merge. Three `test_stock_queries` tests fail on a host whose `.env` sets `STOCK_LOCATION_MODE`; run with it blank |
+| T6.18 | done | `client_v1.json` unchanged; `client_v2.json` and `openapi/v2.json` regenerated. Removing the v2 pick models breaks the old Android code, so T6.18 and T6.20 must land together |
+| T6.19 | done | Scenario orders use the fixed prefix `991231DEVPK` so seeding stays idempotent and removable |
+| T6.20 | built; good on the emulator (2026-11-27), final acceptance pinned for the device day and operators' feedback | Checked on a throwaway API 30 emulator against a local backend with the T6.19 data: claim, pick, over-quantity alert, barcode, unknown code, unassign (two bins, mistyped 50), List search by SN and tracking number, live limit in the dialog, close while selected, strict stock, Outbound, logout; no soft keyboard while scanning. **Found and fixed there:** a scan field disabled while saving cannot take the focus back, so the next barcode went into Qty; a 409 now reloads the orders (closes are not pushed to operators) |
+| T6.21 | done | Redis only, no migration. Race guards broken on purpose once (collect): the tests failed. Not in `.env.example` (variables documented in OPERATIONS like `LOGIN_*`) |
+| T6.22 | done | v2 snapshot grew additively; `client_v1.json` unchanged |
+| T6.23 | done | Checked on the API 30 emulator with real Redis and PostgreSQL: approve, deny, cancel. **Addition:** tokens that arrive after Cancel are given back (logout). Good on the emulator (2026-11-27, L1–L9 kept); final review pinned for the device day |
+| T6.24 | done | Backend only, no migration, no contract change. Includes Q83: orders a sync takes off the list without a close |
 | T7.1 | done | `frontend/admin-web` (Vue 3.5, Vite 8, Vue Router 5, Pinia 4, Naive UI 2.45, openapi-typescript 7). **Deviations:** TypeScript 5.9, not 7 (`openapi-typescript` needs 5); `schema.d.ts` is **committed** with a CI freshness check (`check:api`), since the Docker build context has no `backend/`; no ESLint (not on the Q13 list; `vue-tsc` strict is the lint); `@vue/test-utils` left out (its `js-beautify` chain had 5 moderate audit findings; logic tests need only Vitest). Docker: `console` stage from the named context `admin-web` (Compose `additional_contexts`), so the Flutter context is unchanged. nginx: `^~ /console/` (else the static-file regex wins), `absolute_redirect off` for `/console` → `/console/` (nginx put its internal port 80 into the Location), no `always` on the `immutable` header so 404s are not cached. Checked: `nginx -t`, routes and headers with `nginx:alpine` + the template |
 | T7.2 | done | Session store (access token in memory, refresh token in `sessionStorage`, one shared refresh, logout with server revoke), HTTP refresh-once, `/ws` client with endless backoff. Checked in headless Firefox (WebDriver BiDi) against a local v0.6.0 backend through the Vite proxy: wrong password message, login, reload keeps the session, access token stored nowhere, unknown path → overview, live updates connected; a server-side logout of the session returns the console to the login screen with "Session ended" in 1.5 s (socket closed → ticket 401 → refresh refused) |
-| T7.3–T7.9 | in progress | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35). **Workers and Orders round 1 built (2026-11-24, V2_UX §2.4–2.5, D9):** Workers (create, reset password, log out everywhere, delete with its consequences listed, devices per worker); Orders (ongoing split with outbound scans, inline filters, browser-saved hand-ticks, reviewed period close, CSV export, history by close / orders / scans with server-side filters). Backend: additive history filters and `GET /admin/history/closes`. Workers and Orders accepted (D10). **Settings round 1 built (2026-11-24, V2_UX §2.6):** Shopee connection with in-place re-unlock that keeps edits; no backend change. **Orders round 4 (2026-11-24, V2_ORDERS_SPEC / V2_ORDERS_DELTA):** steps 1–4 built: R4 picking states and the F2 fix in both v2 apps, split orders partly packed, desktop paired rows (two lists deprecated), late orders kept (ship-by cutoff removed, F4), case-insensitive close (Q44), borrowed courier (Q45), History pairs, search and exact lookup (Q49, additive `q` on closes, courier and buyer in order search, `GET /admin/lookup`), server auto-sync (Q48). Still placeholders: Stock & finder, BOM |
+| T7.3–T7.9 | in progress | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35). **Workers and Orders round 1 built (2026-11-24, V2_UX §2.4–2.5, D9):** Workers (create, reset password, log out everywhere, delete with its consequences listed, devices per worker); Orders (ongoing split with outbound scans, inline filters, browser-saved hand-ticks, reviewed period close, CSV export, history by close / orders / scans with server-side filters). Backend: additive history filters and `GET /admin/history/closes`. Workers and Orders accepted (D10). **Settings round 1 built (2026-11-24, V2_UX §2.6):** Shopee connection with in-place re-unlock that keeps edits; no backend change. **Orders round 4 (2026-11-24, V2_ORDERS_SPEC / V2_ORDERS_DELTA):** steps 1–4 built: R4 picking states and the F2 fix in both v2 apps, split orders partly packed, desktop paired rows (two lists deprecated), late orders kept (ship-by cutoff removed, F4), case-insensitive close (Q44), borrowed courier (Q45), History pairs, search and exact lookup (Q49, additive `q` on closes, courier and buyer in order search, `GET /admin/lookup`), server auto-sync (Q48). **Orders rounds 3–4 (2026-11-24):** auto-close of shipped orders on sync (C1), History by day (C2, replaces `/admin/history/closes`), nightly sync pause (C3), timestamptz migration `f6c9a4b2d3e5` (Q54), exact labels (Q57, replaces Q44), frozen close review (F7). Still placeholders: Stock & finder, BOM |
 | T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
-| T8.1 | todo | |
+| T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |
+| T8.1 | todo | planned 2026-11-27 (worker switch); device token moved to T8.2 (W3) |
 | T8.2 | todo | |
 | T8.3 | todo | |
-| T8.4 | todo | |
+| T8.4a | todo | planned 2026-11-27 (worker switch) |
+| T8.4b | todo | |
+| T8.6 | todo | planned 2026-11-27 (worker switch) |
+| T8.7 | todo | planned 2026-11-27 (worker switch) |
 | T8.5 | todo | |

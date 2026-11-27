@@ -67,8 +67,10 @@ shows and the primary is probed every 3 minutes.
 **Hidden settings:** hold the version label at the bottom for 5 seconds, then enter the PIN.
 The PIN is build configuration and never committed: put `oc.settingsPin=<digits>` in
 `~/.gradle/gradle.properties`, pass `-Poc.settingsPin=...`, or set `OC_SETTINGS_PIN`. A build
-without a PIN cannot open the settings. There you can edit the profile (no relogin needed), and
-see the app version and the device registration.
+without a PIN cannot open the settings. There you can edit the profile (no relogin needed),
+see the app version and the device registration, and remove names from the login picker's
+list of the 20 most recent workers (one by one, or all after a confirmation). The list is
+device-local; a removed name comes back on that worker's next login.
 
 ## Sessions and live updates
 

@@ -2,7 +2,7 @@ import asyncio
 import base64
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from Crypto.PublicKey import RSA
@@ -135,7 +135,7 @@ class KeyManager:
         logger.info("Generating new RSA key pair components...")
         self._rotating = True
         # YYYYMMDD_HHMMSS ensures collision resistance and perfect alphabetical sorting
-        self._new_kid = datetime.now().strftime(KID_FORMAT)
+        self._new_kid = datetime.now(UTC).strftime(KID_FORMAT)
         self._rkey = RSA.generate(2048)
 
         pub_path = os.path.join(self.keys_dir, f"{self._new_kid}.pub")
@@ -167,7 +167,7 @@ class KeyManager:
         tokens survive rotation (F-C2). The newest complete pair and any pending rotation are
         never touched.
         """
-        now = now or datetime.now()
+        now = now or datetime.now(UTC)
         try:
             files = os.listdir(self.keys_dir)
         except OSError as e:
@@ -188,7 +188,7 @@ class KeyManager:
             if kid >= newest_complete:
                 break
             try:
-                retired_at = datetime.strptime(successor, KID_FORMAT)
+                retired_at = datetime.strptime(successor, KID_FORMAT).replace(tzinfo=UTC)
             except ValueError:
                 logger.warning(f"Unrecognised key id {successor!r}; skipping prune")
                 break
@@ -228,8 +228,8 @@ class KeyManager:
                     # this case should never happen
                     raise RuntimeError("Current kid is none")
 
-                dt = datetime.strptime(current_kid, KID_FORMAT)
-                if not dt < datetime.now() - timedelta(days=1):
+                dt = datetime.strptime(current_kid, KID_FORMAT).replace(tzinfo=UTC)
+                if not dt < datetime.now(UTC) - timedelta(days=1):
                     await asyncio.sleep(3600)
                     continue
 

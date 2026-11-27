@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closePairs, matchingPairs, matchOrder, matchScan, segments } from './history'
+import { dayPairs, matchingPairs, matchOrder, matchScan, segments } from './history'
 import type { Order, Outbound } from './orders'
 
 const order = (sn: string, extra: Partial<Order> = {}): Order => ({ order_sn: sn, ship_by: '2026-11-25T00:00:00Z', status: 'PROCESSED', done: true, ...extra })
@@ -29,14 +29,14 @@ describe('history', () => {
     expect(matchScan(scan('SPX1'), 'dewi')).toBe(false)
   })
 
-  it('pairs a close’s orders with their scans and keeps the rest as strays', () => {
-    const scans = [scan('jx123'), scan('261122Y54'), scan('TOKO-1')]
-    const pairs = closePairs([jt, order('OTHER')], scans)
+  it('pairs a day’s orders with their scans and keeps the rest as strays', () => {
+    const scans = [scan(' JX123 '), scan('261122Y54'), scan('TOKO-1'), scan('jx123')]
+    const pairs = dayPairs([jt, order('OTHER')], scans)
     expect(pairs.rows.map((r) => [r.order.order_sn, r.scans.length])).toEqual([
       ['261122Y54', 2],
       ['OTHER', 0],
     ])
-    expect(pairs.strays.map((s) => s.content)).toEqual(['TOKO-1'])
+    expect(pairs.strays.map((s) => s.content)).toEqual(['TOKO-1', 'jx123']) // labels match exactly (Q57)
     // A pair matches through its order or its scans; strays through themselves.
     const byScan = matchingPairs(pairs, 'toko')
     expect([byScan.rows.length, byScan.strays.length]).toEqual([0, 1])

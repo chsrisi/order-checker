@@ -12,6 +12,7 @@ from ...models import (
     PickItemEntry,
     ShopeeOrder,
 )
+from ...timezone import as_utc
 from .engine import get_db
 from .stocks import restore_for_pick
 
@@ -65,8 +66,14 @@ def delete_user_by_username(username: str, actor: str = "admin") -> bool:
         if not user or user.scope == "admin":
             return False
 
-        # Lock order as in queries/pick_items.py: entries, then allocations, then stock rows
+        # Lock order as in queries/pick_items.py: orders, entries, allocations, then stock rows
         # (by sku, so concurrent picks on several SKUs cannot deadlock against this).
+        db.execute(
+            select(ShopeeOrder.order_sn)
+            .where(ShopeeOrder.owner_user == username)
+            .order_by(ShopeeOrder.order_sn)
+            .with_for_update(key_share=True)
+        ).all()
         entries = (
             db.execute(
                 select(PickItemEntry)
@@ -197,7 +204,7 @@ def get_user_for_session(username: str, sid: str, client_version: int | None = N
             return None
         user, last_seen, device_id, device_version = row
         now = datetime.now(UTC)
-        stale = last_seen is None or last_seen.replace(tzinfo=UTC) < now - LAST_SEEN_INTERVAL
+        stale = last_seen is None or as_utc(last_seen) < now - LAST_SEEN_INTERVAL
         if stale:
             db.execute(update(AuthSession).where(AuthSession.id == sid).values(last_seen_at=now))
         if device_id is not None and client_version is not None:

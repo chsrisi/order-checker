@@ -334,6 +334,40 @@ case-insensitively on the server too; the ship-by cutoff for ongoing orders is r
 auto-sync runs on the server; History gets a search and a lookup endpoint (all additive, except
 the two behaviour changes named).
 
+## Delta 12 (2026-11-27)
+
+A to-do review with the maintainer (device day and the 2.0.0 publish left out).
+
+| Ref | Decision | Status |
+|---|---|---|
+| – | v1 smoke test on both scanners (V2_DEVICE_DAY_TODO B) done: all good. | ✅ |
+| – | **T6.15b Inbound and T6.15c Outbound are superseded** by the picking simplification (T6.17–T6.20): Picking is the Orders view (Q32), and T6.20 built Picking and Outbound. No separate brief. | ✅ |
+| – | T6.20 (Android Picking and Outbound) and the login requests L1–L9 (T6.21–T6.23, T7.12) are **good on the emulator**. Final acceptance is pinned for the device day and operators' feedback; not a priority. | ✅ 📌 |
+| – | **Stockkeeping** (T6.15e) had **no brief**: only the v1 problems C11–C12 (V2_UX §1.1), the scaffold fixes (Q31) and the functional list in the plan. It needs a brief before its rebuild. | ✅ |
+| – | **Finder** (client T6.15d and the console's Stock & finder): v1's Finder is unfinished and **how operators should use it is still unclear**. Not now. A proposal for later is in [V2_UX.md](V2_UX.md) §3.1. | 📌 |
+| – | Console **Stock & finder and BOM**: unfinished in v1 too, like the client. **BOM is to be planned for deprecation**, so it is not rebuilt in Vue now (Q85). | 📌 |
+| – | TH.3 (drop the Windows operator client) done. | ✅ |
+| – | Light/dark toggle and localization (V2_ORDERS_SPEC §12) are on the backlog (IMPLEMENTATION_PLAN §5). | 📌 |
+
+Consequences:
+
+- **T7.11 (retire the Flutter admin)** needs every v1 admin operation in Vue. The Flutter
+  admin's Stocks, Finder and BOM views are the gap. With BOM deprecated, the gap is Stocks
+  (read-only table, search, CSV export) and Finder.
+- BOM is not only the admin view: `bom_*` tables expand order lines into the components that
+  Picking shows (`order_payload._components`). What "deprecation" removes decides how large the
+  task is (Q85).
+
+## Delta 13 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q85 | **Only the admin BOM view** is deprecated: it is not rebuilt in Vue and goes with the Flutter admin (T7.11). The BOM backend stays; it is used throughout. | ✅ |
+| Q86 | Localization covers both apps; **Android first**. It sits next to Stockkeeping and Stock & finder in the order. | ✅ |
+| – | **Step 8 is brought forward.** Switching the worker on a device from the console needs device commands (T8.4 `logout`, `assign_user`), which in practice need step 8's device trust (T8.1). The worker-switch spec plans how much of step 8 comes first. Other tasks may drop in priority for it. | ✅ |
+| – | **Order of work:** (1) deleting entries from the worker list on the device, and the console theme toggle; (2) spec for the worker switch from the console (with step 8); (3) spec for tasks. Stockkeeping, Stock & finder and localization come close together; the maintainer prepares Stockkeeping and Stock & finder separately. | ✅ |
+| – | **Later, in this order:** barcode rules as configuration (after localization), then the Tokopedia / TikTok Shop integration (`MARKETPLACE_REVIEW.md`) and the UOM stock logic (Q82) at the same priority: the barcode system has to be modernised before either fits. | 📌 |
+
 ---
 
 ## Open questions and things to revisit
@@ -350,7 +384,7 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q5~~ | ~~Update endpoints: auth? metadata?~~ | No user token; `latest.json` beside the APK (D4) | – | ✅ |
 | ~~Q6~~ | ~~Client server address~~ | Option C, stage 1 now; stage 2 runbook in V2_SERVER_ADDRESS §7 (D4) | – | ✅ |
 | ~~Q7~~ | ~~Directory names~~ | `frontend/client-android/`, `frontend/admin-web/` (D3) | – | ✅ |
-| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every v1 admin operation is covered in Vue (D5) and used for 2 weeks; then one major backend release removes v1. | later | 📌 |
+| Q8 | Criteria and date for retiring v1 and the Flutter admin | Draft accepted: v1 retires after both devices run v2 for 2 weeks with no fallback; the Flutter admin after every v1 admin operation is covered in Vue (D5) and used for 2 weeks; then one major backend release removes v1. Picking clean-up for that release: [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md) R1.4. | later | 📌 |
 | ~~Q9~~ | ~~Device credential~~ | Device token issued at enrollment (D3) | – | ✅ |
 | ~~Q10~~ | ~~Instant revocation for v1~~ | Yes, by design of Q19 + Q24; conditions in D4.2 | – | ✅ |
 | ~~Q11~~ | ~~Local JWKS verification in v2~~ | Dropped (D3) | – | ✅ |
@@ -377,3 +411,8 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q39–Q42~~ | ~~Admin Orders: hand-ticks, history filters, close all, previous close~~ | Decided (D9) | – | ✅ |
 | Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |
 | ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
+| ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |
+| Q84 | Finder: who uses it, when, and what should it answer? | Proposal in [V2_UX.md](V2_UX.md) §3.1 (questions F1–F4 there). | before its brief | 📌 |
+| Q9 | ⚠️ Revisited for the worker switch: device calls use Keystore key signatures now; the device token waits for T8.2 | [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md) W3 | – | ✅ ⚠️ |
+| ~~Q85~~ | ~~BOM deprecation scope~~ | The admin view only; the BOM backend stays (Delta 13) | – | ✅ |
+| ~~Q86~~ | ~~Localization scope~~ | Both apps, Android first (Delta 13) | – | ✅ |

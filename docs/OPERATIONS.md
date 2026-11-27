@@ -145,7 +145,8 @@ To configure file-backed secrets for all super-sensitive credentials:
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | string | `sqlite:///./local.db` | Production | PostgreSQL connection string (`postgresql+psycopg://user:pass@host:5432/dbname`). In Docker, `localhost`/`127.0.0.1`/`db` hostnames are automatically rewritten to `DB_HOST`. In production, prefer passing via Docker Secret `database_url`. |
 | `DB_HOST` | string | `backend-postgres-1` | No | Docker network hostname for the PostgreSQL service used in database URL host resolution. |
-| `REDIS_URL` | string | `redis://localhost:6379/0` | Yes | Redis connection URL (`redis://redis:6379/0` in Compose). Used for dynamic token storage, WebSocket tickets, and admin configuration sessions. |
+| `REDIS_HOST` | string | `redis` | No | Docker network hostname of the Redis service, used the same way for `REDIS_URL`. |
+| `REDIS_URL` | string | `redis://localhost:6379/0` | Yes | Redis connection URL (`redis://redis:6379/0` in Compose). Inside a container, a `localhost`/`127.0.0.1` host is rewritten to `REDIS_HOST`, like `DATABASE_URL` (Compose fills `${REDIS_URL}` from `backend/.env`, which usually says `localhost` for host runs). Used for dynamic token storage, WebSocket tickets, and admin configuration sessions. |
 
 ---
 
@@ -187,6 +188,11 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `KEY_RETENTION_SECONDS` | int | `REFRESH_TTL_SECONDS + ACCESS_TTL_SECONDS + JWT_LEEWAY_SECONDS` | No | How long a retired signing key stays published after its successor appears. It must cover the refresh-token lifetime, because refresh tokens are signed with the same keys. Lower values log idle devices out after a rotation. |
 | `LOGIN_MAX_FAILURES` | int | `10` | No | Failed logins per username (case-insensitive) before `/auth/login` and `/auth/admin` return 429. Counted in Redis; if Redis is down, logins are allowed (fail open). |
 | `LOGIN_LOCKOUT_SECONDS` | int | `900` | No | Failure-counting window and lockout duration. A successful login resets the counter. To unlock an operator early: `redis-cli DEL login_fail:<username>`. |
+| `LOGIN_REQUEST_TTL_SECONDS` | int | `120` | No | Time an admin has to decide a login request. |
+| `LOGIN_REQUEST_COLLECT_SECONDS` | int | `30` | No | Time the device has to collect an approved login. |
+| `LOGIN_REQUEST_MAX_PER_DEVICE` | int | `5` | No | Login requests per device in `LOGIN_REQUEST_RATE_WINDOW_SECONDS`. |
+| `LOGIN_REQUEST_RATE_WINDOW_SECONDS` | int | `600` | No | Window of the limit above. |
+| `LOGIN_REQUEST_MAX_PENDING` | int | `20` | No | Pending login requests overall. Audit: log events `auth.login_request.*`. |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |
@@ -225,6 +231,8 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | `SHOPEE_PACKAGE_CHUNK_SIZE` | int | `50` | No | Maximum number of packages per batch tracking lookup (`/api/v2/logistics/get_mass_tracking_number`). |
 | `SHOPEE_SYNC_WINDOW_DAYS` | int | `2` | No | Time window in days backwards from `now` to pull active/recent Shopee orders (default: 2 days). |
 | `SHOPEE_AUTO_SYNC_SECONDS` | int | `300` | No | Background Shopee sync interval (V2_ORDERS_DELTA Q48). The server syncs on its own every N seconds, as *Sync Shopee* does, and admins get the update live. `0` turns it off. It skips while a Shopee token error is unresolved (until *Reset sync state* or a token save), and does nothing extra when a sync just ran (cache). Runs in the one backend process (single worker). |
+| `SHOPEE_AUTO_SYNC_PAUSE` | `HH:MM-HH:MM` | `21:00-06:00` | No | Daily rest of the background sync, in business time (start included, end excluded, may pass midnight). Empty = no pause. *Sync Shopee* and operators' syncs still run. An invalid value logs a warning and uses the default. |
+| `BUSINESS_UTC_OFFSET` | `±HH:MM` | `+07:00` | No | Fixed offset of the business clock: History days, the sync pause, export times. No daylight saving. An invalid value logs a warning and uses the default. |
 
 ---
 
@@ -234,6 +242,7 @@ If the server stops mid-rotation, it completes the half-written pair and removes
 | --- | --- | --- | --- | --- |
 | `MOCK_ORDER_BYPASS` | bool (int/str) | `0` (false) | No | Set to `1`, `true`, `yes`, or `on` to bypass Shopee OpenAPI synchronization failures and serve local/seeded database orders. Default `0` raises exceptions on sync failure. |
 | `STOCK_LOCATION_MODE` | string | `multi` | No | `multi`: an item may have stock in several locations. `single`: at most one location per item. Both are valid in production. See "Stock Location Mode". |
+| `STOCK_STRICT` | bool | `0` | No | `1`: a pick larger than the recorded stock is rejected (409). `0`: it succeeds and the rest is logged as `pick_shortfall`. See "Strict stock". |
 | `SINGLE_LOCATION_STOCK_BYPASS`, `STOCK_SINGLE_LOCATION_BYPASS` | bool | unset | No | **Deprecated aliases** of `STOCK_LOCATION_MODE` (truthy = `single`). Used only when `STOCK_LOCATION_MODE` is unset; they log a deprecation warning. |
 
 ---
@@ -256,6 +265,7 @@ cd backend
 APP_ENV=development uv run python -m scripts.seed_dev                      # idempotent
 APP_ENV=development uv run python -m scripts.seed_dev --reset              # remove, then re-add
 APP_ENV=development uv run python -m scripts.seed_dev --stock-mode single  # one bin per item
+APP_ENV=development uv run python -m scripts.seed_dev --scenario picking   # scannable orders with picks
 ```
 
 It creates:
@@ -265,6 +275,10 @@ It creates:
 - stock: in multi mode, several bins plus one item with no stock (shortfall case)
 - orders `DEV0001`–`DEV0008`: unclaimed, claimed, split into two packages, done, retry-ship,
   past ship-by (late, still listed), cancelled, and one past the 30-day retention
+
+With `--scenario picking`: orders `991231DEVPK01`–`08` (scannable in the v2 app) for `dev_op1`:
+unclaimed, partly picked from two bins, picked, over-picked, with a shortfall, with an extra SKU,
+cancelled with picks, done with picks; plus one v1 pool row, which v2 hides.
 
 The old untracked `temp/seed_mock_order.py` is superseded.
 
@@ -327,8 +341,10 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
   stock last. For each bin it records an **allocation** (`orders.pick_stock_allocations`).
   The schema has no per-item default bin, so location order is the whole rule.
 - If there is not enough stock, the pick still succeeds (HTTP 200). The unmet quantity is
-  logged as `pick_shortfall` and is never allocated.
-- Assigning part of an entry to an order moves the **deducted** quantity first (oldest
+  logged as `pick_shortfall` and is never allocated. `STOCK_STRICT=1` changes this, see below.
+- **v2 app:** a pick always goes into an order. Unassigning returns stock at once: the shortfall
+  goes first (it was never deducted), then the newest allocation, back to its bin.
+- **v1 app:** assigning part of an entry to an order moves the **deducted** quantity first (oldest
   allocation first). Any shortfall stays with the remainder. Assign and unassign never
   change stock.
 - A pick for an order (`order_sn`) needs an order claimed by the caller that is not done.
@@ -342,6 +358,14 @@ work as deprecated aliases when `STOCK_LOCATION_MODE` is unset. Replace them wit
 > not reached this case before this change. If an entry was deleted to correct a shipment that
 > actually left the warehouse, adjust stock manually afterwards.
 
+### Strict stock
+`STOCK_STRICT=1` (server-wide, v1 and v2; restart to apply) rejects a pick larger than the SKU's
+total stock over all bins: 409, nothing changes. Correct the count in Stockkeeping and scan again.
+It also rejects correct picks whenever the recorded count is too low, so turn it on only once
+counts are trusted: the `pick_shortfall` rows show how often it would have blocked. The v1 app
+shows only "Failed to post scan entry." Shortfalls that already exist stay. `GET /meta` reports
+it as `features.strict_stock`.
+
 ### Stock audit log
 `warehouse.stocks_log` rows carry `sku, location, delta, before, after, reason, actor,
 ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
@@ -350,14 +374,19 @@ ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
 |---|---|
 | `adjust_set`, `adjust_add` | `POST /stocks/update` without `move_to` |
 | `transfer_out`, `transfer_in` | `POST /stocks/update` with `move_to` |
-| `pick`, `pick_shortfall` | `POST /pick-items` (`ref_type=pick_entry`) |
-| `pick_restore` | `DELETE /pick-items/{id}` (actor = the deleting user, admin included) |
+| `pick`, `pick_shortfall` | a pick, v1 or v2 (`ref_type=pick_entry`) |
+| `pick_restore` | v2 unassign, `DELETE /pick-items/{id}`, worker deletion, `scripts.release_unassigned_picks` (actor = the deleting user, admin included) |
 | `mode_merge` | `single` mode merging bins, or `scripts.stock_merge_single` |
 | `cutover_clear` | `scripts.clear_open_pick_entries` (one row; `ref_id` = entries deleted) |
 | `migration_merge` | the T4.3 migration folding duplicate `(sku, location)` rows |
 
 Each `(sku, location)` pair, including an unlocated one, has at most one stock row (unique
 index `uq_stocks_sku_location`). A row that reaches 0 is deleted, and a restore recreates it.
+
+### Releasing unassigned picks (when v1 retires)
+The v2 app has no picks without an order and does not show v1's. `python -m
+scripts.release_unassigned_picks` counts them; `--confirm` deletes them and returns their stock
+(`pick_restore`). Unlike the cutover script below, it leaves order picks alone.
 
 ### Cutover of legacy pick entries (one time)
 Entries created before the allocation table existed cannot be restored correctly. The release

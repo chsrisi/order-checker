@@ -24,6 +24,7 @@ from ..models import (
     ShopeeOrderResponse,
     WSMessageType,
 )
+from ..timezone import SHOPEE_AUTO_SYNC_PAUSE, in_daily_window
 from . import queries
 from .order_payload import build_order_responses
 
@@ -538,7 +539,13 @@ async def sync_shopee_orders(
                 failures = [o for o in outcomes if isinstance(o, BaseException)]
 
                 if chunk_results:
-                    await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                    stale = await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                    # C1: also after a partial sync, for what it did store.
+                    closed = await asyncio.to_thread(queries.close_shipped_outbound)
+                    if closed["outbound"]:
+                        await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+                    for owner in sorted({*stale, *closed["owners"]}):  # V2_PICKING_DELTA Q81, Q83
+                        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=owner)
                 if failures:  # partial sync: keep what arrived, never mark it complete
                     logger.warning(
                         "shopee_sync_partial",
@@ -581,7 +588,8 @@ async def auto_sync_task(interval: Optional[float] = None) -> None:
 
     Same path as *Sync Shopee*, so it shares the sync lock and the cache: a sync that just ran
     is not repeated. It skips while the token circuit is open, until *Reset sync state* or a
-    token save clears it. A failed run is logged and the loop goes on.
+    token save clears it, and in the nightly ``SHOPEE_AUTO_SYNC_PAUSE`` (C3); requested syncs
+    still run then. A failed run is logged and the loop goes on.
     """
     seconds = SHOPEE_AUTO_SYNC_SECONDS if interval is None else interval
     if seconds <= 0:
@@ -590,7 +598,7 @@ async def auto_sync_task(interval: Optional[float] = None) -> None:
     try:
         while True:
             await asyncio.sleep(seconds)
-            if cache_mgr.is_token_fatal():
+            if cache_mgr.is_token_fatal() or in_daily_window(SHOPEE_AUTO_SYNC_PAUSE):
                 continue
             try:
                 await sync_shopee_orders(refresh=False, username=None, scope="admin")

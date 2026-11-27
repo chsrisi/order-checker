@@ -227,7 +227,10 @@ class ConnectionManager:
             tasks = [self._send_raw(message_type, data, ws, username) for ws in connections]
             await asyncio.gather(*tasks)
 
-    async def broadcast(self, message_type: WSMessageType, scope: Optional[str] = None):
+    async def broadcast(
+        self, message_type: WSMessageType, scope: Optional[str] = None, data: Any = None
+    ):
+        """``data``: a ready payload for every recipient instead of one read from the database."""
         # One payload per audience: every admin shares one, each operator gets their own, and
         # scope-independent types share one for everybody (T4.5).
         payloads: dict[str, Any] = {}
@@ -238,7 +241,10 @@ class ConnectionManager:
                 user_scope = self.user_scopes.get(ws)
                 if scope is not None and user_scope != scope:
                     continue
-                if message_type in self.SCOPE_INDEPENDENT:
+                if data is not None:
+                    audience = "*"
+                    payloads[audience] = data
+                elif message_type in self.SCOPE_INDEPENDENT:
                     audience = "*"
                 elif user_scope == "admin":
                     audience = "admin"

@@ -20,6 +20,8 @@ device.
 - [x] Test operator account chosen
 
 > If the device day is weeks away, rebuild the APKs from the then-current code before the window.
+> **Required since T6.18 (2026-11-25):** APKs built before it call pick endpoints the backend no
+> longer has. Build 2.0.0 and the dummy update again, against a backend that includes T6.18.
 > Every published versionCode is permanent, so number them from the next unused code.
 
 ## B. Deploy v0.6.0 (RELEASE.md §5 "v0.6.0")
@@ -27,7 +29,7 @@ device.
 - [x] Window announced, backup taken (database, Redis, `data/keys`)
 - [x] `backend/data/releases/client` created, v0.6.0 deployed, migrations `d4a7e2c9b1f0` and
       `e5b8f3a1c2d4` in the log, `startup_config_accepted`
-- [ ] **Smoke test v1** on both scanners (do this now, independent of the device day): relogin,
+- [x] **Smoke test v1** on both scanners (done 2026-11-27, all good): relogin,
       sync, claim, add a pick, delete it (stock comes back), scan a test label
 - [ ] **Smoke test from a laptop:**
   - [ ] `curl -s http://192.168.1.50:8000/v2/meta` → `client_contract {"min":1,"max":2}`
@@ -84,6 +86,9 @@ device.
 
 ## F. Wrap up
 
+- [ ] **Operators' feedback** (pinned, V2_DELTA Delta 12): Picking and Outbound (T6.20), and
+      login requests (L1–L9: the 2-minute wait, the 2-digit code, the console badge). Note what
+      they trip over
 - [ ] Leave the pilot device on the newest build; operators keep v1 for real work until parity
       ships
 - [ ] Send the results to the agent for the §7 tracker (T6.14, T6.16):

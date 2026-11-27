@@ -1,34 +1,5 @@
 {
   "http": {
-    "DELETE /v2/pick-items/{entry_id}": {
-      "params": {
-        "X-Client-Version": {
-          "in": "header",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "entry_id": {
-          "in": "path",
-          "nullable": false,
-          "required": true,
-          "type": "integer"
-        }
-      },
-      "request": null,
-      "response": {
-        "nullable": false,
-        "properties": {
-          "message": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "success_200": true
-    },
     "GET /v2/client/apk/{version_code}": {
       "params": {
         "version_code": {
@@ -402,6 +373,186 @@
       },
       "success_200": true
     },
+    "POST /v2/auth/login-requests": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "nonce": {
+            "nullable": false,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "required": true,
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 1024,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 512,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "nullable": false,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "expires_in": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "id": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "match_code": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/auth/login-requests/{request_id}/cancel": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "request_id": {
+          "in": "path",
+          "nullable": false,
+          "pattern": "^[0-9a-f]{32}$",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "nonce": {
+            "nullable": false,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "required": true,
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 512,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "message": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/auth/login-requests/{request_id}/poll": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "request_id": {
+          "in": "path",
+          "nullable": false,
+          "pattern": "^[0-9a-f]{32}$",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "nonce": {
+            "nullable": false,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "required": true,
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 512,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "status": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "tokens": {
+            "nullable": true,
+            "properties": {
+              "access_token": {
+                "nullable": false,
+                "required": true,
+                "type": "string"
+              },
+              "refresh_token": {
+                "nullable": false,
+                "required": true,
+                "type": "string"
+              },
+              "token_type": {
+                "nullable": false,
+                "required": false,
+                "type": "string"
+              }
+            },
+            "required": false,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
     "POST /v2/auth/logout": {
       "params": {
         "X-Client-Version": {
@@ -682,207 +833,6 @@
       },
       "success_200": true
     },
-    "POST /v2/pick-items": {
-      "params": {
-        "X-Client-Version": {
-          "in": "header",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        }
-      },
-      "request": {
-        "nullable": false,
-        "properties": {
-          "order_sn": {
-            "maxLength": 64,
-            "nullable": true,
-            "required": false,
-            "type": "string"
-          },
-          "qty": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "sku": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "response": {
-        "nullable": false,
-        "properties": {
-          "id": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "item_name": {
-            "nullable": true,
-            "required": false,
-            "type": "string"
-          },
-          "order_sn": {
-            "nullable": true,
-            "required": false,
-            "type": "string"
-          },
-          "owner_user": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "qty": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "sku": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "success_200": true
-    },
-    "POST /v2/pick-items/unassign": {
-      "params": {
-        "X-Client-Version": {
-          "in": "header",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        }
-      },
-      "request": {
-        "nullable": false,
-        "properties": {
-          "order_sn": {
-            "maxLength": 64,
-            "minLength": 1,
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "qty": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "sku": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "response": {
-        "nullable": false,
-        "properties": {
-          "message": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "success_200": true
-    },
-    "POST /v2/pick-items/{entry_id}/assign": {
-      "params": {
-        "X-Client-Version": {
-          "in": "header",
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
-        "entry_id": {
-          "in": "path",
-          "nullable": false,
-          "required": true,
-          "type": "integer"
-        }
-      },
-      "request": {
-        "nullable": false,
-        "properties": {
-          "order_sn": {
-            "maxLength": 64,
-            "minLength": 1,
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "qty": {
-            "nullable": true,
-            "required": false,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "response": {
-        "nullable": false,
-        "properties": {
-          "id": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "item_name": {
-            "nullable": true,
-            "required": false,
-            "type": "string"
-          },
-          "order_sn": {
-            "nullable": true,
-            "required": false,
-            "type": "string"
-          },
-          "owner_user": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "qty": {
-            "nullable": false,
-            "required": true,
-            "type": "integer"
-          },
-          "sku": {
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "nullable": false,
-            "required": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "success_200": true
-    },
     "POST /v2/shopee/orders/acquire": {
       "params": {
         "X-Client-Version": {
@@ -908,6 +858,132 @@
             "type": "string"
           },
           "order_sn": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/shopee/orders/{order_sn}/picks": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "order_sn": {
+          "in": "path",
+          "maxLength": 64,
+          "minLength": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "item_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "order_sn": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/shopee/orders/{order_sn}/picks/unassign": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "order_sn": {
+          "in": "path",
+          "maxLength": 64,
+          "minLength": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "item_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "order_sn": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
             "nullable": false,
             "required": true,
             "type": "string"

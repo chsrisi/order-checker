@@ -11,6 +11,11 @@ const board = useOrdersBoard()
 const message = useMessage()
 const closing = ref(false)
 
+function open() {
+  board.openReview()
+  closing.value = true
+}
+
 const label = computed(() => {
   const n = board.toClose.length
   if (board.selected.size) return `Close ${n} selected…`
@@ -24,13 +29,14 @@ function onClosed(result: CloseResult) {
 </script>
 
 <template>
-  <NButton type="error" block :disabled="board.toClose.length === 0" @click="closing = true">{{ label }}</NButton>
+  <NButton type="error" block :disabled="board.toClose.length === 0" @click="open">{{ label }}</NButton>
   <CloseDialog
+    v-if="board.review"
     v-model:show="closing"
-    :scans="board.toClose"
+    :scans="board.review.scans"
     :orders="data.orders"
-    :scope="board.scope"
-    :hidden="board.hiddenInClose"
+    :scope="board.review.scope"
+    :hidden="board.review.hidden"
     :tags-of="(s) => board.tagsOf(s).tags"
     :close="data.close"
     @closed="onClosed"

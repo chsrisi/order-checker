@@ -190,6 +190,12 @@ classic admin. Notes for you to try:
   them in the list.
 - Typing a quantity or location opens the soft keyboard; the scan fields do not.
 
+**Picking round 2: built (2026-11-25, T6.20).** Picking and Outbound are separate Home entries.
+Picking has **Input** (Order: the scan box; Item: SKU, quantity, Submit Scan, the order's card)
+and **List** (scan or search; expanded cards; *Picked · n* collapsed at the bottom). A tap on a
+line selects its order and shows Remove → Unassign, which returns stock at once. Replaces the
+unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md).
+
 ### 2.4 Admin Workers (D9)
 
 - **Goal:** manage operator accounts in the console; see who is on which device.
@@ -285,6 +291,16 @@ classic admin. Notes for you to try:
   range hides matches; `/` focuses the search, Esc clears it.
 - **Auto-sync:** the server syncs Shopee every `SHOPEE_AUTO_SYNC_SECONDS` (Q48).
 
+**Round 3 (2026-11-24, V2_ORDERS_DELTA rounds 3–4).** Replaces the matching parts above.
+
+- A sync closes the scans of orders that left on Shopee and marks those orders done (C1).
+- History's first view is *By day* (by scan time, Q53) instead of *By close*; its date range picks
+  those days in all three views. A past day can still grow when its scans close later.
+- Auto-sync rests from 21:00 to 06:00 (C3).
+- Labels match exactly after trimming (Q57).
+- Hovering a paired row highlights its card, scans or empty slot (C4).
+- The close review is frozen when it opens (F7).
+
 ### 2.6 Admin Settings: Shopee connection (D10)
 
 - **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.
@@ -307,10 +323,80 @@ classic admin. Notes for you to try:
 
 **Round 1: built (2026-11-24).**
 
+### 2.7 Client login (2026-11-25)
+
+- **Goal:** log in on a shared scanner without typing a username each time.
+- **Flow:**
+  - Start: **Worker** dropdown, *Log in* (primary), *Manual input* (secondary). The last worker
+    of this device is preselected.
+  - *Log in* → the picker stays, a password field (focused) and *Log in* appear, *Manual input*
+    is gone, and *Ask admin to approve* appears. Changing the worker clears the password.
+  - *Manual input* → username and password, as before.
+  - The system Back key returns to the start from both.
+- **Worker names:** the 20 most recent usernames that logged in **on this device**, kept locally
+  across logout (maintainer, 2026-11-25). No server list, so F-M17 holds. A new scanner starts
+  empty and needs manual input once per worker. A deleted worker's name stays until it drops
+  out of the 20. Entries can be removed in the hidden settings, one by one or all (built
+  2026-11-27); a removed name comes back on that worker's next login.
+- **Ask admin to approve** (T6.23): a waiting view with the 2-digit code, countdown and Cancel
+  (Back cancels too). Denied, expired, unregistered or revoked device: a message on the login
+  screen. The console (T7.12) shows a header button and cards on the Dashboard.
+- **Backend change:** login requests (T6.21, T6.22).
+
+**Round 1: built (2026-11-25), not yet accepted.**
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
   info & finder" (D7). Not near; it is why stock info and the finder share one admin area.
+
+### 3.1 Finder: proposal for later (V2_DELTA Delta 12, Q84)
+
+**Status: not now.** v1's Finder is unfinished, and how operators should use it is still
+unclear. This is a starting point for its brief, to be weighed later.
+
+**What it does today** (`GET /items/find`, `queries/warehouse.py find_warehouse_items`): an exact
+SKU or supplier-barcode hit returns that item; otherwise a substring search over SKU and name,
+at most 50. Each result has `sku`, `item_name` and `location`: the item's bins joined into one
+string, **without quantities**. v1 searches on submit only and caches each query for 5 minutes
+(C13). The v2 Finder is a copy of it.
+
+**Likely situations** (to confirm, F1):
+
+1. A picker can't find an item for an order: *where is it, and is there enough?*
+2. A stockkeeper puts stock away: *where does this item already live?*
+3. Someone scans an unknown barcode or label: *what is this?*
+4. A count or tidy-up at a shelf: *what should be in this bin?*
+
+**Proposed flow:**
+
+- One `ScanField`. A scan, or Enter, runs the exact lookup. An exact hit opens the **item card**
+  directly. Typing shows results live (from 2 characters, debounced), replacing search on submit.
+- **Item card:** name, SKU and barcodes; **each bin with its quantity** and the total; open
+  orders that still need it (from the claimed or active list the app already holds); the last
+  stock change (`stocks_log`). Actions: *Stockkeeping for this item* (prefilled), and *back to
+  the order* when you came from Picking.
+- **Bin lookup** (F2): scanning a location shows what should be in it, with quantities. This
+  covers situation 4 and helps counts.
+- A label or order SN that matches no item says what it is ("an order label: open in Orders")
+  instead of "No items found" (F3).
+- Recent searches on the device, so finding the same item again takes a tap.
+
+**Data:** per-bin quantities are in `warehouse.stocks` and already reach the app in the stock
+snapshot that Stockkeeping uses, so the card may need no backend change. A bin lookup and a
+"last change" would need additive `/v2` reads.
+
+**Console** (Stock & finder, D7): the same item card, beside the read-only stock table with search
+and CSV export (A8: admins don't change stock).
+
+**Questions for the brief:**
+
+| # | Question | Recommendation |
+|---|---|---|
+| F1 | Which of situations 1–4 actually happen, and how often? | Ask operators on the device day. |
+| F2 | Is a bin lookup wanted? | Yes, if counts or shelf checks are done on the scanner. |
+| F3 | Should Finder recognise order labels and SNs? | Yes, as a pointer only. It never claims or picks. |
+| F4 | Prices (`sell_price`) on the scanner? | No: operators don't need them. |
 
 ## 4. Questions for this round (D7)
 

@@ -1,6 +1,6 @@
 """T5.2: admin history is paginated newest-first with X-Total-Count."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from src.services import queries
 
@@ -35,7 +35,7 @@ def test_outbound_history_pagination(pg_session_factory):
     assert total == 3 and len(page) == 2
 
 
-# Delta 9 (Q40/Q42): server-side filters and the list of closes.
+# Delta 9 (Q40) and V2_ORDERS_DELTA C2: server-side filters and the list of days.
 
 
 def _close(labels, *, user="op", tags=()):
@@ -44,7 +44,8 @@ def _close(labels, *, user="op", tags=()):
     return queries.close_outbound_items(contents=list(labels), admin_username="a")
 
 
-def _seed_two_closes(pg_session_factory):
+def _seed_two_days(pg_session_factory):
+    """Scanned 23:59 on 24 Nov and 00:00 on 25 Nov at +07:00 (the same UTC day), closed later."""
     from .factories import add_user
 
     with pg_session_factory() as db:
@@ -54,45 +55,86 @@ def _seed_two_closes(pg_session_factory):
         add_order(db, "251101BBB", owner="other")
         db.commit()
     _close(["SPX-111", "LOOSE-1"], tags=["Morning"])
-    first = queries.get_close_history()[0][0]["closed_at"]
     _close(["251101BBB"], user="other", tags=["Evening"])
-    return first
+    _scanned_at(pg_session_factory, ["SPX-111", "LOOSE-1"], "2026-11-24T23:59:59.999+07:00")
+    _scanned_at(pg_session_factory, ["251101BBB"], "2026-11-25T00:00+07:00")
 
 
-def test_close_history_lists_one_row_per_close_with_counts_and_tags(pg_session_factory):
-    _seed_two_closes(pg_session_factory)
-    closes, total = queries.get_close_history()
+def _scanned_at(pg_session_factory, labels, when):
+    from sqlalchemy import update
+
+    from src.models import OutboundItem
+
+    with pg_session_factory() as db:
+        db.execute(
+            update(OutboundItem)
+            .where(OutboundItem.content.in_(labels))
+            .values(created_at=datetime.fromisoformat(when))
+        )
+        db.commit()
+
+
+MON, TUE = date(2026, 11, 24), date(2026, 11, 25)
+
+
+def test_days_group_by_scan_time_in_the_business_zone(pg_session_factory):
+    """V2_ORDERS_DELTA C2 / Q53: the close time plays no part."""
+    _seed_two_days(pg_session_factory)
+    days, total = queries.get_day_history()
     assert total == 2
-    newest, oldest = closes
-    assert newest["closed_at"] > oldest["closed_at"]
-    # The order whose tracking number was scanned is completed by the first close.
-    assert (oldest["outbound"], oldest["orders_done"], oldest["tags"]) == (2, 1, ["Morning"])
-    assert (newest["outbound"], newest["orders_done"], newest["tags"]) == (1, 1, ["Evening"])
-
-
-def test_history_filters_by_one_close_and_by_range(pg_session_factory):
-    from datetime import timedelta
-
-    first = _seed_two_closes(pg_session_factory)
-    one = queries.HistoryFilter(closed_at=first)
-    scans, total = queries.get_outbound_history(f=one)
-    assert total == 2 and {s.content for s in scans} == {"SPX-111", "LOOSE-1"}
-    orders, total = queries.get_shopee_orders_history(f=one)
-    assert total == 1 and orders[0].order_sn == "251101AAA"
-
-    # Range bounds are inclusive and aware times are converted to the naive UTC columns.
-    aware = first.replace(tzinfo=UTC)
-    until_first = queries.HistoryFilter(closed_to=aware)
-    assert queries.get_outbound_history(f=until_first)[1] == 2
-    after_first = queries.HistoryFilter(closed_from=aware + timedelta(microseconds=1))
-    assert [o.order_sn for o in queries.get_shopee_orders_history(f=after_first)[0]] == [
-        "251101BBB"
+    assert days == [
+        {"day": TUE, "outbound": 1, "orders_done": 1, "tags": ["Evening"]},
+        {"day": MON, "outbound": 2, "orders_done": 1, "tags": ["Morning"]},
     ]
-    assert queries.get_close_history(f=after_first)[1] == 1
+    assert [d["day"] for d in queries.get_day_history(limit=1, offset=1)[0]] == [MON]
+    detail = queries.get_day(MON)
+    assert {s.content for s in detail["scans"]} == {"SPX-111", "LOOSE-1"}
+    assert [o.order_sn for o in detail["orders"]] == ["251101AAA"]
+    queries.create_outbound_item(content="STILL-OPEN", owner_username="op", tags_in=[])
+    assert queries.get_day_history()[1] == 2  # open scans are not history
+
+
+def test_an_order_scanned_over_two_days_is_on_both(pg_session_factory):
+    from src.models import ShopeeOrderInfo
+
+    from .factories import add_user
+
+    with pg_session_factory() as db:
+        add_user(db, "op")
+        add_order(db, "SPLIT", tracking="PKG-A")
+        db.add(ShopeeOrderInfo(order_sn="SPLIT", package_number="P2", tracking_number="PKG-B"))
+        add_order(db, "NOSCAN", done=True, done_at=datetime.fromisoformat("2026-11-25T06:00+07:00"))
+        db.commit()
+    _close(["PKG-A", "PKG-B"])
+    _scanned_at(pg_session_factory, ["PKG-A"], "2026-11-24T12:00+07:00")
+    _scanned_at(pg_session_factory, ["PKG-B"], "2026-11-25T12:00+07:00")
+    counts = {d["day"]: (d["outbound"], d["orders_done"]) for d in queries.get_day_history()[0]}
+    # NOSCAN has no scan, so it falls on the day it was done.
+    assert counts == {MON: (1, 1), TUE: (1, 2)}
+    assert {o.order_sn for o in queries.get_day(TUE)["orders"]} == {"SPLIT", "NOSCAN"}
+
+
+def test_history_filters_by_days_and_by_close_time(pg_session_factory):
+    _seed_two_days(pg_session_factory)
+    monday = queries.HistoryFilter(day_to=MON)
+    assert queries.get_outbound_history(f=monday)[1] == 2
+    assert [o.order_sn for o in queries.get_shopee_orders_history(f=monday)[0]] == ["251101AAA"]
+    assert [d["day"] for d in queries.get_day_history(f=monday)[0]] == [MON]
+    tuesday = queries.HistoryFilter(day_from=TUE)
+    assert [s.content for s in queries.get_outbound_history(f=tuesday)[0]] == ["251101BBB"]
+    assert [d["day"] for d in queries.get_day_history(f=tuesday)[0]] == [TUE]
+
+    # Close-time bounds are inclusive; a naive one is UTC.
+    closed_at = min(s.closed_at for s in queries.get_outbound_history()[0])
+    assert queries.get_outbound_history(f=queries.HistoryFilter(closed_to=closed_at))[1] == 2
+    naive = closed_at.astimezone(UTC).replace(tzinfo=None)
+    assert queries.get_outbound_history(f=queries.HistoryFilter(closed_to=naive))[1] == 2
+    after = queries.HistoryFilter(closed_from=closed_at + timedelta(microseconds=1))
+    assert [o.order_sn for o in queries.get_shopee_orders_history(f=after)[0]] == ["251101BBB"]
 
 
 def test_history_search_runs_on_the_server(pg_session_factory):
-    _seed_two_closes(pg_session_factory)
+    _seed_two_days(pg_session_factory)
     by_tag = queries.get_outbound_history(f=queries.HistoryFilter(q="evening"))
     assert [s.content for s in by_tag[0]] == ["251101BBB"]
     by_worker = queries.get_outbound_history(f=queries.HistoryFilter(q="OTHER"))
@@ -103,7 +145,7 @@ def test_history_search_runs_on_the_server(pg_session_factory):
     assert queries.get_outbound_history(f=queries.HistoryFilter(q="%"))[1] == 0
 
 
-# V2_ORDERS_DELTA Q49: search over courier and buyer name, closes with a match, exact lookup.
+# V2_ORDERS_DELTA Q49: search over courier and buyer name, days with a match, exact lookup.
 
 
 def test_order_search_matches_courier_and_recipient_name(pg_session_factory):
@@ -121,27 +163,62 @@ def test_order_search_matches_courier_and_recipient_name(pg_session_factory):
     assert [o.order_sn for o in by_name[0]] == ["251102CCC"]
 
 
-def test_close_search_keeps_closes_with_a_match_and_their_full_counts(pg_session_factory):
-    _seed_two_closes(pg_session_factory)
-    closes, total = queries.get_close_history(f=queries.HistoryFilter(q="loose"))
+def test_day_search_keeps_days_with_a_match_and_their_full_counts(pg_session_factory):
+    _seed_two_days(pg_session_factory)
+    days, total = queries.get_day_history(f=queries.HistoryFilter(q="loose"))
     assert total == 1
-    # The close is listed with all it closed, not only the matching scan.
-    assert (closes[0]["outbound"], closes[0]["orders_done"]) == (2, 1)
-    by_order = queries.get_close_history(f=queries.HistoryFilter(q="251101bbb"))
+    # The day is listed with all of it, not only the matching scan.
+    assert (days[0]["day"], days[0]["outbound"], days[0]["orders_done"]) == (MON, 2, 1)
+    by_order = queries.get_day_history(f=queries.HistoryFilter(q="251101bbb"))
     assert by_order[1] == 1 and by_order[0][0]["tags"] == ["Evening"]
-    assert queries.get_close_history(f=queries.HistoryFilter(q="nothing-like-this"))[1] == 0
+    assert queries.get_day_history(f=queries.HistoryFilter(q="nothing-like-this"))[1] == 0
 
 
-def test_lookup_finds_orders_and_scans_by_exact_label_in_any_case(pg_session_factory):
-    _seed_two_closes(pg_session_factory)
+def test_lookup_finds_orders_and_scans_by_exact_label(pg_session_factory):
+    _seed_two_days(pg_session_factory)
     queries.create_outbound_item(content="OPEN-9", owner_username="op", tags_in=[])
 
-    found = queries.lookup_label(" spx-111 ")
+    found = queries.lookup_label(" SPX-111 ")
     assert [o.order_sn for o in found["orders"]] == ["251101AAA"]
     assert [(s.content, s.closed) for s in found["scans"]] == [("SPX-111", True)]
-    by_sn = queries.lookup_label("251101aaa")  # an order found by SN; its scan was the tracking no.
+    assert found["day"] == MON
+    assert queries.lookup_label("LOOSE-1")["day"] == MON
+    by_sn = queries.lookup_label("251101AAA")  # an order found by SN; its scan was the tracking no.
     assert [o.order_sn for o in by_sn["orders"]] == ["251101AAA"] and by_sn["scans"] == []
-    open_scan = queries.lookup_label("open-9")
+    open_scan = queries.lookup_label("OPEN-9")
     assert open_scan["orders"] == [] and [s.closed for s in open_scan["scans"]] == [False]
-    assert queries.lookup_label("SPX-11") == {"orders": [], "scans": []}  # exact, not substring
-    assert queries.lookup_label("  ") == {"orders": [], "scans": []}
+    assert open_scan["day"] is None
+    assert queries.lookup_label("spx-111") == {"orders": [], "scans": [], "day": None}  # Q57
+    assert queries.lookup_label("SPX-11") == {
+        "orders": [],
+        "scans": [],
+        "day": None,
+    }  # exact, not substring
+    assert queries.lookup_label("  ") == {"orders": [], "scans": [], "day": None}
+
+
+def test_history_day_routes_over_http(pg_session_factory):
+    from fastapi.testclient import TestClient
+
+    from src.dependencies import require_admin
+    from src.main import app
+    from src.models import User
+
+    _seed_two_days(pg_session_factory)
+    app.dependency_overrides[require_admin] = lambda: User(username="a", scope="admin")
+    try:
+        client = TestClient(app)
+        days = client.get("/admin/history/days", params={"day_to": "2026-11-24"})
+        assert days.headers["X-Total-Count"] == "1"
+        assert days.json() == [
+            {"day": "2026-11-24", "outbound": 2, "orders_done": 1, "tags": ["Morning"]}
+        ]
+        day = client.get("/admin/history/days/2026-11-24").json()
+        assert [o["order_sn"] for o in day["orders"]] == ["251101AAA"]
+        assert {s["created_at"] for s in day["scans"]} == {"2026-11-24T16:59:59.999000Z"}
+        assert client.get("/admin/history/days/yesterday").status_code == 422
+        found = client.get("/admin/lookup", params={"label": "SPX-111"}).json()
+        assert found["day"] == "2026-11-24"
+        assert client.get("/admin/history/closes").status_code == 404
+    finally:
+        app.dependency_overrides.pop(require_admin)

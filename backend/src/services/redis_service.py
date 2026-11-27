@@ -62,6 +62,51 @@ class RedisManager:
             raise RuntimeError("Redis client is not initialized")
         return await self._client.expire(key, ttl)
 
+    async def set_nx(self, key: str, value: str, ex: int):
+        """Set only if the key does not exist; truthy when this call set it."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.set(key, value, ex=ex, nx=True)
+
+    async def getset(self, key: str, value: str, ex: int):
+        """Set and return the previous value, atomically (Redis >= 6.2)."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.set(key, value, ex=ex, get=True)
+
+    async def zadd(self, key: str, member: str, score: float):
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zadd(key, {member: score})
+
+    async def zrem(self, key: str, member: str):
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zrem(key, member)
+
+    async def zcard(self, key: str) -> int:
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zcard(key)
+
+    async def zrange(self, key: str) -> list[str]:
+        """Every member, lowest score first."""
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zrange(key, 0, -1)
+
+    async def zremrangebyscore(self, key: str, low: float, high: float):
+        self.initialize()
+        if self._client is None:
+            raise RuntimeError("Redis client is not initialized")
+        return await self._client.zremrangebyscore(key, low, high)
+
     async def close(self):
         if self._client:
             await self._client.close()

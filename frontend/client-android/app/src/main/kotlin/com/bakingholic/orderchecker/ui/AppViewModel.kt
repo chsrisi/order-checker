@@ -3,6 +3,8 @@ package com.bakingholic.orderchecker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bakingholic.orderchecker.AppGraph
+import com.bakingholic.orderchecker.auth.LoginRequestResult
+import com.bakingholic.orderchecker.auth.LoginWait
 import com.bakingholic.orderchecker.net.ApiException
 import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
@@ -10,6 +12,7 @@ import com.bakingholic.orderchecker.net.ServerUnreachableException
 import com.bakingholic.orderchecker.net.UpgradeRequiredException
 import com.bakingholic.orderchecker.scan.ScanSuffix
 import com.bakingholic.orderchecker.ui.ops.OpsController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +25,7 @@ import kotlinx.coroutines.launch
 sealed interface Screen {
     data object Starting : Screen
 
-    data class Login(val busy: Boolean = false, val error: String? = null) : Screen
+    data class Login(val busy: Boolean = false, val error: String? = null, val waiting: LoginWait? = null) : Screen
 
     data object Home : Screen
 
@@ -44,7 +47,10 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val deviceStatus = graph.device.status
     val scanSuffix: StateFlow<ScanSuffix> =
         graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
+    val knownWorkers: StateFlow<List<String>> =
+        graph.knownWorkers.names.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var registration: Job? = null
+    private var loginRequest: Job? = null
     val ops = OpsController(graph.ops, viewModelScope)
 
     init {
@@ -97,6 +103,41 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         }
     }
 
+    /** Asks an admin to approve [username]'s login (T6.23). */
+    fun requestLogin(username: String) {
+        _screen.value = Screen.Login(busy = true)
+        loginRequest?.cancel()
+        loginRequest = viewModelScope.launch {
+            _screen.value = try {
+                when (graph.loginRequests.request(username) { _screen.value = Screen.Login(waiting = it) }) {
+                    LoginRequestResult.APPROVED -> Screen.Home.also { enterHome() }
+                    LoginRequestResult.DENIED -> Screen.Login(error = "The admin denied the login.")
+                    LoginRequestResult.EXPIRED -> Screen.Login(error = "No admin answered in time.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: UpgradeRequiredException) {
+                Screen.UpdateRequired(e.minSupportedVersionCode)
+            } catch (e: ApiException) {
+                Screen.Login(error = requestError(e))
+            } catch (e: ServerUnreachableException) {
+                Screen.Login(error = "Server unreachable. Check the Wi-Fi.")
+            } catch (e: Exception) {
+                Screen.Login(error = "Request failed: ${e.message}")
+            }
+        }
+    }
+
+    fun cancelLoginRequest() {
+        loginRequest?.cancel()
+        if (_screen.value is Screen.Login) _screen.value = Screen.Login()
+    }
+
+    fun clearLoginError() {
+        val login = _screen.value as? Screen.Login ?: return
+        if (login.error != null) _screen.value = login.copy(error = null)
+    }
+
     fun logout() {
         registration?.cancel()
         ops.selectOrder(null)
@@ -124,6 +165,14 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         _settingsOpen.value = false
     }
 
+    fun forgetWorker(username: String) {
+        viewModelScope.launch { graph.knownWorkers.forget(username) }
+    }
+
+    fun forgetAllWorkers() {
+        viewModelScope.launch { graph.knownWorkers.forgetAll() }
+    }
+
     fun setScanSuffix(suffix: ScanSuffix) {
         viewModelScope.launch { graph.scanPrefs.setSuffix(suffix) }
     }
@@ -139,6 +188,14 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         registration?.cancel()
         registration = viewModelScope.launch { graph.device.registerWithRetry() }
         viewModelScope.launch { runCatching { graph.meta.refresh() } }
+    }
+
+    private fun requestError(e: ApiException): String = when {
+        e.code == 403 && e.detail == "Device revoked" -> "This device was revoked by the admin."
+        e.code == 403 -> "This device is not registered yet. Log in with a password once."
+        e.code == 429 -> "Too many requests. Wait a few minutes."
+        e.code == 503 -> "Requests are not available right now. Use the password."
+        else -> e.detail ?: "Request failed (${e.code})."
     }
 
     private fun loginError(e: ApiException): String = when (e.code) {

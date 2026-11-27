@@ -336,6 +336,7 @@ async def test_auto_sync_runs_survives_errors_and_pauses_on_token_error(monkeypa
     fatal = {"on": False}
     monkeypatch.setattr(shopee_service, "sync_shopee_orders", fake_sync)
     monkeypatch.setattr(shopee_service.cache_mgr, "is_token_fatal", lambda: fatal["on"])
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", None)
 
     task = asyncio.create_task(shopee_service.auto_sync_task(interval=0.01))
     await asyncio.sleep(0.06)
@@ -361,3 +362,51 @@ async def test_auto_sync_is_off_with_zero_interval(monkeypatch):
 
     monkeypatch.setattr(shopee_service, "sync_shopee_orders", boom)
     await shopee_service.auto_sync_task(interval=0)  # returns at once
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_rests_in_the_nightly_pause(monkeypatch):
+    """V2_ORDERS_DELTA C3."""
+    import asyncio
+    from datetime import time
+
+    from src.services import shopee_service
+
+    calls = []
+
+    async def fake_sync(**kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", fake_sync)
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_token_fatal", lambda: False)
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", (time.min, time.max))
+    task = asyncio.create_task(shopee_service.auto_sync_task(interval=0.01))
+    await asyncio.sleep(0.05)
+    assert calls == []
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", None)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls
+
+
+@pytest.mark.asyncio
+async def test_a_close_tells_the_owners_and_keeps_them_out_of_its_response(monkeypatch):
+    """V2_PICKING_DELTA Q81."""
+    closed = {"outbound": 1, "unknown": 0, "orders_done": 2, "owners": ["alice", "bob"]}
+    monkeypatch.setattr(outbound_service.queries, "close_outbound_items", lambda **_: dict(closed))
+    monkeypatch.setattr(outbound_service.cache_mgr, "invalidate", lambda: None)
+    monkeypatch.setattr(outbound_service.conn_mgr, "broadcast", AsyncMock())
+    monkeypatch.setattr(outbound_service.conn_mgr, "send_to_user", AsyncMock())
+    assert await outbound_service.close_outbound_items(["x"], "admin") == {
+        "outbound": 1,
+        "unknown": 0,
+        "orders_done": 2,
+    }
+    told = outbound_service.conn_mgr.send_to_user.await_args_list
+    assert [(c.args[0].value, c.kwargs["username"]) for c in told] == [
+        ("shopee_orders_update", "alice"),
+        ("shopee_orders_update", "bob"),
+    ]

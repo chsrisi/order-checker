@@ -28,7 +28,7 @@ and the implementation plan.
 
 | Term | Meaning in this codebase |
 |---|---|
-| **Operator / client** | A user with `scope = "client"`, using the Flutter operator app (`frontend/client`) on Android or Windows. |
+| **Operator / client** | A user with `scope = "client"`, using the operator app on Android: v1 Flutter (`frontend/client`) or v2 Kotlin (`frontend/client-android`). |
 | **Admin** | A user with `scope = "admin"`, using the Flutter admin web app (`frontend/admin`). Exactly the users created by the startup seed (`ADMIN_USERNAME`); the API never creates other admins. |
 | **Order** | A Shopee order, key `order_sn` (string, starts with `YYMMDD`). Table `shopee.orders`. |
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
@@ -132,8 +132,11 @@ returns. Functions in `queries/stocks.py` that take `db` never commit.
 
 ## 4. Data model
 
-PostgreSQL, five schemas. All `DateTime` columns are naive UTC; the API serializes them as
-`...Z` (`models.UTCDateTime`). Column types: `str` = `VARCHAR`, `float` = double precision.
+PostgreSQL, five schemas. Timestamps are `timestamptz` and every connection runs in
+UTC (`queries/engine.py`); the API serializes them as `...Z` (`models.UTCDateTime`). Exception:
+the imported dates on `warehouse.items`, the marketplace BOM tables and `shopee_items` are naive,
+zone unknown, and unused. `src/timezone.py` holds the business clock: one fixed
+`BUSINESS_UTC_OFFSET` (default +07:00) for History days, the auto-sync pause and exports. Column types: `str` = `VARCHAR`, `float` = double precision.
 
 ### 4.1 Tables
 
@@ -251,6 +254,9 @@ previous release tag.
 | `ws_token:<urlsafe32>` | JSON `{username, sid}` | `WS_TICKET_TTL_SECONDS` (30) | `POST /auth/ws-token`; consumed with `GETDEL` |
 | `cfg_token:<hex64>` | admin username | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` (120) | `POST /admin/shopee-config/unlock` |
 | `login_fail:<lowercased username>` | failure count | `LOGIN_LOCKOUT_SECONDS` (900), reset to a full window at the locking failure | failed logins |
+| `login_req:<id>` | login request (JSON, no tokens) | `LOGIN_REQUEST_TTL_SECONDS` (120); on a decision `LOGIN_REQUEST_COLLECT_SECONDS` (30) | asking device |
+| `login_req_decision:<id>` | `approved:<admin>` / `denied:<admin>`, set once (NX) | both of the above | admins |
+| `login_req_device:<device>`, `login_req_rate:<device>`, `login_req_nonce:<scope>:<nonce>`, `login_req_index` | current request, rate counter, seen nonces, open requests by expiry | request TTL; 600 s; 600 s (create: 30 days); none (pruned) | asking device |
 
 Redis needs ≥ 6.2 (`GETDEL`). Compose ships `redis:8.8-alpine`.
 
@@ -283,6 +289,15 @@ refresh and return to the login screen.
 unknown user and wrong password all return 401 "Incorrect username or password". Throttle:
 `LOGIN_MAX_FAILURES` (10) failed attempts per lowercased username within the window → 429
 with `Retry-After`; success resets; Redis down → throttle fails open.
+
+**Login requests** (T6.21, `login_request_service`): a registered, not revoked device asks for a
+worker; an admin approves in the console; the device collects one session. Every device call is
+signed with the device key over `oc-login-request:<create|poll|cancel>:<username or id>:<nonce>`
+and each nonce works once. One request per device (a new one replaces it), 5 per device in 10
+minutes, 20 pending. Unknown usernames and admin accounts get a request no admin sees. At
+collection the account must still exist with the same password, and the device must not be
+revoked. Deciding is one NX, collecting one GETDEL, so at most one session results. A password
+lockout does not block requests. Redis down → 503 (password login still works).
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
 under races), then checks expiry, the session (same `sid`, still live) and user existence, and
@@ -323,12 +338,13 @@ cache.
 | Capability | Operator | Admin |
 |---|---|---|
 | List active orders (HTTP and WS) | **only orders it claimed** | all active orders |
-| Claim an order | yes | yes (same rules) |
+| Claim an order | yes | v1 routes: yes (same rules); `/v2`: no (403) |
 | Pick entries: list | own | all |
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
+| `/v2` order picks and unassign | own orders | no (403) |
 | Outbound scans: list (open) | own | all open |
-| Outbound: create scan | yes | yes |
+| Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
 | Stocks: read, adjust, transfer | yes | yes |
 | Item search | yes | yes |
@@ -345,8 +361,9 @@ cache.
 
 Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin), and by the background
 `auto_sync_task` every `SHOPEE_AUTO_SYNC_SECONDS` (default 300, 0 = off; V2_ORDERS_DELTA Q48),
-which runs as admin with no requesting user, skips while the token circuit is open, and logs a
-failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
+which runs as admin with no requesting user, skips while the token circuit is open and in the nightly
+`SHOPEE_AUTO_SYNC_PAUSE` (default 21:00-06:00 business time, start included, end excluded; other
+syncs still run then), and logs a failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
 only reads the database.
 
 1. `refresh=true` invalidates the cache. If the cache is still valid (last full sync < 120 s
@@ -369,6 +386,13 @@ only reads the database.
    - package rows keyed by `package_number`: failed-tracking packages are skipped (keep old
      values); for non-`READY_TO_SHIP` orders tracking/pickup code are overwritten.
    - Orders are never deleted.
+   Then, also after a partial sync, `close_shipped_outbound` (V2_ORDERS_DELTA C1): every open
+   scan whose label is exactly the SN or a tracking number of an order in `SHIPPED`,
+   `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
+   database, not this sync's batch; cancelled and returned orders and unscanned ones are left
+   alone. If it closed any, admins get `outbound_update`, and the
+   claimers of the orders it completed get `shopee_orders_update` (Q81), as do
+   the claimers of orders this sync took off the active list (cancelled, shipped; Q83). Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -443,7 +467,8 @@ name contains the query (`ILIKE`, with `\ % _` escaped).
 
 ### 7.5 Pick lifecycle (`queries/pick_items.py`, one transaction each)
 
-Lock order everywhere: pick entry → allocations → stock rows.
+Lock order everywhere: order (v2 picks and worker deletion) → pick entry → allocations → stock
+rows. v1 operations do not lock the order. The table covers the v1 operations; v2 is below it.
 
 | Operation | Rules | Stock effect | Errors |
 |---|---|---|---|
@@ -455,6 +480,15 @@ Lock order everywhere: pick entry → allocations → stock rows.
 Create, assign and unassign set the receiving entry's `timestamp` to now. Events after commit: caller +
 admins get `pick_item_entries_update`; create and delete also broadcast `stocks_update` to
 everyone.
+
+**Contract v2** (`pick_for_order`, `unassign_from_order`; V2_PICKING_DELTA): the order is locked
+`FOR NO KEY UPDATE`, so picks, unassigns and closes of one order run one at a time. Entries never
+have `order_sn = NULL`; a duplicate row left by v1 is merged.
+
+| Operation | Rules | Stock effect | Errors |
+|---|---|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks {sku, qty>0}` | order claimed by the caller, not done, and active on Shopee; `sku` resolved via §7.4 | deduct (§7.6) | 404; 409 done, not active, or strict stock |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign {sku, qty>0}` | order claimed by the caller and not done (a cancelled one is allowed); `sku` is the stored SKU | `restore_pick_quantity` (§7.6) | 404; 409 done, or more than is picked |
 
 ### 7.6 Inventory engine
 
@@ -484,8 +518,10 @@ pre-migration duplicate rows are folded on load.
 
 **Picks:** deduction takes bin by bin in deduction order, writing one allocation and one
 `pick` log row per bin. Unmet quantity is logged `pick_shortfall` (log row with `delta = 0`
-and a warning) and is never restored. A pick never fails for lack of stock and stock never
-goes negative. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
+and a warning) and is never restored. A pick never fails for lack of stock unless
+`STOCK_STRICT=1` (then 409 and nothing changes: `InsufficientStockError`, checked on the locked
+rows). Stock never goes negative. `restore_pick_quantity` is the exact reverse of a pick: the
+shortfall first, then the newest allocations. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
 #5).
 
 ### 7.7 Outbound scans and period closure
@@ -498,17 +534,18 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
 
 `POST /outbound/close [values…]` (admin, ≤ 10,000 × 1024 chars):
 
-1. Trim, drop empties, de-duplicate preserving order. Matching is **case-insensitive**
-   everywhere below (V2_ORDERS_DELTA Q44), like the console's pairing.
+1. Trim, drop empties, de-duplicate preserving order. Matching is **exact**
+   everywhere below (V2_ORDERS_DELTA Q57), like the console's pairing.
 2. Close all **open** scans (any user) whose `content` is in the list: `closed = true`,
    `closed_at = now`.
-3. `unknown` = submitted values (case-folded) that closed no scan.
+3. `unknown` = submitted values that closed no scan.
 4. Orders matched by `order_sn`; values that are not order numbers are matched against
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
 5. Returns `{outbound, unknown, orders_done}`; invalidates the sync cache; broadcasts
-   `outbound_update` and `shopee_orders_update` **to admins only** (operators' lists update on
-   their next request).
+   `outbound_update` and `shopee_orders_update` to admins, and `shopee_orders_update` to each
+   operator who claimed an order it completed (V2_PICKING_DELTA Q81; operators' scan lists
+   update on their next request).
 
 `DELETE /admin/clear/outbound-items` deletes every scan (open and closed) and their tags;
 admins get `outbound_update`. `/admin/history/outbound` lists closed scans; exports: §9.
@@ -568,13 +605,16 @@ so every event reaches v1 and v2 devices and both admins alike.
 | Trigger | Event | Recipients |
 |---|---|---|
 | user created/registered/reset/deleted | `users_update` | admins |
+| login request created, decided or cancelled | `login_requests_update` (all pending ones) | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
+| claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |
 | all scans cleared | `outbound_update` | admins |
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |
 | pick create / delete | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
-| pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
@@ -595,17 +635,18 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   500), `offset`; total in `X-Total-Count`; the body stays a list. Order history is sorted
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
   Optional server-side filters (`queries/history.py`, V2_DELTA D9): `closed_from`/`closed_to`
-  on the close time (`closed_at` / `done_at`, inclusive), `closed_at` for one exact close, and
+  on the close time (`closed_at` / `done_at`, inclusive), `day_from`/`day_to` on business days, and
   `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number,
   pickup code, courier and buyer name (V2_ORDERS_DELTA Q49; buyer names exist only within
   `RECIPIENT_RETENTION_DAYS`).
-- `GET /admin/history/closes`: one row per distinct close time across scans and orders
-  (`close_outbound_items` stamps both with the same `now`), newest first, with counts and the
-  scans' tags. Rows without a close time (before v0.4) are left out. With `q`, only closes
-  holding a matching scan or order are listed, with their full counts.
+- `GET /admin/history/days` and `/days/{day}` (V2_ORDERS_DELTA C2, R4.2): one row per business
+  day, and all of one day unpaged. A closed scan belongs to the day it was **made**; a done order
+  is on every day one of its closed scans was made, or on the day it was done when it has none.
+  A past day can grow when its scans close later. With `q`, only days holding a matching scan or
+  order are listed, with their full counts.
 - `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
-  number equals the label and the scans of it, open or closed; trimmed, case-insensitive, at
-  most 10 orders and 20 scans. The console's History answers "did it leave?" from it.
+  number equals the label and the scans of it, open or closed; trimmed, then exact, at
+  most 10 orders and 20 scans, and the History `day` it left on. The console's History answers "did it leave?" from it.
 
 ---
 
@@ -655,7 +696,7 @@ Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contrac
 committed export `backend/openapi/v2.json`.
 
 - `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
-  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  "Operator-client contract v2"), except picks, **reusing the v1 endpoint functions**, response models,
   summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
   operations.
 - Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
@@ -663,6 +704,9 @@ committed export `backend/openapi/v2.json`.
   `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
   ungated. The metadata file is re-read only when its mtime changes
   (`services/client_releases.py`).
+- Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
+  delete do not exist in v2. Claim, pick, unassign and outbound require an operator
+  (`require_operator`, `OPERATOR_ONLY`).
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
@@ -690,7 +734,8 @@ committed export `backend/openapi/v2.json`.
 | `set_admin_password` | apply the configured `ADMIN_PASSWORD` to the existing admin; refuses defaults; revokes its refresh tokens |
 | `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all pick entries and allocations **without** restoring stock; logs `cutover_clear` |
 | `stock_merge_single [--confirm]` | merge multi-bin SKUs onto their first bin before switching to `single` (dry run without `--confirm`) |
-| `seed_dev [--reset]` | synthetic orders/items for development; refuses under production rules |
+| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool) and **restore** their stock; counts only without `--confirm` |
+| `seed_dev [--reset] [--scenario picking]` | synthetic orders/items for development; refuses under production rules |
 | `ci_migration_gate.sh` | CI: upgrade from the previous release tag to head |
 
 ---
@@ -710,7 +755,7 @@ connect `WS_URL/ws?token=`; on close/error retry every 2 s up to 5 times, then s
 connection-failed banner with a manual retry. An error containing `403` triggers a token
 refresh and reconnect, or logout.
 
-### 12.1 Operator client (`frontend/client`, Android + Windows)
+### 12.1 Operator client (`frontend/client`, Android only)
 
 Production devices run a **debug** build: release builds lack the `INTERNET` permission
 (KNOWN_LIMITATIONS #10).
@@ -783,7 +828,8 @@ plan says so.
 4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
 5. Period closure pushes updates to admins only; operators see closed scans disappear on
-   their next `get_items`.
+   their next `get_items`. Orders too: the v2 app learns of a close from the 409 of its next
+   pick or unassign, and then reloads its orders.
 6. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
 
 ---

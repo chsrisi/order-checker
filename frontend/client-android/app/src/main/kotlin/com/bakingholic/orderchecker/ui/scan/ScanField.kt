@@ -57,6 +57,17 @@ class ScanFieldState(val gate: ScanGate = ScanGate()) {
     /** The operator chose to type (the "Type" button or a tap): the soft keyboard may stay open. */
     internal var typing by mutableStateOf(false)
 
+    /** Kept text ([ScanField] `keepText`) that the next scan replaces. */
+    internal var replaceNext by mutableStateOf(false)
+
+    /** Empties the field and takes the focus back. */
+    fun clear() {
+        text = TextFieldValue("")
+        replaceNext = false
+        typing = false
+        refocus()
+    }
+
     /** Puts the cursor back into the field (after a dialog, a sheet, or a screen change). */
     fun refocus() {
         focusTick++
@@ -70,6 +81,7 @@ fun rememberScanFieldState(): ScanFieldState = remember { ScanFieldState() }
  * The input every scanning screen uses (T6.15a, V2_UX §2.1): a focused field that submits on the
  * configured wedge [suffix], clears itself and keeps focus, and does not open the soft keyboard
  * unless asked ("Type" button or a tap on the field). [acceptAnySuffix] is for the scanner test.
+ * [keepText] leaves the submitted text in the field (search, SKU) until the next scan replaces it.
  * [refocusAfterScan] returns false when the screen moved focus elsewhere in [onScan].
  */
 @Composable
@@ -81,6 +93,7 @@ fun ScanField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     acceptAnySuffix: Boolean = false,
+    keepText: Boolean = false,
     refocusAfterScan: () -> Boolean = { true },
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -89,7 +102,9 @@ fun ScanField(
     val interactions = remember { MutableInteractionSource() }
 
     fun submit(raw: String, ending: ScanEnding, keep: String = "") {
-        state.text = TextFieldValue(keep, TextRange(keep.length))
+        val shown = if (keepText) raw.trim() else keep
+        state.text = TextFieldValue(shown, TextRange(shown.length))
+        state.replaceNext = keepText
         state.typing = false
         val accepted = state.gate.accept(raw)?.also { onScan(Scan(it, ending)) }
         // A screen may move on to another field after a scan (v1: SKU → quantity).
@@ -123,7 +138,7 @@ fun ScanField(
             value = state.text,
             onValueChange = { value ->
                 val (scan, rest) = splitInline(value.text, suffix, acceptAnySuffix)
-                if (scan != null) submit(scan.value, scan.ending, rest) else state.text = value
+                if (scan != null) submit(scan.value, scan.ending, rest) else { state.text = value; state.replaceNext = false }
             },
             label = { Text(label) },
             singleLine = true,
@@ -142,9 +157,10 @@ fun ScanField(
                     val ending = suffixEnding(event.key.nativeKeyCode, suffix, acceptAnySuffix)
                     if (ending == null) {
                         if (state.typing || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        val typed = typedText(state.text.text, event.key.nativeKeyCode, event.utf16CodePoint)
+                        val typed = typedText(if (state.replaceNext) "" else state.text.text, event.key.nativeKeyCode, event.utf16CodePoint)
                             ?: return@onPreviewKeyEvent false
                         state.text = TextFieldValue(typed, TextRange(typed.length))
+                        state.replaceNext = false
                         return@onPreviewKeyEvent true
                     }
                     // Consume both down and up so the suffix never moves focus or types a character.

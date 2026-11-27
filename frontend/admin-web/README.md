@@ -45,7 +45,11 @@ fails when the committed file is stale.
   `snapshot(command)` re-requests a list on every reconnect), `workers.ts`, `orders.ts`
   (ongoing orders, picks and open scans from live frames; hand-ticks in `localStorage`).
 - `src/lib/`: tested pure helpers (`orders.ts` progress/packed/filters, `workers.ts`,
-  `time.ts`) and composables (`usePaged.ts` for `X-Total-Count` history pages, `usePolling.ts`).
+  `time.ts`) and composables (`usePaged.ts` for `X-Total-Count` history pages, `usePolling.ts`,
+  `theme.ts`: account menu → Theme → System / Light / Dark, kept in `localStorage`
+  `oc.console.theme`; it also sets `data-theme` and `color-scheme` on `<html>`). Custom CSS
+  colours that differ per theme come from Naive's `useThemeVars()`, not
+  `prefers-color-scheme`, so they follow the toggle.
 - `src/nav.ts`: the one menu definition (Dashboard; Administration, Orders, Warehouse groups) for
   the desktop sidebar and the mobile drawer (below 768 px); pages not rebuilt yet route to
   `PlaceholderView` with a link to the classic admin.

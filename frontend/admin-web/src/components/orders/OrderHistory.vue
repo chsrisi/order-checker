@@ -1,25 +1,26 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NAlert, NButton, NDatePicker, NEmpty, NInput, NRadioButton, NRadioGroup, NSpin, NTag, NText } from 'naive-ui'
-import CloseGroup from './CloseGroup.vue'
+import DayGroup from './DayGroup.vue'
 import Hl from './Hl.vue'
 import { api, type Schemas } from '../../api'
 import { withQuery } from '../../api/http'
 import { usePaged } from '../../lib/usePaged'
-import { formatShort, localDayRange } from '../../lib/time'
+import { dayOf, formatDay, formatShort } from '../../lib/time'
 import { packState, pickupCode, statusLabel, type Order, type Outbound } from '../../lib/orders'
 import { useOrders } from '../../stores/orders'
 
 /**
- * History (Delta 9; V2_ORDERS_SPEC §13.3–13.4): by close, completed orders, or closed scans.
- * One search for all three views runs on the server (Q49) within the close-time range (Q40).
+ * History (Delta 9; V2_ORDERS_SPEC §13.3–13.4): by day, completed orders, or closed scans.
+ * One search for all three views runs on the server (Q49) within a range of business days; a scan
+ * belongs to the day it was made (V2_ORDERS_DELTA Q53).
  * An exact SN, tracking number or label also gets a direct "did it leave?" answer.
  */
-type View = 'closes' | 'orders' | 'scans'
+type View = 'days' | 'orders' | 'scans'
 const MIN_SEARCH = 2
 
 const live = useOrders()
-const view = ref<View>('closes')
+const view = ref<View>('days')
 const range = ref<[number, number] | null>(null)
 const query = ref('')
 const applied = ref('')
@@ -27,24 +28,23 @@ const input = ref<InstanceType<typeof NInput> | null>(null)
 
 /** The substring search starts at 2 characters; the exact lookup works at any length. */
 const q = computed(() => (applied.value.length >= MIN_SEARCH ? applied.value : ''))
-const bounds = computed(() => localDayRange(range.value?.[0] ?? null, range.value?.[1] ?? null))
 const params = (offset: number, limit: number, ranged = true) => ({
-  closed_from: ranged ? bounds.value.from : null,
-  closed_to: ranged ? bounds.value.to : null,
+  day_from: ranged && range.value ? dayOf(range.value[0]) : null,
+  day_to: ranged && range.value ? dayOf(range.value[1]) : null,
   q: q.value || null,
   limit,
   offset,
 })
 const paths = {
-  closes: '/admin/history/closes',
+  days: '/admin/history/days',
   orders: '/admin/history/shopee/orders',
   scans: '/admin/history/outbound',
 }
 
-const closes = usePaged<Schemas['AdminCloseResponse']>((o) => withQuery(paths.closes, params(o, q.value ? 20 : 50)))
+const days = usePaged<Schemas['AdminDayResponse']>((o) => withQuery(paths.days, params(o, q.value ? 20 : 50)))
 const orders = usePaged<Order>((o) => withQuery(paths.orders, params(o, 100)))
 const scans = usePaged<Outbound>((o) => withQuery(paths.scans, params(o, 100)))
-const current = computed(() => ({ closes, orders, scans })[view.value])
+const current = computed(() => ({ days, orders, scans })[view.value])
 
 // How many matches the date range hides (only while searching inside a range).
 const outside = ref(0)
@@ -99,7 +99,7 @@ watch(applied, async (label) => {
 interface Answer {
   done: boolean
   text: string
-  close?: string
+  day?: string | null
 }
 const answer = computed<Answer | null>(() => {
   const found = lookup.value
@@ -110,8 +110,8 @@ const answer = computed<Answer | null>(() => {
     if (order.done && order.done_at)
       return {
         done: true,
-        close: order.done_at,
-        text: `✓ ${order.order_sn} left in the close of ${formatShort(order.done_at)} · ${courier} · picked by ${order.owner_user ?? 'nobody (unclaimed)'}.`,
+        day: found.day,
+        text: `✓ ${order.order_sn} left${found.day ? ` on ${formatDay(found.day)}` : ''} (closed ${formatShort(order.done_at)}) · ${courier} · picked by ${order.owner_user ?? 'nobody (unclaimed)'}.`,
       }
     const ongoing = live.orders.find((o) => o.order_sn === order.order_sn)
     if (!ongoing) return { done: false, text: `${order.order_sn} has not left here. Shopee status: ${statusLabel(order.status)}; it is not ongoing.` }
@@ -128,13 +128,13 @@ const answer = computed<Answer | null>(() => {
     }
   return {
     done: true,
-    close: scan.closed_at ?? undefined,
-    text: `✓ ${scan.content} left in the close of ${formatShort(scan.closed_at)} (scanned by ${scan.owner_user}). It matched no order, most often a Tokopedia package.`,
+    day: found.day,
+    text: `✓ ${scan.content} left${found.day ? ` on ${formatDay(found.day)}` : ''} (scanned by ${scan.owner_user}, closed ${formatShort(scan.closed_at)}). It matched no order, most often a Tokopedia package.`,
   }
 })
-const showCloseButton = computed(() => !!answer.value?.close && (view.value !== 'closes' || !!range.value))
-function showThisClose() {
-  view.value = 'closes'
+const showDayButton = computed(() => !!answer.value?.day && (view.value !== 'days' || !!range.value))
+function showThisDay() {
+  view.value = 'days'
   range.value = null
 }
 
@@ -156,7 +156,7 @@ function lastSevenDays() {
 
 const noun = computed(() => {
   const n = current.value.total.value
-  return (n === 1 ? { closes: 'close', orders: 'order done', scans: 'closed scan' } : { closes: 'closes', orders: 'orders done', scans: 'closed scans' })[view.value]
+  return (n === 1 ? { days: 'day', orders: 'order done', scans: 'closed scan' } : { days: 'days', orders: 'orders done', scans: 'closed scans' })[view.value]
 })
 </script>
 
@@ -176,11 +176,11 @@ const noun = computed(() => {
     />
     <div class="filters">
       <NRadioGroup v-model:value="view" size="small">
-        <NRadioButton value="closes">By close</NRadioButton>
+        <NRadioButton value="days">By day</NRadioButton>
         <NRadioButton value="orders">Orders done</NRadioButton>
         <NRadioButton value="scans">Closed scans</NRadioButton>
       </NRadioGroup>
-      <NDatePicker v-model:value="range" type="daterange" size="small" clearable start-placeholder="Closed from" end-placeholder="to" style="max-width: 280px" />
+      <NDatePicker v-model:value="range" type="daterange" size="small" clearable start-placeholder="From day" end-placeholder="to" style="max-width: 280px" />
       <NButton size="small" text type="primary" @click="lastSevenDays">Last 7 days</NButton>
       <NButton v-if="range" size="small" text type="primary" @click="range = null">All dates</NButton>
     </div>
@@ -188,12 +188,12 @@ const noun = computed(() => {
     <NAlert v-if="answer" :type="answer.done ? 'success' : 'info'" :show-icon="false" class="answer">
       <div class="answer-row">
         <span>{{ answer.text }}</span>
-        <NButton v-if="showCloseButton" size="small" @click="showThisClose">Show this close</NButton>
+        <NButton v-if="showDayButton" size="small" @click="showThisDay">Show this day</NButton>
       </div>
     </NAlert>
 
     <NText depth="3" class="count">
-      {{ current.total.value }} {{ noun }}<template v-if="q"> with a match</template><template v-if="range"> closed in the chosen days</template>
+      {{ current.total.value }} {{ noun }}<template v-if="q"> with a match</template><template v-if="range"> in the chosen days</template>
       <template v-if="outside">
         · {{ outside }} more outside them <NButton size="tiny" text type="primary" @click="range = null">Search all dates</NButton>
       </template>
@@ -205,8 +205,8 @@ const noun = computed(() => {
     <NSpin v-else-if="current.loading.value && !current.items.value.length" style="display: block; margin: 32px auto" />
     <NEmpty v-else-if="!current.items.value.length" :description="q ? `Nothing in History matches “${applied}”.` : 'Nothing closed in this range.'" style="margin: 24px 0" />
 
-    <template v-else-if="view === 'closes'">
-      <CloseGroup v-for="c in closes.items.value" :key="c.closed_at" :close="c" :q="q" />
+    <template v-else-if="view === 'days'">
+      <DayGroup v-for="d in days.items.value" :key="d.day" :day="d" :q="q" />
     </template>
     <template v-else-if="view === 'orders'">
       <div v-for="o in orders.items.value" :key="o.order_sn" class="row">
