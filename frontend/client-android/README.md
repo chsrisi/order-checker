@@ -145,6 +145,14 @@ deletes the key: the device then registers as a new `pending` device.
   a `submit` override, for the count task (T9.4). The screen waits for `/v2/meta`'s
   `stock_location_mode` before it starts: in `single` mode a location that differs from the
   record would merge the item's stock into it.
+- Tasks (T9.4, V2_UX §2.9): Home's first button, "Tasks (n)". `OpsRepository.tasks` loads
+  `GET /v2/tasks` on every connect (there is no WS command for tasks) and then follows
+  `tasks_update`. `ops/TaskLogic.kt` merges manual tasks (oldest first) with claimed orders not
+  yet *Picked* (by ship-by, derived with `OrderLogic.progress`) and counts the open ones (blocked
+  tasks wait for the admin). `ui/ops/TasksScreen.kt`: the list; an order-task opens Picking with
+  that order; a count task is `GuidedStockFlow` with a blind `StockLock` (no location in `single`
+  mode, P-29) and `submit` → `POST /v2/tasks/{id}/count`; a pick task is the Picking pattern
+  (SKU, Qty, Submit Scan, lines with Remove). *Can't finish* sits in each task's ⋯ menu.
 
 ## Scanning (keyboard wedge)
 

@@ -425,6 +425,17 @@ accepted.** Bundle components show as one small line under the entry ("Bundle, p
 | UX-T5 | Does the open count on Home include claimed orders? | **Yes**, manual tasks plus order-tasks not *Picked*; blocked tasks are not counted. |
 | UX-T6 | Count screen: may the worker skip the location scan when the item has one? | **No** in round 1: the scan is the check that they are at the right shelf (SPEC §4). Revisit after use (T7 ⚠️). |
 | UX-T7 | Quick reasons for *Can't finish*? | **Yes**, three plus free text; the admin sees the text. |
+
+**Round 1: brief and recommendations UX-T4–T7 accepted (2026-11-27); built (2026-11-27), not yet
+accepted.** As built:
+- the list shows manual tasks first (oldest first), then claimed orders by ship-by: an order has
+  no "assigned at" time to merge on;
+- the pick-task screen has no List tab: a task has one list of lines, shown under the scan
+  fields, with Remove on a tapped line;
+- the count reuses T6.15e's guided Count with a blind task lock (built first, on
+  `feat/v2-stockkeeping`); a `single`-mode item without a recorded location starts at the item
+  scan.
+
 ### 2.10 Client Stockkeeping, guided actions (T6.15e, V2_STOCK_DELTA R1.2)
 
 - **Goal:** a Stockkeeping that is quick to use right and hard to use wrong. Operations say v1's

@@ -37,12 +37,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bakingholic.orderchecker.ops.openTaskCount
+import com.bakingholic.orderchecker.ops.taskEntries
 import com.bakingholic.orderchecker.scan.ScanSuffix
 
 /** Where the logged-in app is (V2_UX §2.2). Kept as a name so it survives rotation. */
 enum class Destination(val title: String) {
     HOME("Order Checker"),
     DEVICE_INFO("Device info"),
+    TASKS("Tasks"),
     PICKING("Picking"),
     OUTBOUND("Outbound"),
     STOCK("Stockkeeping"),
@@ -101,7 +104,11 @@ fun MainShell(
             HorizontalDivider()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (destination) {
-                    Destination.HOME -> HomeMenu(onOpen = { destination = it })
+                    Destination.HOME -> HomeMenu(ops, onOpen = { destination = it })
+                    Destination.TASKS -> TasksScreen(ops, scanSuffix, onOpenOrder = { orderSn ->
+                        ops.selectOrder(orderSn)
+                        destination = Destination.PICKING
+                    })
                     Destination.DEVICE_INFO -> DeviceInfoScreen(deviceInfo, onLogout)
                     Destination.PICKING -> PickingScreen(ops, scanSuffix)
                     Destination.OUTBOUND -> OutboundScreen(ops, scanSuffix)
@@ -138,16 +145,22 @@ fun MainShell(
 }
 
 @Composable
-private fun HomeMenu(onOpen: (Destination) -> Unit) {
+private fun HomeMenu(ops: OpsController, onOpen: (Destination) -> Unit) {
+    val tasks by ops.repo.tasks.collectAsStateWithLifecycle()
+    val orders by ops.repo.orders.collectAsStateWithLifecycle()
+    val picks by ops.repo.picks.collectAsStateWithLifecycle()
+    // Tasks first (UX-T4): manual tasks plus claimed orders not yet picked, blocked ones not counted (UX-T5).
+    val open = openTaskCount(taskEntries(tasks, orders, picks))
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
-        listOf(Destination.PICKING, Destination.OUTBOUND, Destination.STOCK, Destination.FINDER).forEach { d ->
+        listOf(Destination.TASKS, Destination.PICKING, Destination.OUTBOUND, Destination.STOCK, Destination.FINDER).forEach { d ->
+            val label = if (d == Destination.TASKS && open > 0) "${d.title} ($open)" else d.title
             Button(
                 onClick = { onOpen(d) },
-                modifier = Modifier.fillMaxWidth().height(88.dp).testTag("home_${d.name.lowercase()}"),
-            ) { Text(d.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
+                modifier = Modifier.fillMaxWidth().height(72.dp).testTag("home_${d.name.lowercase()}"),
+            ) { Text(label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

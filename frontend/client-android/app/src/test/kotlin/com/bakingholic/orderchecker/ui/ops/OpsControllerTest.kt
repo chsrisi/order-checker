@@ -178,6 +178,85 @@ class OpsControllerTest {
         assertNull(ops.pendingSku.value)
     }
 
+    // ------------------------------------------------------------------ tasks (T9.4)
+    /** Calls finish on OkHttp's thread: wait for their effect. */
+    private fun eventually(check: () -> Boolean) {
+        val until = System.currentTimeMillis() + 5_000
+        while (!check()) {
+            if (System.currentTimeMillis() > until) error("condition not reached")
+            Thread.sleep(10)
+        }
+    }
+
+    private fun taskFrame(vararg json: String) = repo.apply(WsEventType.TASKS, Json.parseToJsonElement(json.joinToString(",", "[", "]")).jsonArray)
+
+    private fun pickTask(id: Int, picked: Int) =
+        """{"id":$id,"type":"pick","status":"open","in_progress":${picked > 0},"assigned_to":"op","created_by":"boss","created_at":"2026-11-27T10:00:00Z",
+            "lines":[{"id":1,"kind":"leaf","sku":"A","qty":2,"picked":$picked}]}"""
+
+    @Test
+    fun tasksFollowTheirFrames() {
+        taskFrame(pickTask(7, 0))
+        assertEquals(listOf(7), repo.tasks.value.map { it.id })
+        repo.clear()
+        assertTrue(repo.tasks.value.isEmpty())
+    }
+
+    @Test
+    fun taskPickPostsToTheTaskAndSaysDoneOrWarns() {
+        taskFrame(pickTask(7, 0))
+        answer(200, """{"task_id":7,"sku":"A","qty":2,"required":2,"item_name":null,"status":"done"}""")
+        ops.pickTask(7, "BARCODE", 2)
+        assertEquals("Task done.", message().text)
+        val request = server.takeRequest()
+        assertEquals("/v2/tasks/7/picks", request.path)
+        assertEquals("""{"qty":2,"sku":"BARCODE"}""", request.body.readUtf8())
+
+        answer(200, """{"task_id":7,"sku":"A","qty":3,"required":2,"item_name":null,"status":"open"}""")
+        ops.pickTask(7, "A", 1)
+        assertTrue(message().let { it.alert && it.text.contains("exceeds requirement (2)") })
+    }
+
+    @Test
+    fun aTaskThatChangedElsewhereReloadsTheList() {
+        taskFrame(pickTask(7, 0))
+        answer(404, """{"detail":"Task not found or not assigned to you"}""")
+        answer(200, """{"tasks":[],"order_tasks":[]}""")
+        ops.pickTask(7, "A", 1)
+        assertEquals(UiMessage("Task not found or not assigned to you", isError = true, alert = true), message())
+        server.takeRequest()
+        assertEquals("/v2/tasks", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        eventually { repo.tasks.value.isEmpty() }
+    }
+
+    @Test
+    fun cantFinishSendsTheReason() {
+        var closed = false
+        answer(200, pickTask(7, 1).replace("\"open\"", "\"blocked\""))
+        ops.blockTask(7, "Not enough stock") { closed = true }
+        assertEquals("Sent to the admin: Not enough stock", message().text)
+        val request = server.takeRequest()
+        assertEquals("/v2/tasks/7/block", request.path)
+        assertEquals("""{"reason":"Not enough stock"}""", request.body.readUtf8())
+        assertTrue(closed)
+    }
+
+    @Test
+    fun aCountTaskSendsTheScannedLocationAndShowsARefusalInline() {
+        val plan = com.bakingholic.orderchecker.ops.StockPlan(
+            "A01_001", 17, com.bakingholic.orderchecker.api.model.StockCreate.Mode.SET, "201", null, emptyList(), false, "Count 17",
+        )
+        var error: String? = "unset"
+        answer(409, """{"detail":"Wrong location: A01_001 is at 203"}""")
+        answer(200, """{"tasks":[],"order_tasks":[]}""")
+        ops.countTask(7, plan) { error = it }
+        val request = server.takeRequest()
+        assertEquals("/v2/tasks/7/count", request.path)
+        assertEquals("""{"qty":17,"sku":"A01_001","location":"201"}""", request.body.readUtf8())
+        eventually { error != "unset" }
+        assertEquals("Wrong location: A01_001 is at 203", error)
+    }
+
     @Test
     fun poolRowsOfV1AreIgnored() {
         repo.apply(
