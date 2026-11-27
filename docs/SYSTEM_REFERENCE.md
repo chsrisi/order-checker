@@ -607,7 +607,7 @@ with `ref_type = task`, `ref_id` = its id (`pick_ref` for task picks).
 |---|---|---|
 | create count | the item by exact SKU; `multi`: the bin is required; `single`: no bin taken (P-29) | `open` task, one `count` line |
 | create pick | lines of internal SKUs, qty > 0; bundles expand through the standard BOM (`order_payload.expand_lines`, the same `_Catalog.expand_line` orders use); zero leaves dropped | `open` task; `entered` lines plus one `leaf` per SKU (snapshot, P-28) |
-| count (worker) | the assignee's open count; scanned item must be the task's SKU; `multi`: scanned bin must be the task's; `single`: a scanned location must match the item's current one (if any), and `set` runs **without** a location, so stock is never merged into a scanned place | `apply_stock_update(set)`; `counted_qty`; `done` |
+| count (worker) | the assignee's open count; scanned item must be the task's SKU; `multi`: scanned bin must be the task's; `single`: a scanned location must match the item's current one (if any); locations match after trim and upper-case only (no format, `_same_location`); and `set` runs **without** a location, so stock is never merged into a scanned place | `apply_stock_update(set)`; `counted_qty`; `done` |
 | pick (worker) | the assignee's open pick task; SKU or barcode resolved (§7.4) and on the task; over-pick allowed | `deduct_for_pick` into the leaf's entry (`order_sn` NULL, `task_line_id` set); `done` when `is_picked` (every leaf exact, nothing else) |
 | unassign (worker) | as v2 order unassign (`restore_pick_quantity`); more than picked → nothing changes | stock back; `done` if now exact |
 | can't finish (worker) | `open` → `blocked` with a non-empty reason | – |

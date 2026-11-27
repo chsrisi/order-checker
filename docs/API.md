@@ -103,7 +103,7 @@ Tasks (T9.2; only the assigned worker, admins get 403; 404 when the task is not 
 | Endpoint | Purpose |
 |---|---|
 | `GET /v2/tasks` | `{tasks, order_tasks}`: the caller's open and blocked tasks (oldest first) and claimed orders not yet *Picked* |
-| `POST /v2/tasks/{id}/count` `{sku, qty, location?}` | Record a blind count: `set` the quantity, task done. 409 wrong item, wrong location (`multi`: the task's bin, required; `single`: where the item is), or not open |
+| `POST /v2/tasks/{id}/count` `{sku, qty, location?}` | Record a blind count: `set` the quantity, task done. 409 wrong item, wrong location (`multi`: the task's bin, required; `single`: where the item is; compared after trim and upper-case), or not open |
 | `POST /v2/tasks/{id}/picks` `{sku, qty}` | Pick into the task → `{task_id, sku, qty, required, item_name, status}`; `status` is `done` once every line is exact. 404 unknown item; 409 not on the task, not open, or strict stock |
 | `POST /v2/tasks/{id}/picks/unassign` `{sku, qty}` | Return a picked quantity to stock (same response). 409 more than is picked |
 | `POST /v2/tasks/{id}/block` `{reason}` | Can't finish: open → blocked |

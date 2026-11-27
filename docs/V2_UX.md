@@ -397,13 +397,15 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   they follow the order and pick events the app already has.
   - **Order-task** → Picking with that order selected. It leaves the list once *Picked*.
   - **Count task** → the count screen. **Pick task** → the pick-task screen.
-- **Count screen** (R1.5, its own small screen):
-  1. *Scan location*: shows the expected place ("Bin A1"; in `single` mode the item's current
-     location). A wrong scan is refused with an alert. If the item has no location, this step
-     is skipped.
-  2. *Scan item*: a wrong item is refused.
-  3. *Counted quantity*: a number field and **Save**. **Blind**: the recorded quantity is never
-     shown (T6).
+- **Count screen:** the guided Stockkeeping **Count** (T6.15e, V2_STOCK_DELTA R1.2, decided
+  after R1.5) in **task mode**, built once by whichever of T6.15e and T9.4 comes first:
+  1. *Scan location*: locked to the task's place ("Scan A1"; in `single` mode it confirms the
+     item's known location, "Scan 203 to confirm"). Matched after trim and upper-case only, no
+     location format. A wrong scan is refused with an alert. If the item has no location, this
+     step is skipped.
+  2. *Scan item*: locked to the task's item; a wrong item is refused.
+  3. *Counted quantity* and **Save**. **Blind** in task mode: no "before → after" confirm, the
+     recorded quantity is never shown (T6).
   Save → "Count saved", back to the list.
 - **Pick-task screen:** the Picking layout (Input / List) with the task's lines in place of an
   order's: required and picked per SKU, the same over-quantity alert, unassign from the List.

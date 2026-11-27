@@ -119,6 +119,22 @@ def test_count_in_multi_mode_sets_only_the_tasks_bin(db, monkeypatch):
     assert _bins(db, FLOUR) == {"A1": 20, "B9": 3}
 
 
+def test_count_matches_the_location_after_trim_and_upper_case_only(db, mode):
+    with db() as s:
+        add_item(s, "C01_001", name="Butter")
+        add_stock(s, "C01_001", 4, "Rak-2b")
+        s.commit()
+    location = "Rak-2b" if mode == "multi" else None
+    task = tasks.create_count_task("C01_001", "eko", "boss", location=location)
+
+    with pytest.raises(tasks.TaskScanError):
+        tasks.count_task(task.id, "eko", "C01_001", 1, location_scan="Rak-2")
+    done = tasks.count_task(task.id, "eko", "C01_001", 1, location_scan="  rak-2B ")
+
+    assert done.status == "done"
+    assert _bins(db, "C01_001") == {"Rak-2b": 1}  # the stored name is kept
+
+
 def test_count_in_single_mode_never_moves_stock_to_a_scanned_location(db, monkeypatch):
     monkeypatch.setenv("STOCK_LOCATION_MODE", "single")
     task = tasks.create_count_task(FLOUR, "eko", "boss")

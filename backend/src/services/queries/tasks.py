@@ -84,6 +84,13 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _same_location(scanned: Optional[str], expected: Optional[str]) -> bool:
+    """Trim and upper-case, nothing more: the location format is not fixed (room numbers
+    today, V2_STOCK_DELTA R1.2)."""
+    norm = lambda v: _clean(v).upper() if _clean(v) is not None else None  # noqa: E731
+    return norm(scanned) == norm(expected)
+
+
 def _worker(db: Session, username: str) -> User:
     user = db.get(User, username)
     if user is None or user.scope == "admin":
@@ -299,11 +306,15 @@ def count_task(
         scanned = _clean(location_scan)
         if stock_location_mode() == "single":
             expected = item.location  # derived from the bins; one in single mode
-            if scanned is not None and expected is not None and scanned != expected:
+            if (
+                scanned is not None
+                and expected is not None
+                and not _same_location(scanned, expected)
+            ):
                 raise TaskScanError(f"Wrong location: {line.sku} is at {expected}")
             location = None  # never merge into a scanned location (P-29)
         else:
-            if scanned != line.location:
+            if not _same_location(scanned, line.location):
                 raise TaskScanError(f"Wrong location: this task counts bin {line.location}")
             location = line.location
         apply_stock_update(
