@@ -28,6 +28,15 @@ class KnownWorkers(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    /** Removes one name, from the hidden settings. It comes back on that worker's next login. */
+    suspend fun forget(username: String) {
+        dataStore.edit { prefs -> prefs[key] = Json.encodeToString(serializer, read(prefs) - username) }
+    }
+
+    suspend fun forgetAll() {
+        dataStore.edit { prefs -> prefs.remove(key) }
+    }
+
     private fun read(prefs: Preferences): List<String> =
         prefs[key]?.let { runCatching { Json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
 

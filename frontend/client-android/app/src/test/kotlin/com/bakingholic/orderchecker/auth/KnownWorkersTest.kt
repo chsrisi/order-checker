@@ -35,4 +35,30 @@ class KnownWorkersTest {
         assertEquals("w${KnownWorkers.MAX}", names.first())
         assertEquals("w1", names.last())
     }
+
+    @Test
+    fun forgettingANameKeepsTheOthersInOrder() = withWorkers { workers ->
+        listOf("carol", "bob", "alice").forEach { workers.remember(it) }
+        workers.forget("bob")
+        assertEquals(listOf("alice", "carol"), workers.names.first())
+        workers.forget("nobody")
+        assertEquals(listOf("alice", "carol"), workers.names.first())
+    }
+
+    @Test
+    fun aForgottenNameComesBackOnTheNextLogin() = withWorkers { workers ->
+        listOf("bob", "alice").forEach { workers.remember(it) }
+        workers.forget("bob")
+        workers.remember("bob")
+        assertEquals(listOf("bob", "alice"), workers.names.first())
+    }
+
+    @Test
+    fun forgetAllEmptiesTheList() = withWorkers { workers ->
+        listOf("bob", "alice").forEach { workers.remember(it) }
+        workers.forgetAll()
+        assertEquals(emptyList<String>(), workers.names.first())
+        workers.remember("carol")
+        assertEquals(listOf("carol"), workers.names.first())
+    }
 }

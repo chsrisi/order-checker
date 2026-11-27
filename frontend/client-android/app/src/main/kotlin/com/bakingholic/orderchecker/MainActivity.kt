@@ -79,6 +79,9 @@ private fun App(vm: AppViewModel) {
                         onClose = vm::closeSettings,
                         scanSuffix = scanSuffix,
                         onScanSuffixChange = vm::setScanSuffix,
+                        knownWorkers = knownWorkers,
+                        onForgetWorker = vm::forgetWorker,
+                        onForgetAllWorkers = vm::forgetAllWorkers,
                     )
                     update.blocking() -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)
                     screen is Screen.Starting -> CircularProgressIndicator(Modifier.align(Alignment.Center))

@@ -165,6 +165,14 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         _settingsOpen.value = false
     }
 
+    fun forgetWorker(username: String) {
+        viewModelScope.launch { graph.knownWorkers.forget(username) }
+    }
+
+    fun forgetAllWorkers() {
+        viewModelScope.launch { graph.knownWorkers.forgetAll() }
+    }
+
     fun setScanSuffix(suffix: ScanSuffix) {
         viewModelScope.launch { graph.scanPrefs.setSuffix(suffix) }
     }
