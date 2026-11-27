@@ -52,6 +52,15 @@ const router = useRouter()
 const initial = typeof route.query.status === 'string' ? (route.query.status.split(',') as TaskStatus[]) : []
 void tasks.setFilters({ worker: null, type: null, statuses: initial })
 void tasks.load()
+// `?task=<id>` (links from Stock & finder → Changes): open that task's detail.
+watch(
+  () => route.query.task,
+  (value) => {
+    const id = typeof value === 'string' ? Number(value) : NaN
+    if (Number.isInteger(id) && id > 0) void tasks.openDetail(id).catch((e) => message.error(e instanceof Error ? e.message : String(e)))
+  },
+  { immediate: true },
+)
 
 const worker = ref<string | null>(null)
 const type = ref<TaskType | null>(null)

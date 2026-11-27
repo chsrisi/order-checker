@@ -93,6 +93,9 @@ const summary = computed(() => `${changes.total.value} change${changes.total.val
             </template>
             {{ changeText(c) }}
             <RouterLink v-if="c.order_sn" :to="{ name: 'orders', query: { find: c.order_sn } }" class="link">open order</RouterLink>
+            <RouterLink v-else-if="c.task_id != null" :to="{ name: 'tasks', query: { task: String(c.task_id) } }" class="link">
+              open task
+            </RouterLink>
           </div>
         </div>
       </div>

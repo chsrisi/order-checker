@@ -92,16 +92,20 @@ export const REASONS: Array<{ value: string; label: string }> = [
   { value: 'mode_merge', label: 'Merged (single location)' },
   { value: 'cutover_clear', label: 'Cleared at cutover' },
   { value: 'migration_merge', label: 'Merged by a migration' },
+  { value: 'task_cancel_keep', label: 'Kept on a cancelled task' },
 ]
 
 /** One change as a sentence part: "picked for order 2611…", "moved to 203", "older entry". */
 export function reasonText(c: StockChange): string {
-  const order = c.order_sn ? ` order ${c.order_sn}` : ''
+  // A pick belongs to an order or to a task (T9), never both.
+  const order = c.order_sn ? ` order ${c.order_sn}` : c.task_id != null ? ` task #${c.task_id}` : ''
   switch (c.reason) {
     case 'adjust_add':
       return 'received'
     case 'adjust_set':
-      return c.ref_type === 'task' ? `counted for task ${c.ref_id}` : 'counted'
+      return c.task_id != null ? `counted for task #${c.task_id}` : 'counted'
+    case 'task_cancel_keep':
+      return c.task_id != null ? `kept on cancelled task #${c.task_id}` : 'kept on a cancelled task'
     case 'transfer_out':
       return c.ref_id ? `moved from ${c.location ?? 'no location'} to ${c.ref_id}` : 'moved out'
     case 'transfer_in':

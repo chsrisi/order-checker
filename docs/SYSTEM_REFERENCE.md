@@ -751,7 +751,8 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   `limit` 1–500 (default 100), `offset`, total in `X-Total-Count`. Filters: `sku` and `actor`
   (exact, case-insensitive), `reason` (repeatable), `from`/`to` (inclusive). Each row carries
   the item name and, for a `ref_type = pick_entry` row, the entry's `order_sn` while the entry
-  exists. Legacy rows (before T4.3) have only `message`. The console's Stock & finder reads it.
+  exists. `task_id` names the task: from `ref_id` on a `ref_type = task` row (a count), or
+  through the pick entry's task line (a task pick, its return, `task_cancel_keep`). Legacy rows (before T4.3) have only `message`. The console's Stock & finder reads it.
 - `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
   number equals the label and the scans of it, open or closed; trimmed, then exact, at
   most 10 orders and 20 scans, and the History `day` it left on. The console's History answers "did it leave?" from it.

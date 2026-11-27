@@ -422,3 +422,22 @@ def test_list_is_oldest_first_and_filters(db, mode):
     assert [t.id for t in tasks.list_tasks(assigned_to="eko")] == [first.id, second.id]
     assert [t.id for t in tasks.list_tasks(task_type="count")] == [second.id]
     assert [t.id for t in tasks.list_tasks(statuses=["open", "blocked"])] == [first.id, second.id]
+
+
+# ------------------------------------------------------------------ console stock changes (T7.13)
+def test_stock_changes_name_the_task_of_a_count_and_of_a_pick(db, mode):
+    from src.services.queries import StockChangeFilter
+
+    count = _count_task(mode)
+    tasks.count_task(count.id, "eko", FLOUR, 18, location_scan="A1")
+    pick = _pick_task(((SUGAR, 2),))
+    tasks.pick_for_task(pick.id, "eko", SUGAR, 1)  # half: the task stays open
+    page, _ = queries.get_stock_changes(limit=10, f=StockChangeFilter(actor="eko"))
+    by_reason = {r["reason"]: r for r in page}
+    assert by_reason["adjust_set"]["task_id"] == count.id
+    assert by_reason["pick"]["task_id"] == pick.id
+    assert by_reason["pick"]["order_sn"] is None
+
+    tasks.unassign_from_task(pick.id, "eko", SUGAR, 1)  # back to stock: the same task
+    page, _ = queries.get_stock_changes(limit=10, f=StockChangeFilter(reasons=("pick_restore",)))
+    assert [r["task_id"] for r in page] == [pick.id]
