@@ -405,6 +405,12 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   - an unknown item;
   - "Not enough at 201" (the API's 400);
   - offline: the step stays, with *Retry*.
+- **Built (2026-11-27):**
+  - The large-change warning applies to **Count** only; receiving a lot is normal.
+  - The item step takes an SKU on record without a call. Otherwise it uses the server's lookup:
+    one result counts as found, and its name is shown on the next step.
+  - Locations are compared case-insensitively but sent with the spelling on record, so a scan
+    never makes a second bin that differs only in case.
 - **Later (T6.26):** when the map layout is loaded, a location that is on no room gets a warning
   ("203A isn't on the map: use it anyway?").
 - **Backend change:** none (`/v2/stocks/update`, `/v2/items/find`, the stock snapshot).
@@ -417,7 +423,7 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   | K3 | Single mode, an item recorded elsewhere: *Use 201* / *Move it first*? | **Yes**, as above. Never move silently. |
   | K4 | The "large change" warning at 50 %? | **Yes**, a fixed rule for round 1; a setting if it's wrong. |
 
-**Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
+**Round 1: built (2026-11-27), checked on the emulator in `single` mode; waiting for your UX acceptance.**
 
 ### 2.11 Admin Stock & finder (T7.13, V2_STOCK_SPEC §3.3)
 

@@ -1497,6 +1497,7 @@ same change as the task.
 | T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
 | T7.13 | todo | planned 2026-11-27 (V2_STOCK_DELTA) |
+| T6.15e | built, UX acceptance open | 2026-11-27: guided Receive / Count / Move (`ops/StockFlow.kt`, 16 unit tests in both modes; `GuidedStockFlow` with a task lock for T9.4). Checked on the API 30 emulator against a local `single`-mode backend (seed `--stock-mode single`): count at the recorded room, an item recorded elsewhere → *Move it first* → count with the large-change warning, an unknown item inline, receive, move; the stock log shows each change. Found and fixed: the previous result line stayed visible after *Move it first*. No backend change |
 | T6.25 | todo | planned 2026-11-27 (map backend) |
 | T6.26 | todo | planned 2026-11-27 (Android map) |
 | T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |

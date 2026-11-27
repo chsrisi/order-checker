@@ -115,8 +115,3 @@ fun splitPicked(orders: List<ShopeeOrderResponse>, picks: List<OrderPick>): Pair
 
 /** A quantity an operator typed: a whole number from 1 to [max], else null. */
 fun validQty(text: String, max: Int = Int.MAX_VALUE): Int? = text.trim().toIntOrNull()?.takeIf { it in 1..max }
-
-/** Distinct non-empty locations that hold [sku] (case-insensitive), for the stock form. */
-fun locationsFor(stocks: List<StockRow>, sku: String): List<String> =
-    if (sku.isBlank()) emptyList()
-    else stocks.filter { it.sku.equals(sku.trim(), true) && !it.location.isNullOrEmpty() }.mapNotNull { it.location }.distinct()
