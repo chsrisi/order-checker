@@ -3,7 +3,8 @@
 Spec (planning flow step 1), 2026-11-27, checked against `df70711` (branch
 `feat/v2-worker-list-theme`). No code changes. Background: IMPLEMENTATION_PLAN §5 "next up",
 V2_DELTA Delta 13 (step 8 brought forward), V2_SPEC §4A, the login-request spec and delta.
-A decision delta (`V2_WORKER_SWITCH_DELTA.md`) will follow your answers and win over this file.
+Decisions: [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md) (Round 1, W1–W9 answered), which
+wins over this file. Planned as IMPLEMENTATION_PLAN T8.1, T8.4a, T8.6, T8.7.
 
 ## 1. Goal
 

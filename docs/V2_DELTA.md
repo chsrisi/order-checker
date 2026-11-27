@@ -413,5 +413,6 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
 | ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |
 | Q84 | Finder: who uses it, when, and what should it answer? | Proposal in [V2_UX.md](V2_UX.md) §3.1 (questions F1–F4 there). | before its brief | 📌 |
+| Q9 | ⚠️ Revisited for the worker switch: device calls use Keystore key signatures now; the device token waits for T8.2 | [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md) W3 | – | ✅ ⚠️ |
 | ~~Q85~~ | ~~BOM deprecation scope~~ | The admin view only; the BOM backend stays (Delta 13) | – | ✅ |
 | ~~Q86~~ | ~~Localization scope~~ | Both apps, Android first (Delta 13) | – | ✅ |

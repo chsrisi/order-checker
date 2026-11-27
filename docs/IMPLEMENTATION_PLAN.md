@@ -119,6 +119,11 @@ that applies unless you say otherwise.
 | P-20 | Vue admin token storage (T7.2) | Access token in memory, refresh token in `sessionStorage`: closing the tab logs out, with less XSS exposure. | `localStorage` (survives browser restarts). |
 | P-21 | Existing refresh tokens at T6.2 | Deleted by the migration, so everyone logs in once (Q24). | Backfill a session per refresh row (no relogin, more code). |
 | P-22 | Login request limits (T6.21) | One pending per device, 5 per device in 10 min, 20 pending overall; env-configurable. | Per IP (the warehouse shares one network). |
+| P-23 | Device assignments (T8.4a) | Redis, one per device (a new one replaces it), TTL `DEVICE_ASSIGNMENT_TTL_SECONDS=600` (W4). No migration. | A table with assignment history. |
+| P-24 | Device status transitions (T8.1) | Approve: `pending` → `active` only. Revoke: `pending` or `active` → `revoked`, final (W7). Both idempotent: repeating one answers 200 with the current device. Other transitions → 409. | Allow `active` → `pending` ("unapprove"). |
+| P-25 | Device state proof (T8.4a) | ECDSA over `oc-device:state:<device_id>:<nonce>`, nonce claimed once in Redis (like login requests). Max 1 poll per 2 s per device; faster → 429. | A device token (Q9; deferred by W3). |
+| P-26 | Device actions in the console (T8.6) | Revoke and Switch confirm in a dialog that says what happens; Approve and Log out this device act at once. | Confirm every action. |
+| P-27 | `last_seen_at` from the state poll (T8.4a) | Written at most once per 60 s (as P-16); the console shows "logged out, reachable" when the device polled within 30 s without a live socket. | Leave the console's status as it is. |
 
 ---
 
@@ -586,7 +591,11 @@ flowchart TD
   T67 --> DD
   T611 --> T615["T6.15 client parity, rebuilt (Delta 5)"]
   T67 --> S7["Step 7: Vue admin, rebuilt (Delta 5)"]
-  DD --> S8["Step 8: device control"]
+  T623["T6.21–T6.23 login requests"] --> T81["T8.1 approve, revoke"]
+  T81 --> T84a["T8.4a device logout, assignment"]
+  T84a --> T86["T8.6 console device actions"]
+  T84a --> T87["T8.7 Android switch"]
+  DD --> S8["Step 8, rest: T8.2–T8.3, T8.4b, T8.5"]
 ```
 
 Hard ordering constraints:
@@ -1054,21 +1063,85 @@ device (Q20).
 
 ### Step 8: device control (spec §4A, W5(b)–(d), Q9) — brought forward (V2_DELTA Delta 13)
 
-The worker switch from the console needs it. Its spec (backlog, next up) decides how much of
-step 8 comes first.
+The worker switch from the console needs part of it: T8.1, T8.4a, T8.6 and T8.7 below. T8.2,
+T8.3, T8.4b and T8.5 stay later.
 
-- **T8.1 Approve and revoke.**
-  - Admin endpoints and Vue screens.
-  - Revoking a device kills all its sessions (T6.2 machinery) and its device token.
-  - Approving issues a **device token**: random, stored hashed in `auth.devices.token_hash`,
-    and kept by the device encrypted with a Keystore key.
-- **T8.2 Device credential on the update endpoints** (Q5 follow-up): `/v2/client/*` also
-  accepts the device token, and the public access is removed once both devices have one.
+#### Worker switch (T8.1, T8.4a, T8.6, T8.7; V2_WORKER_SWITCH_SPEC, V2_WORKER_SWITCH_DELTA)
+
+An admin approves and revokes devices, logs one device out, and switches its worker. Precedence:
+V2_WORKER_SWITCH_DELTA > this plan > V2_WORKER_SWITCH_SPEC. Order: T8.1 → T8.4a → T8.6 and T8.7
+(either order; both need T8.4a's routes). `client_v1.json` stays unchanged. Branch off `dev`
+once the login-request work (T6.21–T6.23) is merged there.
+
+**T8.1 Approve and revoke (without the device token, W3)**
+- Goal: device status means something: `active` is trusted for a direct switch, `revoked` is
+  locked out.
+- Refs: SPEC §2 finding, §4.4; W2, W7, W9; P-24; DELTA R1.2.
+- Change: `POST /admin/devices/{id}/approve` and `/revoke`; revoking revokes the device's
+  sessions and closes their sockets (`disconnect_session`); `/v2/device/register` from a revoked
+  device also revokes the calling session; the Android app on 403 "Device revoked" logs out
+  locally with a message; log events with admin and device.
+- Tests: every transition and its 409; revoke ends all sessions on that device only (the same
+  worker on another device stays logged in); a revoked device refused on register (and its
+  session gone), refresh, login requests; v1 sessions untouched; Android: 403 on register logs
+  out.
+- Docs: SYSTEM_REFERENCE §4–5 (devices, sessions), API.
+- Accept: no migration; `client_v1.json` byte-identical; v2 snapshot unchanged (admin routes
+  only, plus the register behaviour).
+
+**T8.4a Per-device logout and assignment (T8.4 part: `logout`, `assign_user`)**
+- Goal: the server side of SPEC §4.1–4.3.
+- Refs: W1, W4, W5, W8; P-23, P-25, P-27.
+- Change: `POST /admin/devices/{id}/logout`; `POST /admin/devices/{id}/assign` (`username`,
+  `mode`: `direct` | `preselect`), which ends the device's sessions and stores the assignment;
+  `DELETE /admin/devices/{id}/assign` (cancel); the signed `POST /v2/device/state` (gated like the
+  rest of `/v2`) returning nothing, the assignment, and in direct mode a token pair, collected
+  once and bound to the device; the reason for the last logout (W8); an admin-only WS message
+  `devices_update` when an assignment is collected, replaced or expires; `online` gains
+  `reachable` (P-27).
+- Tests: direct and preselect; collected once (two polls race); bad signature, replayed nonce,
+  another device's key; `pending` device refused for direct (W2), allowed for preselect; a
+  revoked device gets nothing; expiry; a new assignment replaces the old; worker deleted, reset or
+  turned admin in between; admin username refused; the new worker's sessions on other devices
+  untouched; poll rate limit; Redis down → 503 on state and assign, password login still works.
+- Docs: SYSTEM_REFERENCE §5–6, §10A; API; OPERATIONS (`DEVICE_ASSIGNMENT_TTL_SECONDS`).
+- Accept: no migration; v2 snapshot grows by one operation; `client_v1.json` byte-identical; no
+  token in a log line or a stored value.
+
+**T8.6 Console: device actions**
+- Goal: SPEC §4.4 on the Devices page and the Dashboard cards.
+- Refs: W1, W2, W4; P-26; brief in V2_UX first (Q28).
+- Change: actions per status; the worker picker (search, current worker marked, mode choice
+  with direct as the default); "waiting for the device" until collected or expired, live from
+  `devices_update`; confirmations; "logged out, reachable" status.
+- Tests: actions shown per status; the waiting state on collect, replace and expiry; picker
+  filtering.
+- Docs: V2_UX brief, admin-web README.
+- Accept: usable on mobile and desktop (D7); your UX acceptance on the dev server.
+
+**T8.7 Android: switch on the login screen**
+- Goal: SPEC §4.5.
+- Refs: W1, W5, W8.
+- Change: the signed state poll every 5 s while the login screen is in the foreground; direct →
+  the path of an approved login request ("Logged in by the admin as …"); preselect → that worker
+  selected, password step open; the logout reason under "Session ended".
+- Tests: the poll stops in the background and after login; direct, preselect, nothing; expiry;
+  network loss; the reason text.
+- Docs: V2_UX §2.7, client-android README.
+- Accept: emulator end to end with the console: switch while logged in, while logged out, and
+  while the app is closed then opened within 10 minutes.
+
+#### Later in step 8
+
+- **T8.2 Device credential on the update endpoints** (Q5 follow-up): approving issues a
+  **device token** (random, stored hashed in `auth.devices.token_hash`, kept by the device
+  encrypted with a Keystore key; moved here from T8.1 by W3). `/v2/client/*` also accepts it,
+  and the public access is removed once both devices have one. Revoking clears the token.
 - **T8.3 QR enrollment:** a short-lived code generated in the admin; the QR carries the server
   profile too (V2_SERVER_ADDRESS §4.2).
-- **T8.4 Device WS channel and commands:** `logout`, `assign_user`, `update_now`,
-  `refresh_config`, with acknowledgement; desired state through `GET /v2/device/state`; audit
-  of user and device.
+- **T8.4b Remaining device commands:** `update_now`, `refresh_config`, added to the device
+  state of T8.4a (a device WebSocket only if polling proves too slow); audit of user and
+  device.
 - **T8.5 Per-device config:** `GET /v2/device/config`, including server-profile pushes for
   stage 2.
 
@@ -1106,8 +1179,8 @@ Later: barcode rules (after localization), then marketplaces and UOM at the same
   directly, or end the session and preselect a worker on the login screen. Builds on Devices
   (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
   Its spec brings step 8 forward (device trust T8.1, device commands T8.4; Delta 13).
-  **Spec written 2026-11-27:** [V2_WORKER_SWITCH_SPEC.md](V2_WORKER_SWITCH_SPEC.md), questions
-  W1–W9 open.
+  **Planned 2026-11-27:** step 8 "Worker switch" (T8.1, T8.4a, T8.6, T8.7); spec and delta
+  [V2_WORKER_SWITCH_SPEC.md](V2_WORKER_SWITCH_SPEC.md), [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md).
 - ~~**Edit the "previously logged in" worker list from the client's hidden settings.**~~
   **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
   Device-local only, no backend change.
@@ -1189,7 +1262,8 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | Q1 MT67 keyboard wedge (Q22 broadcast API pinned) | T6.15a, T6.14 |
 | Q6 option C, stage 1 | T6.11 (stage 2: backlog, V2_SERVER_ADDRESS §7) |
 | Q7 directories | T6.10, T7.1 |
-| Q9 device token | T8.1 |
+| Q9 device token (revisited: key signatures now, token in T8.2; V2_WORKER_SWITCH_DELTA W3) | T8.1, T8.2 |
+| Worker switch W1–W9 (V2_WORKER_SWITCH_DELTA), P-23–P-27 | T8.1, T8.4a, T8.6, T8.7 |
 | Q10, Q19, Q24 sessions, instant revocation | T6.2 |
 | Q11 no local JWKS | T6.11 |
 | Q12 Android deps, Q18 identity and signing | T6.10 |
@@ -1291,8 +1365,11 @@ same change as the task.
 | T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
 | T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |
-| T8.1 | todo | |
+| T8.1 | todo | planned 2026-11-27 (worker switch); device token moved to T8.2 (W3) |
 | T8.2 | todo | |
 | T8.3 | todo | |
-| T8.4 | todo | |
+| T8.4a | todo | planned 2026-11-27 (worker switch) |
+| T8.4b | todo | |
+| T8.6 | todo | planned 2026-11-27 (worker switch) |
+| T8.7 | todo | planned 2026-11-27 (worker switch) |
 | T8.5 | todo | |
