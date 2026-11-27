@@ -1106,6 +1106,8 @@ Later: barcode rules (after localization), then marketplaces and UOM at the same
   directly, or end the session and preselect a worker on the login screen. Builds on Devices
   (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
   Its spec brings step 8 forward (device trust T8.1, device commands T8.4; Delta 13).
+  **Spec written 2026-11-27:** [V2_WORKER_SWITCH_SPEC.md](V2_WORKER_SWITCH_SPEC.md), questions
+  W1–W9 open.
 - ~~**Edit the "previously logged in" worker list from the client's hidden settings.**~~
   **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
   Device-local only, no backend change.
