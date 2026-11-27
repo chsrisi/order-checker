@@ -334,6 +334,30 @@ case-insensitively on the server too; the ship-by cutoff for ongoing orders is r
 auto-sync runs on the server; History gets a search and a lookup endpoint (all additive, except
 the two behaviour changes named).
 
+## Delta 12 (2026-11-27)
+
+A to-do review with the maintainer (device day and the 2.0.0 publish left out).
+
+| Ref | Decision | Status |
+|---|---|---|
+| – | v1 smoke test on both scanners (V2_DEVICE_DAY_TODO B) done: all good. | ✅ |
+| – | **T6.15b Inbound and T6.15c Outbound are superseded** by the picking simplification (T6.17–T6.20): Picking is the Orders view (Q32), and T6.20 built Picking and Outbound. No separate brief. | ✅ |
+| – | T6.20 (Android Picking and Outbound) and the login requests L1–L9 (T6.21–T6.23, T7.12) are **good on the emulator**. Final acceptance is pinned for the device day and operators' feedback; not a priority. | ✅ 📌 |
+| – | **Stockkeeping** (T6.15e) had **no brief**: only the v1 problems C11–C12 (V2_UX §1.1), the scaffold fixes (Q31) and the functional list in the plan. It needs a brief before its rebuild. | ✅ |
+| – | **Finder** (client T6.15d and the console's Stock & finder): v1's Finder is unfinished and **how operators should use it is still unclear**. Not now. A proposal for later is in [V2_UX.md](V2_UX.md) §3.1. | 📌 |
+| – | Console **Stock & finder and BOM**: unfinished in v1 too, like the client. **BOM is to be planned for deprecation**, so it is not rebuilt in Vue now (Q85). | 📌 |
+| – | TH.3 (drop the Windows operator client) done. | ✅ |
+| – | Light/dark toggle and localization (V2_ORDERS_SPEC §12) are on the backlog (IMPLEMENTATION_PLAN §5). | 📌 |
+
+Consequences:
+
+- **T7.11 (retire the Flutter admin)** needs every v1 admin operation in Vue. The Flutter
+  admin's Stocks, Finder and BOM views are the gap. With BOM deprecated, the gap is Stocks
+  (read-only table, search, CSV export) and Finder.
+- BOM is not only the admin view: `bom_*` tables expand order lines into the components that
+  Picking shows (`order_payload._components`). What "deprecation" removes decides how large the
+  task is (Q85).
+
 ---
 
 ## Open questions and things to revisit
@@ -378,3 +402,6 @@ without it), **before device day** (it decides what the first APK must contain),
 | Q43 | "Disable worker" that keeps history (deleting erases a worker's outbound scans and their name on completed orders) | Kept as is for now (D10); disable needs an additive column and a contract check. | later | 📌 |
 | ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
 | ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |
+| Q84 | Finder: who uses it, when, and what should it answer? | Proposal in [V2_UX.md](V2_UX.md) §3.1 (questions F1–F4 there). | before its brief | 📌 |
+| Q85 | BOM deprecation: only the admin BOM **view**, or the BOM **data** (bundles expanded into components for Picking)? | **The view first**: don't rebuild it in Vue, and drop it with the Flutter admin (T7.11). Removing the expansion changes Picking and the order payload, so it needs its own spec. | before T7.11 | ❓ |
+| Q86 | Localization (EN/ID): console only, or the Android app too? | **Both, console first.** The console has the most text, and Naive UI ships both locales. Operators would gain the most from Indonesian on the scanner. | before planning | ❓ |

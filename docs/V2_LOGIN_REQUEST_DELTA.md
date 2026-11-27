@@ -37,3 +37,9 @@ reviewed after you have tried the feature.
 ### R1.3 Open questions
 
 None before planning. After testing: confirm or change L1–L9.
+
+## Round 2 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| L1–L9 | Tried on the emulator: **all good**, kept as built. A final review after the device day and operators' feedback is pinned (not a priority). | ✅ 📌 |

@@ -235,3 +235,11 @@ Needs its own spec.
 | Q83 | Push those too: a sync that takes a claimed order off the active list (cancelled, shipped, …) sends `shopee_orders_update` to its owner. Built with T6.24. | ✅ |
 | – | UX acceptance of T6.20 is pinned for later. | 📌 |
 | – | Merge into `feat/v2-orders-auto-close` now. | ✅ |
+
+---
+
+## Round 10 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| – | T6.20 tried on the emulator: **all good**. UX acceptance stays pinned for the device day and operators' feedback (not a priority). | ✅ 📌 |
