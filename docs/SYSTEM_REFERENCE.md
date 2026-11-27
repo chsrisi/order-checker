@@ -28,7 +28,7 @@ and the implementation plan.
 
 | Term | Meaning in this codebase |
 |---|---|
-| **Operator / client** | A user with `scope = "client"`, using the Flutter operator app (`frontend/client`) on Android or Windows. |
+| **Operator / client** | A user with `scope = "client"`, using the operator app on Android: v1 Flutter (`frontend/client`) or v2 Kotlin (`frontend/client-android`). |
 | **Admin** | A user with `scope = "admin"`, using the Flutter admin web app (`frontend/admin`). Exactly the users created by the startup seed (`ADMIN_USERNAME`); the API never creates other admins. |
 | **Order** | A Shopee order, key `order_sn` (string, starts with `YYMMDD`). Table `shopee.orders`. |
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
@@ -755,7 +755,7 @@ connect `WS_URL/ws?token=`; on close/error retry every 2 s up to 5 times, then s
 connection-failed banner with a manual retry. An error containing `403` triggers a token
 refresh and reconnect, or logout.
 
-### 12.1 Operator client (`frontend/client`, Android + Windows)
+### 12.1 Operator client (`frontend/client`, Android only)
 
 Production devices run a **debug** build: release builds lack the `INTERNET` permission
 (KNOWN_LIMITATIONS #10).

@@ -115,7 +115,7 @@ This document tracks known architectural, library, and system limitations within
 ### 7. Flutter Web Cross-Platform WebSocket Channel (admin web only)
 - **Scope**: only the **admin** app runs in a browser. The operator client's web build was
   dropped (delta D2.1), so its `IOWebSocketChannel.connect` (`dart:io`) is correct for its
-  Android and Windows targets. Earlier review item F-H7 no longer applies to it.
+  Android target (the Windows build was dropped too, TH.3). Earlier review item F-H7 no longer applies to it.
 - **Rule for browser code**: `IOWebSocketChannel.connect` (from `package:web_socket_channel/io.dart`)
   crashes with `UnsupportedError` in a browser. Use `WebSocketChannel.connect(uri)` from
   `package:web_socket_channel/web_socket_channel.dart`, which picks `HtmlWebSocketChannel` on
@@ -125,12 +125,12 @@ This document tracks known architectural, library, and system limitations within
 ---
 
 ### 8. Operator Client API Is Frozen (Manual Client Updates)
-- **Issue**: The operator client (`frontend/client`, Android/Windows scanners) is distributed and updated manually. It cannot be updated over the air, and its `BASE_URL`/`WS_URL` are baked into each build. Every backend version must keep working with every client build still in the field.
+- **Issue**: The operator client (`frontend/client`, Android scanners) is distributed and updated manually. It cannot be updated over the air, and its `BASE_URL`/`WS_URL` are baked into each build. Every backend version must keep working with every client build still in the field.
 - **Policy**:
   - The client-facing API is **contract v1**. The exact surface is listed in `docs/SYSTEM_REFERENCE.md` §10 (originally `docs/archive/BRANCH_SPLIT_REVIEW.md` §2).
   - Keep client API changes to a minimum. Only **additive** changes are allowed: new optional response fields, new endpoints, timezone offsets on datetimes, and new WebSocket event types whose `data` is a JSON **array of objects**.
   - **Breaking changes require a major version bump** and a manual client rollout. Examples: renaming or removing a path, field, or WS command; success codes other than `200`; making a field nullable; sending non-list WS `data` to client sockets; changing `acquire` 404 semantics. During the rollout the backend must serve the old and new contracts side by side, using path-versioned `/v2/...` routes that mirror the whole operator-client surface (V2-5 + `docs/V2_DELTA.md` D1, superseding A-5's "changed operations only"). Contract v2 is guarded by `tests/test_client_contract_v2.py` (snapshot `tests/contracts/client_v2.json`).
-  - Supported targets: operator client on **Android and Windows** only (the client web build is dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
+  - Supported targets: operator client on **Android** only (the client web and Windows builds are dropped); admin on **web only** (the admin Windows build is dropped). The admin app ships with the backend, so the whole admin API may change as needed between releases. Backend internals may change freely too.
   - **Production is not strictly uptime-sensitive.** Short outages and maintenance windows are acceptable. After a backend restart longer than about 10 s, the client WebSocket stops retrying, and operators must tap *retry* on the connection banner. This is an operational note, not a deploy constraint.
   - Deploy constraints that still apply: keep the WS handshake rejection as HTTP 403. Do not change `JWT_ISSUER`/`JWT_AUDIENCE` (or `APP_ENV`, which sets their defaults) and do not replace `data/keys` outside a planned forced-relogin window (`docs/RELEASE.md`). Backend version bumps no longer change token identity (T3.1). **Exception: v0.6.0** adds sessions and makes the `sid` claim required, so every device logs in once in that window (RELEASE.md "v0.6.0").
   - Decisions after the initial review are recorded in `docs/archive/BRANCH_SPLIT_DELTA.md` (archived 2026-11-21).

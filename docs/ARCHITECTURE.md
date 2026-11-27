@@ -52,9 +52,10 @@ A new `async def` that touches the database must follow the same rule. This is g
 Both Flutter apps use `Provider` and a central `AppState` for authentication,
 HTTP calls, cached view state, and WebSocket reconnection.
 
-Supported platforms: the operator client runs on **Android and Windows** (no web build).
+Supported platforms: the operator clients (v1 Flutter, v2 Kotlin) run on **Android only**.
 The admin app runs on the **web**, served by nginx (`frontend/admin/nginx.conf.template`).
-The admin Windows build was dropped, as was the client web build (delta D2.1).
+The admin Windows build and the client web build were dropped (delta D2.1), and the client
+Windows build too (TH.3, V2_DELTA D1).
 
 - The client app handles order claiming, picking, scanning, item lookup, and stock
   adjustment/transfer.
