@@ -138,6 +138,13 @@ deletes the key: the device then registers as a new `pending` device.
   `OrderLogic` (progress, search, over-quantity), `OpsController` (actions with v1's messages;
   holds the selected order), `MainShell` (home with Orders / Stockkeeping / Finder, username →
   Device info with Log out) and the scaffold screens copied from v1.
+- Stockkeeping (T6.15e, V2_UX §2.10): `ops/StockFlow.kt` is the guided flow as a pure state
+  machine (location → item → quantity → destination → confirm; the single-mode "recorded at
+  another location" choice; before → after; the large-change rule), unit-tested in both stock
+  location modes. `ui/ops/StockScreen.kt` renders it. `GuidedStockFlow` takes a `StockLock` and
+  a `submit` override, for the count task (T9.4). The screen waits for `/v2/meta`'s
+  `stock_location_mode` before it starts: in `single` mode a location that differs from the
+  record would merge the item's stock into it.
 
 ## Scanning (keyboard wedge)
 

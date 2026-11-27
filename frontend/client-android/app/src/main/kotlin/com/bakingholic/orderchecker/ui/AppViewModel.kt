@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -51,7 +52,11 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         graph.knownWorkers.names.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var registration: Job? = null
     private var loginRequest: Job? = null
-    val ops = OpsController(graph.ops, viewModelScope)
+    val ops = OpsController(
+        graph.ops,
+        viewModelScope,
+        graph.meta.meta.map { it?.stockLocationMode }.stateIn(viewModelScope, SharingStarted.Eagerly, null),
+    )
 
     init {
         viewModelScope.launch {

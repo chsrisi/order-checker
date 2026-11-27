@@ -425,6 +425,140 @@ accepted.** Bundle components show as one small line under the entry ("Bundle, p
 | UX-T5 | Does the open count on Home include claimed orders? | **Yes**, manual tasks plus order-tasks not *Picked*; blocked tasks are not counted. |
 | UX-T6 | Count screen: may the worker skip the location scan when the item has one? | **No** in round 1: the scan is the check that they are at the right shelf (SPEC §4). Revisit after use (T7 ⚠️). |
 | UX-T7 | Quick reasons for *Can't finish*? | **Yes**, three plus free text; the admin sees the text. |
+### 2.10 Client Stockkeeping, guided actions (T6.15e, V2_STOCK_DELTA R1.2)
+
+- **Goal:** a Stockkeeping that is quick to use right and hard to use wrong. Operations say v1's
+  is almost never used, and its model is unintuitive (S1).
+- **v1 checklist** (`stocks_view.dart`): add, set, transfer, with location suggestions; a stock
+  list. **Kept:** add, set, transfer. **Moved:** the stock list goes to Finder (T6.15d, C12).
+- **v1 problems addressed:** C11 (four fields and a Move checkbox that moves the location into
+  the destination; Enter runs Set), C12 (the "History" tab is the stock list).
+- **Start:** three large buttons, with one line each saying what it does:
+  - **Receive**: "put new stock on a shelf" (add);
+  - **Count**: "say how many are on a shelf" (set);
+  - **Move**: "take stock from one shelf to another" (transfer).
+- **Every action is the same sequence**, one step per screen, with a step bar on top
+  (*Location › Item › Quantity › Confirm*). Back goes one step back; the action's title stays
+  visible.
+
+  ```
+  ┌ Count ───────────────────────┐   ┌ Count ───────────────────────┐
+  │ ● Location ○ Item ○ Qty ○ OK │   │ ● ● ● ● 203 › SKU-0012       │
+  │                              │   │                              │
+  │  Scan the shelf label        │   │  Ceramic mug white 350 ml    │
+  │  [ ▒▒▒▒ scan ▒▒▒▒ ]  Type    │   │  Recorded: 40                │
+  │                              │   │  Counted:  36                │
+  │                              │   │  Change:   −4                │
+  │                              │   │                              │
+  │                              │   │  [ Count 36 ]     Back       │
+  └──────────────────────────────┘   └──────────────────────────────┘
+  ```
+  1. **Location:** scan the shelf (ScanField; *Type* to type it).
+  2. **Item:** scan the item. An SKU, a supplier barcode and any barcode the server recognises
+     all work (`/v2/items/find`, exact hit). The screen shows the name and **the recorded
+     quantity at this location** (S2).
+  3. **Quantity:** a number pad field.
+     - Receive: "how many arrived";
+     - Count: "how many are there" (0 allowed: the row is then removed, as the API does);
+     - Move: "how many to move", followed by a **Destination** scan step.
+  4. **Confirm:** before → after for each affected location, and one button that names the
+     action ("Count 36", "Receive 12 into 203", "Move 5 from 201 to 203"). A change of more than
+     half the recorded quantity is shown in a warning colour **with** the word "large change"
+     (C9: never colour alone).
+- **After confirming:** a result line ("203 · SKU-0012: 40 → 36"), then **back to step 2 at the
+  same location**, so a shelf is counted or filled item after item without scanning the shelf
+  again. *Done* returns to the three actions. No undo (S11).
+- **`single` mode** (production): each item has one location.
+  - **Location matches:** carry on as above.
+  - **Receive or Count, item recorded at another location:** the item step says "SKU-0012 is
+    recorded at **201**". Choices: *Use 201* (the action applies there), or *Move it to 203
+    first* (opens Move, prefilled). Never a silent move.
+  - **Move:** step 1 is the item's location (scanned to confirm), and the quantity step is
+    replaced by "moves all N" (single mode moves everything).
+  - **An item with no location yet:** the scanned location becomes its location.
+- **`multi` mode:** the location is the bin; Move moves the entered quantity from the scanned
+  source bin.
+- **Task mode** (shared with T9.4, V2_TASKS_DELTA): the count task opens Count locked to the
+  task's location and item. Each scan must match (trim, upper-case), the recorded quantity is
+  hidden (blind, T6), and the confirm step shows only "Count 36". Confirming completes the task.
+- **Errors** appear in the status line under the scan field, never as a blocking pop-up:
+  - an unknown item;
+  - "Not enough at 201" (the API's 400);
+  - offline: the step stays, with *Retry*.
+- **Built (2026-11-27):**
+  - The large-change warning applies to **Count** only; receiving a lot is normal.
+  - The item step takes an SKU on record without a call. Otherwise it uses the server's lookup:
+    one result counts as found, and its name is shown on the next step.
+  - Locations are compared case-insensitively but sent with the spelling on record, so a scan
+    never makes a second bin that differs only in case.
+- **Later (T6.26):** when the map layout is loaded, a location that is on no room gets a warning
+  ("203A isn't on the map: use it anyway?").
+- **Backend change:** none (`/v2/stocks/update`, `/v2/items/find`, the stock snapshot).
+- **Questions for this brief:**
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | K1 | Location first, then item, in every action (one sequence to learn)? | **Yes.** It matches walking to a shelf, and makes "next item here" possible. |
+  | K2 | "Next item at the same location" after each confirm? | **Yes**, with *Done* to leave. |
+  | K3 | Single mode, an item recorded elsewhere: *Use 201* / *Move it first*? | **Yes**, as above. Never move silently. |
+  | K4 | The "large change" warning at 50 %? | **Yes**, a fixed rule for round 1; a setting if it's wrong. |
+
+**Round 1: built (2026-11-27), checked on the emulator in `single` mode; waiting for your UX acceptance.**
+
+### 2.11 Admin Stock & finder (T7.13, V2_STOCK_SPEC §3.3)
+
+- **Goal:** answer "what do we have, where, and what happened to it" from the console. Admins
+  look; they don't change stock (A8, D7).
+- **v1 checklist** (Flutter admin): Stocks, a read-only table with search and CSV export; Finder
+  (`GET /items/find`). **Added:** the item card, and the stock **change history** (S8).
+- **v1 problems addressed:** A8 (stock info and finder in one area), A10 (one way to refresh: live
+  data).
+- **Two tabs:**
+  - **Stock:** the table, from the live `stocks_update` snapshot.
+    - Columns: SKU, name, location, quantity.
+    - Search over SKU, name and location. A scanned or typed **barcode** also finds its item
+      (`/items/find` exact hit).
+    - Filters as chips: *Zero or less*, *No location*, a location picker.
+    - **CSV export** (`/admin/export/stocks`, kept).
+  - **Changes:** every stock change, newest first, from `stocks_log`, server-side paged
+    (`X-Total-Count`).
+    - Each row: when, worker, item, location, before → after (delta), and the reason in words:
+      received, counted, moved in/out, picked for order *2611…*, returned from order *…*,
+      shortfall, task *…*.
+    - Filters: date range, worker, reason, item.
+    - The question it answers is "where did the stock go".
+- **Item card:** opens from either tab. A side panel on desktop, a full page on mobile.
+  - Name, SKU, supplier barcode.
+  - **Each location with its quantity**, and the total.
+  - **Open orders needing it**, from the console's ongoing orders.
+  - **The item's last changes** (the Changes tab filtered to it), with *See all*.
+  - The same content as the scanner's Finder card (T6.15d), so both read the same.
+
+  ```
+  ┌ Stock & finder ──────────────────────────────────────────────────────────────┐
+  │ [Stock] Changes          🔍 sku, name, location, barcode   [Zero] [No loc] ⤓ │
+  │ SKU       Name                       Location   Qty  │ SKU-0012              │
+  │ SKU-0012  Ceramic mug white 350 ml   203         36  │ Ceramic mug white 350 │
+  │ SKU-0031  Cork coaster set           201         12  │ 203 · 36   Total 36   │
+  │ SKU-0040  Teapot 1 l                 —            0  │ Needed by 2 orders    │
+  │                                                      │ 14:02 eko  count 40→36│
+  │                                                      │ 09:15 dina pick −2 …  │
+  └──────────────────────────────────────────────────────────────────────────────┘
+  ```
+- **Backend change:** one additive admin endpoint, `GET /admin/stock-changes` (filters: `sku`,
+  `actor`, `reason`, `from`, `to`; `limit` / `offset`; `X-Total-Count`), reading `stocks_log`.
+  The reason codes are mapped to words in the console. Rows from before T4.3 have only the
+  legacy `message`, so they show that text.
+- **Questions for this brief:**
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | F5 | Two tabs, Stock and Changes, with the item card shared? | **Yes.** |
+  | F6 | How far back does Changes go by default? | **The last 7 days**, with a date range to go further. The log is never cut (it is the audit trail). |
+  | F7 | Show legacy log rows (before T4.3, free text only)? | **Yes**, as their message, marked "older entry". |
+  | F8 | A link from an order or task in Changes to that order or task? | **Yes**: orders open the Orders lookup, tasks the task detail (after step 9). |
+
+**Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
 
 ## 3. Later (not scheduled)
 
@@ -433,8 +567,8 @@ accepted.** Bundle components show as one small line under the entry ("Bundle, p
 
 ### 3.1 Finder: proposal for later (V2_DELTA Delta 12, Q84)
 
-**Status: not now.** v1's Finder is unfinished, and how operators should use it is still
-unclear. This is a starting point for its brief, to be weighed later.
+**Status (2026-11-27):** round 1 planned as T6.15d (V2_STOCK_SPEC §3.2, V2_STOCK_DELTA). This
+proposal is the starting point for its brief.
 
 **What it does today** (`GET /items/find`, `queries/warehouse.py find_warehouse_items`): an exact
 SKU or supplier-barcode hit returns that item; otherwise a substring search over SKU and name,

@@ -1,11 +1,13 @@
 package com.bakingholic.orderchecker.ui.ops
 
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
-import com.bakingholic.orderchecker.api.model.StockCreate
+import com.bakingholic.orderchecker.api.model.StockUpdateResponse
 import com.bakingholic.orderchecker.api.model.WarehouseItemResponse
 import com.bakingholic.orderchecker.ops.ActionResult
 import com.bakingholic.orderchecker.ops.ORDER_SN_PATTERN
 import com.bakingholic.orderchecker.ops.OpsRepository
+import com.bakingholic.orderchecker.ops.StockItem
+import com.bakingholic.orderchecker.ops.StockPlan
 import com.bakingholic.orderchecker.ops.displayCode
 import com.bakingholic.orderchecker.ops.pickWarning
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +27,23 @@ data class UiMessage(val text: String, val isError: Boolean = false, val alert: 
  * The operator actions of the scaffold screens (V2_UX §2.2), with v1's messages. Lives in the
  * view model, so the selected order survives leaving the Orders screen (C4).
  */
-class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) {
+/** The outcome of looking up a scanned item for Stockkeeping. */
+sealed interface ItemLookup {
+    data class Found(val item: StockItem) : ItemLookup
+
+    data object NotFound : ItemLookup
+
+    data object Several : ItemLookup
+
+    data class Failed(val message: String) : ItemLookup
+}
+
+class OpsController(
+    val repo: OpsRepository,
+    private val scope: CoroutineScope,
+    /** `/v2/meta` `stock_location_mode` (`single` | `multi`), null until the meta is loaded. */
+    val stockMode: StateFlow<String?> = MutableStateFlow(null),
+) {
     private val _selectedOrder = MutableStateFlow<String?>(null)
     val selectedOrder: StateFlow<String?> = _selectedOrder
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
@@ -53,10 +71,15 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
 
     /** v1's failure handling: 409 (duplicate) as an alert with the server's detail. */
     private fun failed(result: ActionResult.Failed, fallback: String) = when {
-        result.code == 0 -> say("Cannot connect to server. Please check your network connection.", isError = true)
         result.code == 409 -> say(result.detail, isError = true, alert = true)
-        result.code >= 500 -> say("Server error occurred.", isError = true)
-        else -> say("$fallback ${result.detail}".trim(), isError = true)
+        else -> say(failureText(result, fallback), isError = true)
+    }
+
+    /** The wording of a failed call, for screens that show it inline instead of as a message. */
+    fun failureText(result: ActionResult.Failed, fallback: String): String = when {
+        result.code == 0 -> "Cannot connect to server. Please check your network connection."
+        result.code >= 500 -> "Server error occurred."
+        else -> "$fallback ${result.detail}".trim()
     }
 
     /** 409: this screen is stale (a push may have been missed), so reload it. */
@@ -184,16 +207,35 @@ class OpsController(val repo: OpsRepository, private val scope: CoroutineScope) 
         }
     }
 
-    fun updateStock(sku: String, qty: Int, mode: StockCreate.Mode, location: String?, moveTo: String?, onDone: () -> Unit) =
-        launchSaving {
-            when (val r = repo.updateStock(sku, qty, mode, location, moveTo)) {
-                is ActionResult.Ok -> {
-                    say("Stock updated.")
-                    onDone()
-                }
-                is ActionResult.Failed -> failed(r, "Failed to update stock.")
-            }
+    /**
+     * The item behind a Stockkeeping scan: an SKU on record first (no call), else the server's
+     * exact lookup (SKU or supplier barcode). One search result counts as found; the next step
+     * shows its name, so a wrong match is visible before anything changes.
+     */
+    fun resolveItem(raw: String, onResult: (ItemLookup) -> Unit) {
+        val query = raw.trim()
+        repo.stocks.value.firstOrNull { it.sku.equals(query, ignoreCase = true) }?.let {
+            return onResult(ItemLookup.Found(StockItem(it.sku, it.itemName)))
         }
+        launchSaving {
+            onResult(
+                when (val r = repo.findItems(query)) {
+                    is ActionResult.Ok -> when (r.value.size) {
+                        0 -> ItemLookup.NotFound
+                        1 -> ItemLookup.Found(StockItem(r.value[0].sku, r.value[0].itemName))
+                        else -> r.value.firstOrNull { it.sku.equals(query, ignoreCase = true) }
+                            ?.let { ItemLookup.Found(StockItem(it.sku, it.itemName)) } ?: ItemLookup.Several
+                    }
+                    is ActionResult.Failed -> ItemLookup.Failed(failureText(r, "Lookup failed."))
+                },
+            )
+        }
+    }
+
+    /** Sends a confirmed Stockkeeping change; the screen shows the outcome inline (V2_UX §2.10). */
+    fun applyStock(plan: StockPlan, onResult: (ActionResult<StockUpdateResponse>) -> Unit) = launchSaving {
+        onResult(repo.updateStock(plan.sku, plan.qty, plan.mode, plan.location, plan.moveTo))
+    }
 
     fun find(query: String) = launchSaving {
         when (val r = repo.findItems(query)) {

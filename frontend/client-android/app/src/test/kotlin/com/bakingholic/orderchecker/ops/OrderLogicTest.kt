@@ -105,16 +105,4 @@ class OrderLogicTest {
         assertTrue(ORDER_SN_PATTERN.matches("251120ABCDEF"))
         assertFalse(ORDER_SN_PATTERN.matches("SPX123"))
     }
-
-    @Test
-    fun stockLocationsForASku() {
-        val stocks = listOf(
-            StockRow(1, "CAKE-1", 3, "A1"),
-            StockRow(2, "cake-1", 1, "B2"),
-            StockRow(3, "CAKE-1", 0, null),
-            StockRow(4, "X", 1, "C3"),
-        )
-        assertEquals(listOf("A1", "B2"), locationsFor(stocks, " CAKE-1 "))
-        assertEquals(emptyList<String>(), locationsFor(stocks, ""))
-    }
 }

@@ -926,9 +926,57 @@ stay possible. They are not a layout.
   - the over-quantity warning compares resolved SKUs.
 - T6.15c Orders · Outbound: scan a label, history with a tag filter (**superseded**: built in
   T6.20).
-- T6.15d Item finder (**not now**: how it is used is unclear; proposal in V2_UX §3.1, Q84).
-- T6.15e Stocks: set, add, transfer, with location suggestions. No brief yet; it needs one
-  first.
+- T6.15d Item finder (round 1 planned below, "Stock and map").
+- T6.15e Stocks (rebuilt as guided actions, planned below, "Stock and map").
+
+#### Stock and map (T6.15e, T6.15d, T6.25, T6.26; V2_STOCK_SPEC, V2_STOCK_DELTA)
+
+Precedence: V2_STOCK_DELTA > this plan > V2_STOCK_SPEC > WAREHOUSE_MAP_SPEC. Order: T6.15e and
+T7.13 (briefs written together), then T6.15d, then T6.25 → T6.26. Designed for `single` mode
+first; `multi` stays tested.
+
+**T6.15e Stockkeeping, guided actions (S1, S2, S11)**
+- Goal: DELTA R1.2: Receive, Count, Move as scan location → scan item → quantity → confirm.
+- Refs: S1, S2, S11, R1.2; V2_UX problems C11, C12.
+- Change: the guided flow with a "task" mode (blind, locked), shared with T9.4; `single` mode
+  confirms the known location; the confirm step shows before → after; the v1 form and its stock
+  list leave Stockkeeping (the list goes to Finder, T6.15d).
+- Tests: each action in both location modes; a wrong item or location refused in task mode; a
+  first location for an item without one.
+- Docs: V2_UX brief first (Q28), client-android README.
+- Accept: emulator, your UX acceptance.
+
+**T6.15d Finder round 1**
+- Goal: SPEC §3.2: the item card with bins and quantities from the stock snapshot, bin lookup,
+  the stock list as the empty state.
+- Refs: V2_UX §3.1 (F2, F3), C13.
+- Change: Android only; no backend change.
+- Tests: card from the snapshot, bin lookup, live updates.
+- Docs: V2_UX brief (shares the item card with T7.13).
+- Accept: emulator, your UX acceptance.
+
+**T6.25 Map backend and layout tools (S3–S7)**
+- Goal: serve the layout with its location rule.
+- Refs: WAREHOUSE_MAP_SPEC §5–§6, §8; SPEC §4; DELTA R1.3.
+- Change: the converter writes `bins: []` and a `locationRule` (`exact` today); samples to a
+  fixture; `GET /v2/layout` (operator and admin, ETag / 304) from read-only `data/warehouse/`
+  merging `room-bins.json`; `WAREHOUSE_MAP` in `/v2/meta` features; `POST /v2/events` as log
+  lines; v2 snapshot and OpenAPI.
+- Tests: the layout validation (cells in the grid, connector ids exist, no prefix in two rooms,
+  no `room-bins.json` id missing from the layout); ETag / 304; flag off; events logged.
+- Docs: OPERATIONS (volume, flag), API, `tools/warehouse-layout/README.md`.
+- Accept: `client_v1.json` byte-identical; the converter re-run reproduces the committed JSON.
+
+**T6.26 Android map**
+- Goal: WAREHOUSE_MAP_SPEC §7, §9 with DELTA R1.3.
+- Refs: S5, S10.
+- Change: layout cache with ETag; the `exact` and `prefix` matchers; the Compose map (floors,
+  rooms, walls, tap sheet with stock from the snapshot); the route from Picking (nearest-first
+  Dijkstra, stairs or lift); "Show on map" on the Finder card; the hidden-settings switch; events.
+- Tests: both matchers; the spec's three reference routes (with the fixture bins and `prefix`);
+  offline from cache; flag off → no entry points.
+- Docs: V2_UX brief, client-android README.
+- Accept: emulator now; the floor **trial** when v2 is on the floor (T6.16).
 - T6.15f Account and the connection banner.
 
 #### Picking simplification (T6.17–T6.20, T6.24; V2_PICKING_SPEC, V2_PICKING_DELTA)
@@ -1066,6 +1114,11 @@ device (Q20).
   pinned): Vue moves to `/` and `frontend/admin/` is removed. BOM inspection is to be
   deprecated, not rebuilt (V2_DELTA Delta 13, Q85: the view only, the BOM backend stays), so the
   remaining gap is Stocks and Finder.
+- **T7.13 Stock & finder round 1 (V2_STOCK_SPEC §3.3, S8).** Read-only stock table (search,
+  filters, CSV export), the item card shared with T6.15d, and the item's change history from
+  `stocks_log` through one additive, paged admin endpoint. Brief first, written with T6.15e's.
+  With it, T7.11 only waits for two weeks of use. Tests: history paging and filters, table
+  search. Accept: mobile and desktop (D7), your UX acceptance.
 - **T7.12 Login requests (V2_LOGIN_REQUEST_DELTA L4, L5).** Badge in the shell, list on the
   Dashboard (worker, device, IP, age, code), Approve and Deny; live via `login_requests_update`.
   Tests: list logic, expiry. Accept: usable on mobile and desktop (D7).
@@ -1342,6 +1395,7 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | Q9 device token (revisited: key signatures now, token in T8.2; V2_WORKER_SWITCH_DELTA W3) | T8.1, T8.2 |
 | Worker switch W1–W9 (V2_WORKER_SWITCH_DELTA), P-23–P-27 | T8.1, T8.4a, T8.6, T8.7 |
 | Tasks T1–T13 (V2_TASKS_DELTA), P-28–P-32 | T9.1–T9.4 |
+| Stock S1–S12 (V2_STOCK_DELTA) | T6.15e, T6.15d, T6.25, T6.26, T7.13 |
 | Q10, Q19, Q24 sessions, instant revocation | T6.2 |
 | Q11 no local JWKS | T6.11 |
 | Q12 Android deps, Q18 identity and signing | T6.10 |
@@ -1427,7 +1481,7 @@ same change as the task.
 | T6.12 | done | **Accept met** on the API 30 emulator: build 1 updated itself to build 2 published with `scripts.publish_client_release` (permission grant restarts the app on Android 11; one confirm tap). Negative check on device: an APK published under a higher code but really older is refused ("not newer") through the real PackageManager. **Finding:** Google Play Protect may show "App scan recommended" for the first sideloaded update → "Install without scanning"; check whether the MT67 has Play services (device day). Downloads are cleared at the next start, since a successful install kills the process first |
 | T6.13 | done | Emulator registered as `pending` (model, Android 11, versionCode) with a real Keystore signature verified by the backend; a second login reuses the device and binds the new session. Registration is skipped when the stored record already matches the current `sid`. Accept for the second device (spare MT67) belongs to T6.16 |
 | T6.14 | in progress | **Emulator part done (2026-11-22, API 30 image with Play services)**, signed R8 release builds (`rehearsal` build type = release + cleartext to `10.0.2.2`, throwaway key; production release rules unchanged): 1–2 install 1, `appops` grant, login, device `pending` ✅; 3 update 1→2, then 3 with `--min-supported 3` → blocking screen → update ✅; 4 logged out, update to 4 from the login screen ✅; 5 tampered `sha256` → "damaged", APK with another key → "not signed with this app's key", app stays on 4 ✅. **Finding:** Play Protect shows "App scan recommended" on **every** update (new APK hash), passed with More details → Install without scanning: one extra step per update on Play-services devices. **Open:** the MT67 part (step 6) with the real key, on the device day, which is postponed (Delta 5 Q27; V2_DEVICE_DAY_TODO.md) |
-| T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds **Login picker built (2026-11-25, V2_UX §2.7)**; admin approval: T6.23. **2026-11-27 (Delta 12):** T6.15b/c superseded by T6.17–T6.20; T6.15d Finder not now (Q84); next is a Stockkeeping (T6.15e) brief. |
+| T6.15 | in progress | Rebuilt, not ported (Delta 5 Q26). **T6.15a done (2026-11-23):** `ScanField` (read-only while scanning, so no soft keyboard; suffix Enter/Tab per device; 300 ms double-fire filter; inline status line instead of modal alerts; tap or "Type" to type by hand) and a scanner test in the hidden settings. **Finding on the emulator:** an editable Compose field asks for the soft keyboard (explicit show request) when hardware keys arrive, and hiding the keyboard on every key restarts the input method mid-scan and reorders characters (`SKU-0001` read as `SK-U0001`); hence read-only scanning with key capture. Checked with `adb input` key events. **Shell + scaffold (2026-11-23, V2_UX §2.2, D7/D8):** home (Orders / Stockkeeping / Finder), username → Device info with Log out; Orders = Picking (main) + Outbound tabs, Stockkeeping, Finder copied from v1 with its pop-ups; fixed while copying: Enter in Stockkeeping no longer runs Set, deletes ask first, the selected order survives leaving Orders, over-quantity checked on the resolved SKU. Data from `/v2/ws` snapshots. Checked on the emulator against a local seeded backend (pick, over-quantity alert, unassign, delete, outbound, add stock, finder, logout). Found and fixed: the scan field took focus back after a SKU scan (quantity went into the scan field) and after a pop-up. Next: per-screen rebuild rounds **Login picker built (2026-11-25, V2_UX §2.7)**; admin approval: T6.23. **2026-11-27 (Delta 12):** T6.15b/c superseded by T6.17–T6.20; T6.15d Finder not now (Q84); next is a Stockkeeping (T6.15e) brief. **2026-11-27 (V2_STOCK_DELTA):** T6.15e rebuilt as guided actions (shares the count screen with T9.4), T6.15d Finder round 1 planned; map T6.25, T6.26. |
 | T6.16 | postponed | Delta 5 Q27. v0.6.0 tagged and deployed (2026-11-22). Still to do: v1 and laptop smoke tests, then publishing 2.0.0. Checklist: V2_DEVICE_DAY_TODO.md. One device this round (Q20) |
 | T6.17 | done | No migration. `release_unassigned_picks` query added here too (script: T6.19). Each rule was broken on purpose and a test failed: order lock, deletion lock, shortfall first, newest first, status check, strict, duplicate merge. Three `test_stock_queries` tests fail on a host whose `.env` sets `STOCK_LOCATION_MODE`; run with it blank |
 | T6.18 | done | `client_v1.json` unchanged; `client_v2.json` and `openapi/v2.json` regenerated. Removing the v2 pick models breaks the old Android code, so T6.18 and T6.20 must land together |
@@ -1442,6 +1496,10 @@ same change as the task.
 | T7.3–T7.9 | in progress | **Shell first (2026-11-23, V2_UX §2.3, D7/D8):** responsive shell (sidebar ≥ 768 px, drawer below) with groups Administration (Workers, Devices, Settings) · Orders · Warehouse (Stock & finder, BOM); dashboard with device cards (online, status, worker, app build, last seen) and shortcuts; unbuilt pages are placeholders linking to the classic admin. Backend: additive `online` on `GET /admin/devices` (Q35). **Workers and Orders round 1 built (2026-11-24, V2_UX §2.4–2.5, D9):** Workers (create, reset password, log out everywhere, delete with its consequences listed, devices per worker); Orders (ongoing split with outbound scans, inline filters, browser-saved hand-ticks, reviewed period close, CSV export, history by close / orders / scans with server-side filters). Backend: additive history filters and `GET /admin/history/closes`. Workers and Orders accepted (D10). **Settings round 1 built (2026-11-24, V2_UX §2.6):** Shopee connection with in-place re-unlock that keeps edits; no backend change. **Orders round 4 (2026-11-24, V2_ORDERS_SPEC / V2_ORDERS_DELTA):** steps 1–4 built: R4 picking states and the F2 fix in both v2 apps, split orders partly packed, desktop paired rows (two lists deprecated), late orders kept (ship-by cutoff removed, F4), case-insensitive close (Q44), borrowed courier (Q45), History pairs, search and exact lookup (Q49, additive `q` on closes, courier and buyer in order search, `GET /admin/lookup`), server auto-sync (Q48). **Orders rounds 3–4 (2026-11-24):** auto-close of shipped orders on sync (C1), History by day (C2, replaces `/admin/history/closes`), nightly sync pause (C3), timestamptz migration `f6c9a4b2d3e5` (Q54), exact labels (Q57, replaces Q44), frozen close review (F7). Still placeholders: Stock & finder, BOM |
 | T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
+| T7.13 | todo | planned 2026-11-27 (V2_STOCK_DELTA) |
+| T6.15e | built, UX acceptance open | 2026-11-27: guided Receive / Count / Move (`ops/StockFlow.kt`, 16 unit tests in both modes; `GuidedStockFlow` with a task lock for T9.4). Checked on the API 30 emulator against a local `single`-mode backend (seed `--stock-mode single`): count at the recorded room, an item recorded elsewhere → *Move it first* → count with the large-change warning, an unknown item inline, receive, move; the stock log shows each change. Found and fixed: the previous result line stayed visible after *Move it first*. No backend change |
+| T6.25 | todo | planned 2026-11-27 (map backend) |
+| T6.26 | todo | planned 2026-11-27 (Android map) |
 | T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |
 | T8.1 | todo | planned 2026-11-27 (worker switch); device token moved to T8.2 (W3) |
 | T8.2 | todo | |
