@@ -472,6 +472,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stock-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stock change history
+         * @description Every stock change from the stock log, newest first, paged (`X-Total-Count`). Filters: `sku` and `actor` (exact, case-insensitive), `reason` (repeatable), and a `from` / `to` time range (inclusive). Rows from before the structured log have only `message`.
+         */
+        get: operations["get_stock_changes_admin_stock_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -1177,6 +1197,53 @@ export interface components {
             split_up?: boolean | null;
             /** Status */
             status: string;
+        };
+        /**
+         * StockChangeResponse
+         * @description One ``warehouse.stocks_log`` row for the console (T7.13). Rows from before T4.3 have only
+         *     ``message``; the structured fields are then null.
+         */
+        StockChangeResponse: {
+            /** Actor */
+            actor?: string | null;
+            /** After */
+            after?: number | null;
+            /** Before */
+            before?: number | null;
+            /** Delta */
+            delta?: number | null;
+            /** Id */
+            id: number;
+            /** Item Name */
+            item_name?: string | null;
+            /** Location */
+            location?: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Order Sn
+             * @description For picks: the order of the pick entry, while it exists.
+             */
+            order_sn?: string | null;
+            /**
+             * Reason
+             * @description adjust_set, adjust_add, transfer_out, transfer_in, pick, pick_shortfall, pick_restore, mode_merge, cutover_clear, migration_merge; null on legacy rows.
+             */
+            reason?: string | null;
+            /** Ref Id */
+            ref_id?: string | null;
+            /**
+             * Ref Type
+             * @description For example pick_entry or transfer.
+             */
+            ref_type?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
         };
         /** TemporaryTokenResponse */
         TemporaryTokenResponse: {
@@ -2342,6 +2409,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_stock_changes_admin_stock_changes_get: {
+        parameters: {
+            query?: {
+                /** @description Page size (newest first). */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+                sku?: string | null;
+                actor?: string | null;
+                /** @description Any of these reasons. */
+                reason?: string[] | null;
+                /** @description At or after this time. */
+                from?: string | null;
+                /** @description At or before this time. */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockChangeResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

@@ -6,6 +6,7 @@ import com.bakingholic.orderchecker.api.model.OrderPickRequest
 import com.bakingholic.orderchecker.api.model.OrderPickResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
 import com.bakingholic.orderchecker.api.model.StockCreate
+import com.bakingholic.orderchecker.api.model.StockUpdateResponse
 import com.bakingholic.orderchecker.api.model.WarehouseItemResponse
 import com.bakingholic.orderchecker.auth.SessionManager
 import com.bakingholic.orderchecker.net.ApiRequest
@@ -168,5 +169,5 @@ class OpsRepository(
             "/v2/stocks/update",
             jsonBody = body(StockCreate(sku = sku, stock = qty, location = location, mode = mode, moveTo = moveTo), StockCreate.serializer()),
         ),
-    ) { }
+    ) { json.decodeFromString(StockUpdateResponse.serializer(), it) }
 }

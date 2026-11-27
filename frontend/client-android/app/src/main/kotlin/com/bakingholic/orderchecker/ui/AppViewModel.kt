@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -88,7 +89,11 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     val homeNotice: StateFlow<String?> = _homeNotice
     private var registration: Job? = null
     private var loginRequest: Job? = null
-    val ops = OpsController(graph.ops, viewModelScope)
+    val ops = OpsController(
+        graph.ops,
+        viewModelScope,
+        graph.meta.meta.map { it?.stockLocationMode }.stateIn(viewModelScope, SharingStarted.Eagerly, null),
+    )
 
     init {
         viewModelScope.launch {

@@ -700,6 +700,11 @@ user deletion/reset uses code 1008. A failed send drops that socket.
   is on every day one of its closed scans was made, or on the day it was done when it has none.
   A past day can grow when its scans close later. With `q`, only days holding a matching scan or
   order are listed, with their full counts.
+- `GET /admin/stock-changes` (`queries/stock_changes.py`, T7.13): `stocks_log` newest first,
+  `limit` 1–500 (default 100), `offset`, total in `X-Total-Count`. Filters: `sku` and `actor`
+  (exact, case-insensitive), `reason` (repeatable), `from`/`to` (inclusive). Each row carries
+  the item name and, for a `ref_type = pick_entry` row, the entry's `order_sn` while the entry
+  exists. Legacy rows (before T4.3) have only `message`. The console's Stock & finder reads it.
 - `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
   number equals the label and the scans of it, open or closed; trimmed, then exact, at
   most 10 orders and 20 scans, and the History `day` it left on. The console's History answers "did it leave?" from it.

@@ -18,6 +18,8 @@ import { useOrders } from '../../stores/orders'
  */
 type View = 'days' | 'orders' | 'scans'
 const MIN_SEARCH = 2
+/** A search to run on open, e.g. an order linked from Stock & finder. */
+const props = defineProps<{ find?: string | null }>()
 
 const live = useOrders()
 const view = ref<View>('days')
@@ -73,6 +75,15 @@ function clearSearch() {
   query.value = ''
   applyNow()
 }
+watch(
+  () => props.find,
+  (text) => {
+    if (!text) return
+    query.value = text
+    applyNow()
+  },
+  { immediate: true },
+)
 watch(
   [view, range, q],
   async () => {
