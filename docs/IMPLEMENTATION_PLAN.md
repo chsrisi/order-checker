@@ -1046,12 +1046,16 @@ device (Q20).
 - **T7.10 Devices view:** the read-only list from `GET /admin/devices`.
 - **T7.11 Retire the Flutter admin** once every v1 admin operation is covered in Vue and used for 2 weeks (Q8,
   pinned): Vue moves to `/` and `frontend/admin/` is removed. BOM inspection is to be
-  deprecated, not rebuilt (V2_DELTA Delta 12, Q85), so the remaining gap is Stocks and Finder.
+  deprecated, not rebuilt (V2_DELTA Delta 13, Q85: the view only, the BOM backend stays), so the
+  remaining gap is Stocks and Finder.
 - **T7.12 Login requests (V2_LOGIN_REQUEST_DELTA L4, L5).** Badge in the shell, list on the
   Dashboard (worker, device, IP, age, code), Approve and Deny; live via `login_requests_update`.
   Tests: list logic, expiry. Accept: usable on mobile and desktop (D7).
 
-### Step 8: device control (spec §4A, W5(b)–(d), Q9) — later
+### Step 8: device control (spec §4A, W5(b)–(d), Q9) — brought forward (V2_DELTA Delta 13)
+
+The worker switch from the console needs it. Its spec (backlog, next up) decides how much of
+step 8 comes first.
 
 - **T8.1 Approve and revoke.**
   - Admin endpoints and Vue screens.
@@ -1091,12 +1095,17 @@ device (Q20).
 
 ## 5. Backlog (not scheduled)
 
-**Next up (added 2026-11-26, to be specced soon, not yet planned):**
+**Next up (added 2026-11-26, to be specced soon, not yet planned). Order (V2_DELTA Delta 13):**
+worker-list deletion and the theme toggle, then the worker-switch spec (with step 8), then the
+tasks spec. Stockkeeping, Stock & finder and localization (Android first) come close together.
+Later: barcode rules (after localization), then marketplaces and UOM at the same priority.
+
 
 - **Worker session switch from the console.** The admin switches which worker is logged in on
   a device, from the console. Scope to settle in its brief: switch the worker on the device
   directly, or end the session and preselect a worker on the login screen. Builds on Devices
   (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
+  Its spec brings step 8 forward (device trust T8.1, device commands T8.4; Delta 13).
 - **Edit the "previously logged in" worker list from the client's hidden settings.** Delete
   entries from the login picker's local list of the 20 most recent workers (V2_UX §2.7).
   Device-local only, no backend change.
@@ -1105,15 +1114,16 @@ device (Q20).
 - **Console light/dark toggle** (small, V2_ORDERS_SPEC §12): *System*, *Light* and *Dark*,
   remembered per browser. Front end only.
 - **Localization, English and Indonesian** (V2_ORDERS_SPEC §12): every string, dates, Shopee
-  status names and plurals. Scope (console only, or Android too) is Q86.
+  status names and plurals. Both apps, Android first (Q86).
 - **Finder** (client and console): proposal in V2_UX §3.1 (Q84). Not now.
-- **BOM deprecation** (Q85): scope to settle before T7.11.
+- **Admin BOM view deprecation** (Q85): goes with the Flutter admin (T7.11); the BOM backend stays.
 
 **Parked:**
 
 - **Tokopedia / TikTok Shop integration.** Draft assessment in `MARKETPLACE_REVIEW.md`, waiting
-  for the maintainer's review. Not before v2 parity. Do "barcode rules as configuration"
-  (V2_ORDERS_SPEC §12) first or in the same step.
+  for the maintainer's review. After "barcode rules as configuration" (V2_ORDERS_SPEC §12),
+  which comes after localization (V2_DELTA Delta 13). UOM stock logic (Q82) has the same
+  priority: both need the modernised barcode system first.
 
 - **Client v2 (next client major).**
   - Unlimited reconnect backoff (F-H8).

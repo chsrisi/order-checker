@@ -358,6 +358,16 @@ Consequences:
   Picking shows (`order_payload._components`). What "deprecation" removes decides how large the
   task is (Q85).
 
+## Delta 13 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| Q85 | **Only the admin BOM view** is deprecated: it is not rebuilt in Vue and goes with the Flutter admin (T7.11). The BOM backend stays; it is used throughout. | ✅ |
+| Q86 | Localization covers both apps; **Android first**. It sits next to Stockkeeping and Stock & finder in the order. | ✅ |
+| – | **Step 8 is brought forward.** Switching the worker on a device from the console needs device commands (T8.4 `logout`, `assign_user`), which in practice need step 8's device trust (T8.1). The worker-switch spec plans how much of step 8 comes first. Other tasks may drop in priority for it. | ✅ |
+| – | **Order of work:** (1) deleting entries from the worker list on the device, and the console theme toggle; (2) spec for the worker switch from the console (with step 8); (3) spec for tasks. Stockkeeping, Stock & finder and localization come close together; the maintainer prepares Stockkeeping and Stock & finder separately. | ✅ |
+| – | **Later, in this order:** barcode rules as configuration (after localization), then the Tokopedia / TikTok Shop integration (`MARKETPLACE_REVIEW.md`) and the UOM stock logic (Q82) at the same priority: the barcode system has to be modernised before either fits. | 📌 |
+
 ---
 
 ## Open questions and things to revisit
@@ -403,5 +413,5 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q44–Q50~~ | ~~Orders round 4: label case, courier fallback, picking states in Android, desktop layout, auto-sync, history search, housekeeping~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 2 (with F4: the ship-by cutoff is removed) | – | ✅ |
 | ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |
 | Q84 | Finder: who uses it, when, and what should it answer? | Proposal in [V2_UX.md](V2_UX.md) §3.1 (questions F1–F4 there). | before its brief | 📌 |
-| Q85 | BOM deprecation: only the admin BOM **view**, or the BOM **data** (bundles expanded into components for Picking)? | **The view first**: don't rebuild it in Vue, and drop it with the Flutter admin (T7.11). Removing the expansion changes Picking and the order payload, so it needs its own spec. | before T7.11 | ❓ |
-| Q86 | Localization (EN/ID): console only, or the Android app too? | **Both, console first.** The console has the most text, and Naive UI ships both locales. Operators would gain the most from Indonesian on the scanner. | before planning | ❓ |
+| ~~Q85~~ | ~~BOM deprecation scope~~ | The admin view only; the BOM backend stays (Delta 13) | – | ✅ |
+| ~~Q86~~ | ~~Localization scope~~ | Both apps, Android first (Delta 13) | – | ✅ |
