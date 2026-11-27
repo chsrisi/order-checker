@@ -1449,7 +1449,7 @@ same change as the task.
 | T8.4a | done | Logout, assign, cancel, signed `/v2/device/state`, `devices_update`, `reachable`, `last_assignment`. Redis only, no migration; v2 snapshot +1 operation, `client_v1.json` unchanged. **Additions:** the poll nonce carries the device's Unix time (±300 s; the device id never expires, so this stops a late replay); `last_assignment` (outcome kept 1 h) so the console can show "expired" after a reload. Race guard broken on purpose once (non-atomic take): the test failed |
 | T8.4b | todo | |
 | T8.6 | todo | planned 2026-11-27 (worker switch) |
-| T8.7 | todo | planned 2026-11-27 (worker switch) |
+| T8.7 | done | Login-screen poll (`DeviceStatePoller`), direct, preselect, logout reason, revoked, clock off. Checked on the API 30 emulator with real Redis and PostgreSQL (2026-11-27): switch while logged in, while logged out (preselect), in the background (no poll until it returns), closed then opened; revoke stops the poll. Found there and fixed: the home snackbar was cancelled by its own key change; "Session ended" stayed red next to a preselection |
 | T9.1 | todo | planned 2026-11-27 (tasks) |
 | T9.2 | todo | planned 2026-11-27 (tasks) |
 | T9.3 | todo | planned 2026-11-27 (tasks) |

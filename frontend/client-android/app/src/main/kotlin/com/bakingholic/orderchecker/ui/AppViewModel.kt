@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.bakingholic.orderchecker.AppGraph
 import com.bakingholic.orderchecker.auth.LoginRequestResult
 import com.bakingholic.orderchecker.auth.LoginWait
+import com.bakingholic.orderchecker.device.DeviceState
 import com.bakingholic.orderchecker.device.DeviceStatus
 import com.bakingholic.orderchecker.net.ApiException
 import com.bakingholic.orderchecker.net.AppEvent
@@ -18,6 +19,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -28,11 +32,36 @@ private const val DEVICE_REVOKED = "This device was revoked by the admin."
 sealed interface Screen {
     data object Starting : Screen
 
-    data class Login(val busy: Boolean = false, val error: String? = null, val waiting: LoginWait? = null) : Screen
+    data class Login(
+        val busy: Boolean = false,
+        val error: String? = null,
+        val waiting: LoginWait? = null,
+        /** A line under the error, not an error itself (the logout reason, W8). */
+        val notice: String? = null,
+        /** The admin chose this worker: open the password step for them (T8.7). */
+        val preselect: String? = null,
+    ) : Screen
 
     data object Home : Screen
 
     data class UpdateRequired(val minSupportedVersionCode: Int?) : Screen
+}
+
+/** The login screen polls for a worker switch only while idle and in the foreground (W5). */
+fun pollsDeviceState(screen: Screen, foreground: Boolean): Boolean =
+    foreground && screen is Screen.Login && !screen.busy && screen.waiting == null
+
+/** The login screen after a state poll that did not log in (T8.7). */
+fun loginAfter(login: Screen.Login, state: DeviceState): Screen.Login = when (state) {
+    is DeviceState.Preselect -> login.copy(
+        error = null, // "Session ended" is answered by the admin's choice
+        preselect = state.username,
+        notice = listOfNotNull(state.logoutReason, "The admin chose ${state.username}. Enter the password.").joinToString(" "),
+    )
+    is DeviceState.Idle -> login.copy(notice = state.logoutReason)
+    DeviceState.Revoked -> login.copy(error = DEVICE_REVOKED, notice = null)
+    DeviceState.ClockOff -> login.copy(notice = "The device clock is wrong: the admin can't switch workers on it.")
+    is DeviceState.LoggedIn -> login
 }
 
 class AppViewModel(val graph: AppGraph) : ViewModel() {
@@ -52,6 +81,11 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
         graph.scanPrefs.suffix.stateIn(viewModelScope, SharingStarted.Eagerly, ScanSuffix.ENTER)
     val knownWorkers: StateFlow<List<String>> =
         graph.knownWorkers.names.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val foreground = MutableStateFlow(false)
+    private val _homeNotice = MutableStateFlow<String?>(null)
+
+    /** Shown once on the home screen ("Logged in by the admin as …"). */
+    val homeNotice: StateFlow<String?> = _homeNotice
     private var registration: Job? = null
     private var loginRequest: Job? = null
     val ops = OpsController(graph.ops, viewModelScope)
@@ -89,12 +123,38 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
             _screen.value = if (graph.session.restore()) Screen.Home.also { enterHome() } else Screen.Login()
         }
         viewModelScope.launch {
+            combine(_screen, foreground, ::pollsDeviceState).distinctUntilChanged().collectLatest { polling ->
+                if (polling) graph.deviceState.run(::onDeviceState)
+            }
+        }
+        viewModelScope.launch {
             while (isActive) {
                 graph.api.probePrimaryIfDue()
                 _onFallback.value = graph.selector.onFallback()
                 delay(5_000)
             }
         }
+    }
+
+    fun setForeground(value: Boolean) {
+        foreground.value = value
+    }
+
+    fun homeNoticeShown() {
+        _homeNotice.value = null
+    }
+
+    /** One answer of the state poll; false stops polling until the login screen changes. */
+    private fun onDeviceState(state: DeviceState): Boolean {
+        val login = _screen.value as? Screen.Login ?: return false
+        if (state is DeviceState.LoggedIn) {
+            _homeNotice.value = "Logged in by the admin as ${state.username}."
+            enterHome()
+            _screen.value = Screen.Home
+            return false
+        }
+        _screen.value = loginAfter(login, state)
+        return state !is DeviceState.Revoked && state != DeviceState.ClockOff
     }
 
     fun login(username: String, password: String) {

@@ -345,6 +345,23 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 
 **Round 1: built (2026-11-25), not yet accepted.**
 
+**Worker switch from the console (T8.7, V2_WORKER_SWITCH_DELTA W1, W5, W8; built 2026-11-27).**
+- The login screen asks the server every 5 s whether the admin switched this scanner, only
+  while it is idle and the app is in the foreground. It stops in the background, during a
+  password login or a login request, and once logged in.
+- **Direct:** the scanner logs in by itself and goes home; a snackbar says "Logged in by the
+  admin as *eko*."
+- **Preselect:** that worker is selected and the password step opens (also for a worker who
+  never logged in on this scanner); the line under the form says "The admin chose *eko*. Enter
+  the password." The red "Session ended" line goes away.
+- **Why logged out:** under "Session ended. Please log in again." a plain line says "Logged out
+  by the admin." or "Switched by the admin to *eko*.", from the first poll after the logout.
+- **Revoked:** red "This device was revoked by the admin.", and the poll stops. **Clock more
+  than 5 minutes off:** a line says the admin can't switch workers on this scanner.
+- Checked on the API 30 emulator against a local backend: switch while logged in, admin logout
+  then preselect while logged out, switch while in the background, switch while the app was
+  closed then opened, revoke.
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock

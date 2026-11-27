@@ -119,7 +119,15 @@ public key, model, Android version and versionCode, signing the access token's `
 devices are `pending` in `GET /admin/devices`; the console approves or revokes them (T8.1).
 When the server answers 403 "Device revoked" (it also ends the session), the app stops retrying,
 logs out locally and shows "This device was revoked by the admin." on the login screen. Revoked
-is final: a recovered scanner is reinstalled. Registration retries with backoff when offline (it is idempotent on the server), and the
+is final: a recovered scanner is reinstalled.
+
+The login screen polls `POST /v2/device/state` every 5 s while it is idle and the app is in the
+foreground (`DeviceStatePoller`, T8.7), signed with the device key over
+`oc-device:state:<device_id>:<nonce>`; the nonce starts with the device's Unix time, so the
+device clock must be within 5 minutes of the server's. A direct switch by the admin stores the
+handed-over session and goes home; a preselection opens that worker's password step; the reason
+for an admin logout shows under "Session ended". Tokens that arrive after the poll was
+cancelled are given back. Registration retries with backoff when offline (it is idempotent on the server), and the
 hidden settings show the device id and status. Uninstalling the app (or clearing its data)
 deletes the key: the device then registers as a new `pending` device.
 
