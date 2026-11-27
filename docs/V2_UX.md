@@ -352,8 +352,8 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 
 ### 3.1 Finder: proposal for later (V2_DELTA Delta 12, Q84)
 
-**Status: not now.** v1's Finder is unfinished, and how operators should use it is still
-unclear. This is a starting point for its brief, to be weighed later.
+**Status (2026-11-27):** round 1 planned as T6.15d (V2_STOCK_SPEC §3.2, V2_STOCK_DELTA). This
+proposal is the starting point for its brief.
 
 **What it does today** (`GET /items/find`, `queries/warehouse.py find_warehouse_items`): an exact
 SKU or supplier-barcode hit returns that item; otherwise a substring search over SKU and name,

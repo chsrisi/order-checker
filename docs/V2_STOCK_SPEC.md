@@ -6,10 +6,11 @@ Review and spec (planning flow step 1), 2026-11-27, checked against `4afbbd6` (`
 1. the Android **Stockkeeping** rebuild (T6.15e);
 2. **Finder** on the scanner and the console's **Stock & finder** page (T7.3–T7.9 placeholder;
    the proposal in V2_UX §3.1, Q84);
-3. the **warehouse floor map** POC from Claude chat (`docs/warehouse-map-spec.md` with
-   `Layout.xlsx`, `layout_to_json.py`, `warehouse-layout.json`), reviewed in §4.
+3. the **warehouse floor map** POC from Claude chat (now `docs/WAREHOUSE_MAP_SPEC.md`,
+   with `Layout.xlsx`, `layout_to_json.py`, `warehouse-layout.json` in `tools/warehouse-layout/`), reviewed in §4.
 
 The UX of each screen is then iterated through V2_UX briefs and your acceptance (Q28).
+Decisions: [V2_STOCK_DELTA.md](V2_STOCK_DELTA.md) (Round 1), which wins over this file.
 
 ## 1. How the three fit together
 
