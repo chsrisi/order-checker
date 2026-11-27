@@ -120,7 +120,6 @@ private fun Spacer8() = Box(Modifier.padding(top = 4.dp))
 private fun TaskRow(task: TaskResponse, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("task_${task.id}")) {
         Column(Modifier.padding(12.dp)) {
-            Text(if (task.type == TaskResponse.Type.COUNT) "Count" else "Pick", style = MaterialTheme.typography.labelMedium)
             Text(describeTask(task), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
             task.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             when {
@@ -157,7 +156,9 @@ private fun TaskHeader(task: TaskResponse, ops: OpsController, onClose: () -> Un
     var reporting by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(describeTask(task), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            // The pick screen shows its progress in the lines card, so the header names the task only.
+            val title = if (task.type == TaskResponse.Type.PICK) listOfNotNull("Pick", task.reference).joinToString(" · ") else describeTask(task)
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             task.note?.let { Text("Note: $it", style = MaterialTheme.typography.bodySmall) }
         }
         Box {
