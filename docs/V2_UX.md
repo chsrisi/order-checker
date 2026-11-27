@@ -466,7 +466,7 @@ Mobile card                          Switch worker… (MT67-1)
 
 **Brief and all five recommendations accepted (maintainer, 2026-11-27).**
 
-**Round 1: built (2026-11-27), not yet accepted.** As the brief, plus:
+**Round 1: built and accepted (2026-11-27).** As the brief, plus:
 - An expired or dropped switch stays on the card for 10 minutes (a collected one for 1 minute),
   with **Try again** in place of the button after an expiry.
 - Another admin's waiting switch names them ("⟳ ana is switching to rudi…"), so a replaced
