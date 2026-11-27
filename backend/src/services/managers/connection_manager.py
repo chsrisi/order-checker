@@ -166,6 +166,10 @@ class ConnectionManager:
                         item_name=item_name,
                     )
                 )
+        elif message_type == WSMessageType.TASKS:
+            from .. import task_service
+
+            data = task_service.admin_tasks() if is_admin else task_service.worker_tasks(username)
         elif message_type == WSMessageType.STOCKS:
             stocks = queries.get_stocks_data(join_warehouse=True)
             data = [StockResponse.model_validate(dict(s._mapping)) for s in stocks]
@@ -216,9 +220,14 @@ class ConnectionManager:
         logger.debug(f"Sending {message_type.value} to {username} session")
         await self._send_raw(message_type, data, websocket, username)
 
-    async def send_to_user(self, message_type: WSMessageType, username: str):
-        if username in self.active_connections:
-            connections = list(self.active_connections.get(username, []))
+    async def send_to_user(self, message_type: WSMessageType, username: str, min_contract: int = 1):
+        """``min_contract=2``: only the user's v2 sockets (``tasks_update``, never v1)."""
+        connections = [
+            ws
+            for ws in self.active_connections.get(username, [])
+            if self.socket_contracts.get(ws, 1) >= min_contract
+        ]
+        if connections:
             scope = self.user_scopes.get(connections[0]) if connections else None
             data = await asyncio.to_thread(self._get_data, message_type, username, scope)
             logger.debug(

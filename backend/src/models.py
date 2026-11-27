@@ -51,6 +51,7 @@ class WSMessageType(str, PyEnum):
     STOCKS = "stocks_update"
     LOGIN_REQUESTS = "login_requests_update"
     DEVICES = "devices_update"  # admins only (T8.4a)
+    TASKS = "tasks_update"  # v2 operator sockets and admins only, never v1 operators (T9.2)
     ERROR = "error"
 
 
@@ -371,8 +372,19 @@ class OutboundTag(Base):
 
 
 class PickItemEntry(Base):
+    """A picked quantity of one SKU. ``order_sn`` set: an order pick. ``task_line_id`` set: a
+    task pick (V2_TASKS_DELTA T2), never shown as unassigned and never in a v1 or order payload.
+    Neither: a v1 unassigned pick. Only a task pick can lose its owner (a deleted worker, P-32):
+    the task owns its picks (T12)."""
+
     __tablename__ = "pick_item_entries"
-    __table_args__ = {"schema": "orders"}
+    __table_args__ = (
+        CheckConstraint(
+            "owner_user IS NOT NULL OR task_line_id IS NOT NULL",
+            name="ck_pick_item_entries_owner",
+        ),
+        {"schema": "orders"},
+    )
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     sku: Mapped[str] = mapped_column(String, index=True)
     qty: Mapped[int] = mapped_column(Integer)
@@ -380,9 +392,15 @@ class PickItemEntry(Base):
         ForeignKey("shopee.orders.order_sn"), nullable=True
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
+    # NULL only on a task pick whose worker was deleted (ck_pick_item_entries_owner).
+    owner_user: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.users.username"), nullable=True
+    )
+    task_line_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("orders.task_lines.id"), nullable=True, index=True
+    )
 
-    owner: Mapped["User"] = relationship("User", back_populates="pies")
+    owner: Mapped[Optional["User"]] = relationship("User", back_populates="pies")
     order: Mapped[Optional["ShopeeOrder"]] = relationship("ShopeeOrder", back_populates="pies")
     allocations: Mapped[List["PickStockAllocation"]] = relationship(
         "PickStockAllocation",
@@ -410,6 +428,77 @@ class PickStockAllocation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     entry: Mapped["PickItemEntry"] = relationship("PickItemEntry", back_populates="allocations")
+
+
+TASK_TYPES = ("count", "pick")
+TASK_STATUSES = ("open", "blocked", "done", "cancelled")
+TASK_LINE_KINDS = ("count", "entered", "leaf")
+
+
+class Task(Base):
+    """Work an admin hands to a worker (V2_TASKS_SPEC, IMPLEMENTATION_PLAN T9.1). It completes
+    implicitly: a count on its count, a pick task when every leaf is picked exactly.
+
+    ``assigned_to`` is set to NULL when the worker is deleted (P-32), so an open task shows as
+    unassigned; ``assigned_name`` keeps the name as text for history. ``in progress`` is
+    derived from the picks, never stored (P-31)."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("type IN ('count', 'pick')", name="ck_tasks_type"),
+        CheckConstraint(
+            "status IN ('open', 'blocked', 'done', 'cancelled')", name="ck_tasks_status"
+        ),
+        {"schema": "orders"},
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="open", index=True)
+    assigned_to: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.users.username", ondelete="SET NULL"), nullable=True, index=True
+    )
+    assigned_name: Mapped[Optional[str]] = mapped_column(String)
+    created_by: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    note: Mapped[Optional[str]] = mapped_column(String)
+    reference: Mapped[Optional[str]] = mapped_column(String)
+    blocked_reason: Mapped[Optional[str]] = mapped_column(String)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[Optional[str]] = mapped_column(String)
+
+    lines: Mapped[List["TaskLine"]] = relationship(
+        "TaskLine",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskLine.id",
+        lazy="selectin",
+    )
+
+
+class TaskLine(Base):
+    """One line of a task. ``count``: the SKU to count, and its bin in ``multi`` mode (P-29).
+    ``entered``: a pick line as the admin typed it (a bundle stays a bundle), for display.
+    ``leaf``: a SKU to pick after BOM expansion, one per SKU and task, snapshotted at creation
+    (P-28); task picks link to these."""
+
+    __tablename__ = "task_lines"
+    __table_args__ = (
+        CheckConstraint("kind IN ('count', 'entered', 'leaf')", name="ck_task_lines_kind"),
+        {"schema": "orders"},
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.tasks.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String)
+    sku: Mapped[str] = mapped_column(String)
+    qty: Mapped[Optional[int]] = mapped_column(Integer)  # NULL on a count line
+    location: Mapped[Optional[str]] = mapped_column(String)
+    counted_qty: Mapped[Optional[int]] = mapped_column(Integer)
+
+    task: Mapped["Task"] = relationship("Task", back_populates="lines")
 
 
 # warehouse
@@ -976,6 +1065,153 @@ class PickItemEntryUnassign(BaseModel):
     order_sn: str = Field(min_length=1, max_length=ORDER_SN_MAX_LENGTH)
     sku: str = Field(min_length=1, max_length=SCAN_MAX_LENGTH)
     qty: int = Field(gt=0)
+
+
+# Tasks (IMPLEMENTATION_PLAN T9.2) ----
+TASK_NOTE_MAX_LENGTH = 500
+TASK_REFERENCE_MAX_LENGTH = 200
+TASK_REASON_MAX_LENGTH = 200
+TASK_LINES_MAX_ITEMS = 200
+SKU_MAX_LENGTH = 200
+
+Username = Annotated[str, Field(min_length=1, max_length=64)]
+TaskType = Literal["count", "pick"]
+TaskStatus = Literal["open", "blocked", "done", "cancelled"]
+
+
+class TaskCountCreate(BaseModel):
+    sku: str = Field(min_length=1, max_length=SKU_MAX_LENGTH, description="Internal SKU.")
+    assigned_to: Username
+    location: Optional[str] = Field(
+        default=None,
+        max_length=LOCATION_MAX_LENGTH,
+        description="The bin to count: required in `multi` mode, refused in `single` mode.",
+    )
+    note: Optional[str] = Field(default=None, max_length=TASK_NOTE_MAX_LENGTH)
+
+
+class TaskPickLine(BaseModel):
+    sku: str = Field(
+        min_length=1, max_length=SKU_MAX_LENGTH, description="Internal SKU; a bundle expands."
+    )
+    qty: int = Field(gt=0)
+
+
+class TaskPickCreate(BaseModel):
+    lines: List[TaskPickLine] = Field(min_length=1, max_length=TASK_LINES_MAX_ITEMS)
+    assigned_to: Username
+    reference: Optional[str] = Field(default=None, max_length=TASK_REFERENCE_MAX_LENGTH)
+    note: Optional[str] = Field(default=None, max_length=TASK_NOTE_MAX_LENGTH)
+
+
+class TaskCancelRequest(BaseModel):
+    return_stock: bool = Field(
+        default=True,
+        description="Return picked stock (default), or keep it deducted when the goods left.",
+    )
+
+
+class TaskReassignRequest(BaseModel):
+    assigned_to: Username
+
+
+class TaskBlockRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=TASK_REASON_MAX_LENGTH)
+
+
+class TaskCountRequest(BaseModel):
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Scanned SKU or barcode."
+    )
+    qty: int = Field(ge=0, description="The quantity counted.")
+    location: Optional[str] = Field(
+        default=None,
+        max_length=LOCATION_MAX_LENGTH,
+        description="The scanned location: required in `multi` mode, a check in `single` mode.",
+    )
+
+
+class TaskLineResponse(BaseModel):
+    id: int
+    kind: Literal["count", "entered", "leaf"]
+    sku: str
+    item_name: Optional[str] = None
+    qty: Optional[int] = Field(default=None, description="Required quantity; none on a count.")
+    location: Optional[str] = Field(default=None, description="A count's bin (`multi` mode).")
+    picked: Optional[int] = Field(default=None, description="Picked so far (leaf lines).")
+    counted_qty: Optional[int] = Field(default=None, description="The count, once done.")
+
+
+class TaskResponse(BaseModel):
+    """A task. Never carries the recorded stock: counts are blind (T6)."""
+
+    id: int
+    type: TaskType
+    status: TaskStatus
+    in_progress: bool = Field(description="Something is picked (derived, never stored).")
+    assigned_to: Optional[str] = Field(description="NULL once the worker was deleted.")
+    assigned_name: Optional[str] = None
+    created_by: str
+    created_at: UTCDateTime
+    note: Optional[str] = None
+    reference: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    closed_at: Optional[UTCDateTime] = None
+    closed_by: Optional[str] = None
+    current_location: Optional[str] = Field(
+        default=None, description="Count tasks: where the item is now (its bins)."
+    )
+    lines: List[TaskLineResponse]
+
+
+class TaskStockLogResponse(BaseModel):
+    id: int
+    timestamp: UTCDateTime
+    sku: Optional[str] = None
+    location: Optional[str] = None
+    delta: Optional[int] = None
+    before: Optional[int] = None
+    after: Optional[int] = None
+    reason: Optional[str] = None
+    actor: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminTaskDetailResponse(TaskResponse):
+    stock_log: List[TaskStockLogResponse]
+    recorded_before: Optional[int] = Field(
+        default=None, description="A done count: the recorded quantity it replaced."
+    )
+    difference: Optional[int] = Field(
+        default=None, description="A done count: counted minus recorded (negative: missing)."
+    )
+
+
+class TaskPickResponse(BaseModel):
+    task_id: int
+    sku: str = Field(description="The resolved warehouse SKU.")
+    qty: int = Field(ge=0, description="What the task now has of this SKU.")
+    required: int
+    item_name: Optional[str] = None
+    status: TaskStatus = Field(description="`done` once every line is picked exactly.")
+
+
+class OrderTaskResponse(BaseModel):
+    """A claimed order that is not *Picked* yet, shown as a task (derived, V2_TASKS_DELTA R1.3)."""
+
+    order_sn: str
+    owner_user: str
+    ship_by: UTCDateTime
+    status: str
+    state: Literal["not_started", "partial", "extra"]
+    done_skus: int
+    required_skus: int
+
+
+class V2TaskListResponse(BaseModel):
+    tasks: List[TaskResponse] = Field(description="Open and blocked tasks, oldest first.")
+    order_tasks: List[OrderTaskResponse] = Field(description="Claimed orders not yet picked.")
 
 
 class MessageResponse(BaseModel):

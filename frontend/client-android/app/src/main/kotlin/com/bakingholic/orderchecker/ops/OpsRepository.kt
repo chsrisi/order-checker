@@ -6,6 +6,11 @@ import com.bakingholic.orderchecker.api.model.OrderPickRequest
 import com.bakingholic.orderchecker.api.model.OrderPickResponse
 import com.bakingholic.orderchecker.api.model.ShopeeOrderResponse
 import com.bakingholic.orderchecker.api.model.StockCreate
+import com.bakingholic.orderchecker.api.model.TaskBlockRequest
+import com.bakingholic.orderchecker.api.model.TaskCountRequest
+import com.bakingholic.orderchecker.api.model.TaskPickResponse
+import com.bakingholic.orderchecker.api.model.TaskResponse
+import com.bakingholic.orderchecker.api.model.V2TaskListResponse
 import com.bakingholic.orderchecker.api.model.StockUpdateResponse
 import com.bakingholic.orderchecker.api.model.WarehouseItemResponse
 import com.bakingholic.orderchecker.auth.SessionManager
@@ -75,13 +80,22 @@ class OpsRepository(
     private val _stocks = MutableStateFlow<List<StockRow>>(emptyList())
     val stocks: StateFlow<List<StockRow>> = _stocks
 
+    /** The worker's open and blocked tasks (T9.4): `GET /v2/tasks` on connect, then `tasks_update`. */
+    private val _tasks = MutableStateFlow<List<TaskResponse>>(emptyList())
+    val tasks: StateFlow<List<TaskResponse>> = _tasks
+
     /** False between logout and the next order snapshot: an empty list then means nothing. */
     private val _ordersLoaded = MutableStateFlow(false)
     val ordersLoaded: StateFlow<Boolean> = _ordersLoaded
 
     init {
         scope.launch {
-            ws.state.collect { if (it == WsClient.State.CONNECTED) requestSnapshots() }
+            ws.state.collect {
+                if (it == WsClient.State.CONNECTED) {
+                    requestSnapshots()
+                    refreshTasks() // no WS command for tasks: the command loop is shared with v1
+                }
+            }
         }
         scope.launch {
             ws.frames.collect { frame -> if (frame is WsFrame.Event) apply(frame.type, frame.data) }
@@ -109,6 +123,7 @@ class OpsRepository(
             WsEventType.OUTBOUNDS -> _outbounds.value = decode(OutboundResponse.serializer(), data)
                 .sortedByDescending { it.createdAt }
             WsEventType.STOCKS -> _stocks.value = decode(StockRow.serializer(), data)
+            WsEventType.TASKS -> _tasks.value = decode(TaskResponse.serializer(), data)
             WsEventType.USERS -> Unit
         }
     }
@@ -119,6 +134,7 @@ class OpsRepository(
         _picks.value = emptyList()
         _outbounds.value = emptyList()
         _stocks.value = emptyList()
+        _tasks.value = emptyList()
     }
 
     private fun detail(response: ApiResponse): String = runCatching {
@@ -154,6 +170,37 @@ class OpsRepository(
             jsonBody = body(OrderPickRequest(qty = qty, sku = sku), OrderPickRequest.serializer()),
         ),
     ) { json.decodeFromString(OrderPickResponse.serializer(), it) }
+
+    /** Reloads the task list (on connect; a `tasks_update` frame follows every change anyway). */
+    suspend fun refreshTasks(): ActionResult<V2TaskListResponse> {
+        val result = call(ApiRequest("GET", "/v2/tasks")) { json.decodeFromString(V2TaskListResponse.serializer(), it) }
+        if (result is ActionResult.Ok) _tasks.value = result.value.tasks
+        return result
+    }
+
+    suspend fun countTask(taskId: Int, sku: String, qty: Int, location: String?) = call(
+        ApiRequest(
+            "POST",
+            "/v2/tasks/$taskId/count",
+            jsonBody = body(TaskCountRequest(qty = qty, sku = sku, location = location), TaskCountRequest.serializer()),
+        ),
+    ) { json.decodeFromString(TaskResponse.serializer(), it) }
+
+    suspend fun pickTask(taskId: Int, sku: String, qty: Int) = taskPicks(taskId, "", sku, qty)
+
+    suspend fun unassignTask(taskId: Int, sku: String, qty: Int) = taskPicks(taskId, "/unassign", sku, qty)
+
+    private suspend fun taskPicks(taskId: Int, suffix: String, sku: String, qty: Int) = call(
+        ApiRequest(
+            "POST",
+            "/v2/tasks/$taskId/picks$suffix",
+            jsonBody = body(OrderPickRequest(qty = qty, sku = sku), OrderPickRequest.serializer()),
+        ),
+    ) { json.decodeFromString(TaskPickResponse.serializer(), it) }
+
+    suspend fun blockTask(taskId: Int, reason: String) = call(
+        ApiRequest("POST", "/v2/tasks/$taskId/block", jsonBody = body(TaskBlockRequest(reason = reason), TaskBlockRequest.serializer())),
+    ) { json.decodeFromString(TaskResponse.serializer(), it) }
 
     suspend fun outbound(content: String) = call(
         ApiRequest("POST", "/v2/outbound", jsonBody = body(OutboundCreate(content = content), OutboundCreate.serializer())),

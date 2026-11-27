@@ -373,10 +373,11 @@ ref_type, ref_id`. Rows from before v0.5 have only `message`. Reasons:
 
 | Reason | Written by |
 |---|---|
-| `adjust_set`, `adjust_add` | `POST /stocks/update` without `move_to` |
+| `adjust_set`, `adjust_add` | `POST /stocks/update` without `move_to`; a task count (`adjust_set`, `ref_type=task`) |
 | `transfer_out`, `transfer_in` | `POST /stocks/update` with `move_to` |
-| `pick`, `pick_shortfall` | a pick, v1 or v2 (`ref_type=pick_entry`) |
-| `pick_restore` | v2 unassign, `DELETE /pick-items/{id}`, worker deletion, `scripts.release_unassigned_picks` (actor = the deleting user, admin included) |
+| `pick`, `pick_shortfall` | a pick, v1 or v2 (`ref_type=pick_entry`); a task pick (`ref_type=task`, `ref_id` = the task) |
+| `pick_restore` | v2 unassign, `DELETE /pick-items/{id}`, worker deletion, `scripts.release_unassigned_picks` (actor = the deleting user, admin included); task unassign and cancel with return (`ref_type=task`) |
+| `task_cancel_keep` | a task cancelled **keeping** its picked stock deducted: one row per picked SKU, `delta = 0` (`ref_type=task`) |
 | `mode_merge` | `single` mode merging bins, or `scripts.stock_merge_single` |
 | `cutover_clear` | `scripts.clear_open_pick_entries` (one row; `ref_id` = entries deleted) |
 | `migration_merge` | the T4.3 migration folding duplicate `(sku, location)` rows |

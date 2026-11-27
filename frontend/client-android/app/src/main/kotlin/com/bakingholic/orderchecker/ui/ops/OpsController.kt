@@ -8,6 +8,8 @@ import com.bakingholic.orderchecker.ops.ORDER_SN_PATTERN
 import com.bakingholic.orderchecker.ops.OpsRepository
 import com.bakingholic.orderchecker.ops.StockItem
 import com.bakingholic.orderchecker.ops.StockPlan
+import com.bakingholic.orderchecker.api.model.TaskPickResponse
+import com.bakingholic.orderchecker.ops.taskPickWarning
 import com.bakingholic.orderchecker.ops.displayCode
 import com.bakingholic.orderchecker.ops.pickWarning
 import kotlinx.coroutines.CoroutineScope
@@ -235,6 +237,63 @@ class OpsController(
     /** Sends a confirmed Stockkeeping change; the screen shows the outcome inline (V2_UX §2.10). */
     fun applyStock(plan: StockPlan, onResult: (ActionResult<StockUpdateResponse>) -> Unit) = launchSaving {
         onResult(repo.updateStock(plan.sku, plan.qty, plan.mode, plan.location, plan.moveTo))
+    }
+
+    // ------------------------------------------------------------------ tasks (T9.4)
+
+    /** A count task's confirmed count (the guided Count in task mode): error text or null. */
+    fun countTask(taskId: Int, plan: StockPlan, onResult: (error: String?) -> Unit) = launchSaving {
+        when (val r = repo.countTask(taskId, plan.sku, plan.qty, plan.location)) {
+            is ActionResult.Ok -> {
+                say("Count saved. Task done.")
+                onResult(null)
+            }
+            is ActionResult.Failed -> {
+                if (r.code == 404 || r.code == 409) repo.refreshTasks() // reassigned or cancelled meanwhile
+                onResult(if (r.code == 409 || r.code == 404) r.detail else failureText(r, "Failed to save the count."))
+            }
+        }
+    }
+
+    /** Picks into a pick task; warns on an over-pick, never blocks (as for orders). */
+    fun pickTask(taskId: Int, sku: String, qty: Int, onDone: (TaskPickResponse) -> Unit = {}) = launchSaving {
+        when (val r = repo.pickTask(taskId, sku, qty)) {
+            is ActionResult.Ok -> {
+                val task = repo.tasks.value.firstOrNull { it.id == taskId }
+                val warning = task?.let { taskPickWarning(it, r.value.sku, r.value.qty) }
+                when {
+                    r.value.status == TaskPickResponse.Status.DONE -> say("Task done.")
+                    warning != null -> say(warning, alert = true)
+                    else -> say("Scan entry posted.")
+                }
+                onDone(r.value)
+            }
+            is ActionResult.Failed -> taskFailed(r, "Failed to post scan entry.")
+        }
+    }
+
+    fun unassignTask(taskId: Int, sku: String, qty: Int) = launchSaving {
+        when (val r = repo.unassignTask(taskId, sku, qty)) {
+            is ActionResult.Ok -> say(if (r.value.status == TaskPickResponse.Status.DONE) "Returned $qty × $sku to stock. Task done." else "Returned $qty × $sku to stock.")
+            is ActionResult.Failed -> taskFailed(r, "Failed to unassign.")
+        }
+    }
+
+    /** Can't finish (T7): the task waits for the admin. */
+    fun blockTask(taskId: Int, reason: String, onDone: () -> Unit) = launchSaving {
+        when (val r = repo.blockTask(taskId, reason)) {
+            is ActionResult.Ok -> {
+                say("Sent to the admin: $reason")
+                onDone()
+            }
+            is ActionResult.Failed -> taskFailed(r, "Failed to report the problem.")
+        }
+    }
+
+    /** 404/409: the task changed elsewhere (reassigned, cancelled, done), so reload the list. */
+    private suspend fun taskFailed(result: ActionResult.Failed, fallback: String) {
+        if (result.code == 404) say(result.detail, isError = true, alert = true) else failed(result, fallback)
+        if (result.code == 404 || result.code == 409) repo.refreshTasks()
     }
 
     fun find(query: String) = launchSaving {

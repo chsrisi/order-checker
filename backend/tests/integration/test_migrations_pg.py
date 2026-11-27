@@ -94,3 +94,58 @@ def test_timestamptz_migration_keeps_every_instant(pg_url):
         reset_schemas(zoned)
         command.upgrade(alembic_config(pg_url), "head")
         zoned.dispose()
+
+
+def test_tasks_downgrade_drops_task_picks_and_keeps_order_picks(pg_url):
+    """T9.1: below the tasks revision no task pick may survive as a v1 unassigned pick."""
+    from alembic import command
+    from sqlalchemy import text
+
+    engine = create_engine(pg_url)
+    try:
+        reset_schemas(engine)
+        cfg = alembic_config(pg_url)
+        command.upgrade(cfg, "head")
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO auth.users VALUES ('eko', 'x', 'client')"))
+            task_id = conn.execute(
+                text(
+                    "INSERT INTO orders.tasks (type, status, created_by, created_at)"
+                    " VALUES ('pick', 'open', 'boss', now()) RETURNING id"
+                )
+            ).scalar_one()
+            line_id = conn.execute(
+                text(
+                    "INSERT INTO orders.task_lines (task_id, kind, sku, qty)"
+                    " VALUES (:t, 'leaf', 'A01_001', 2) RETURNING id"
+                ),
+                {"t": task_id},
+            ).scalar_one()
+            for owner, line in (("eko", None), (None, line_id)):
+                entry = conn.execute(
+                    text(
+                        "INSERT INTO orders.pick_item_entries"
+                        " (sku, qty, timestamp, owner_user, task_line_id)"
+                        " VALUES ('A01_001', 2, now(), :o, :l) RETURNING id"
+                    ),
+                    {"o": owner, "l": line},
+                ).scalar_one()
+                conn.execute(
+                    text(
+                        "INSERT INTO orders.pick_stock_allocations"
+                        " (pick_entry_id, sku, location, qty, created_at)"
+                        " VALUES (:e, 'A01_001', 'A1', 2, now())"
+                    ),
+                    {"e": entry},
+                )
+        command.downgrade(cfg, "f6c9a4b2d3e5")
+        with engine.connect() as conn:
+            owners = conn.execute(text("SELECT owner_user FROM orders.pick_item_entries")).all()
+            allocations = conn.execute(
+                text("SELECT count(*) FROM orders.pick_stock_allocations")
+            ).scalar_one()
+        assert owners == [("eko",)] and allocations == 1
+    finally:
+        reset_schemas(engine)
+        command.upgrade(alembic_config(pg_url), "head")
+        engine.dispose()

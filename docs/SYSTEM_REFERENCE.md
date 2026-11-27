@@ -2,7 +2,7 @@
 
 State as of **2026-11-22**, branch `feat/v2-step6` (on top of `v0.5.0`): backend `0.6.0`
 (`backend/pyproject.toml`), operator client contracts **v1** (root, frozen) and **v2** (`/v2`,
-§10A), Alembic head `e5b8f3a1c2d4`.
+§10A), Alembic head `a7d1c3e5f2b4` (tasks, T9.1, 2026-11-27).
 
 This file describes what the code does now, precisely enough to reason about behaviour
 without reading the source. It complements the other guides and does not repeat them:
@@ -34,7 +34,7 @@ and the implementation plan.
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
 | **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. There is no ship-by cutoff (V2_ORDERS_DELTA F4): a late order stays active until the sync sees it leave those statuses. |
 | **Claim / acquire** | Setting `shopee.orders.owner_user` to an operator. Atomic; see §7.2. |
-| **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick. |
+| **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick, unless `task_line_id` is set: then it is a **task pick** (§7.10), which no order or unassigned path ever sees. |
 | **Allocation** | Row in `orders.pick_stock_allocations`: which bin a pick's deducted stock came from. Sum of allocations ≤ entry qty; the difference is a *shortfall*. |
 | **Bin / location** | `warehouse.stocks.location` (free text, may be `NULL` = "unlocated"). At most one row per `(sku, coalesce(location, ''))`. |
 | **Outbound scan** | Row in `orders.outbound_items`: a scanned shipping label (`content`), with tags. *Open* until closed by period closure. |
@@ -185,7 +185,19 @@ Exposed as `OutboundItem.tags: list[str]` (association proxy, eager-joined).
 
 **`orders.pick_item_entries`**: `id` PK; `sku` (indexed; always a resolved warehouse SKU);
 `qty`; `order_sn` FK → shopee.orders, nullable; `timestamp` (bumped on every change);
-`owner_user` FK.
+`owner_user` FK, nullable since T9.1 for task picks only (CHECK `ck_pick_item_entries_owner`:
+`owner_user IS NOT NULL OR task_line_id IS NOT NULL`); `task_line_id` FK → task_lines, nullable
+(indexed): set on a task pick.
+
+**`orders.tasks`** (T9.1): `id` PK; `type` `count` | `pick`; `status` `open` | `blocked` |
+`done` | `cancelled` (CHECKs; indexed); `assigned_to` FK → auth.users `ON DELETE SET NULL`
+(indexed); `assigned_name` (the worker's name as text, kept after deletion); `created_by`,
+`created_at`; `note`; `reference` (pick tasks); `blocked_reason`; `closed_at`, `closed_by`.
+
+**`orders.task_lines`**: `id` PK; `task_id` FK → tasks `ON DELETE CASCADE` (indexed); `kind`
+`count` | `entered` | `leaf`; `sku`; `qty` (NULL on a count); `location` (a count's bin, `multi`
+mode only); `counted_qty` (a done count). A pick task has its lines as entered plus one `leaf`
+per SKU after BOM expansion, stored at creation.
 
 **`orders.pick_stock_allocations`**: `id` PK; `pick_entry_id` FK → pick_item_entries
 `ON DELETE CASCADE` (indexed); `sku`; `location` nullable; `qty`; `created_at`.
@@ -203,7 +215,9 @@ reaching 0 is deleted.
 structured since T4.3: `sku` (indexed), `location`, `delta`, `before`, `after`, `reason`,
 `actor`, `ref_type`, `ref_id`. Reasons: `adjust_set`, `adjust_add`, `transfer_out`,
 `transfer_in`, `pick`, `pick_shortfall`, `pick_restore`, `mode_merge`, `cutover_clear`,
-`migration_merge` (meanings: OPERATIONS "Stock audit log").
+`migration_merge`, `task_cancel_keep` (meanings: OPERATIONS "Stock audit log"). `ref_type`:
+`pick_entry` (order and v1 picks), `task` (every stock change a task causes), `transfer`,
+`pick_entries` (cutover).
 
 **`warehouse.bom_headers`**: `id` PK; `sku` FK → items, unique; `quantity_standard`,
 `factor_f5` (not used by expansion).
@@ -240,6 +254,8 @@ BOM, item and ERP tables are populated outside this application (no API writes t
 | `c3f8a2d5e6b1` | drops the never-used `orders.pick_item_entries_log` (downgrade recreates it empty) |
 | `d4a7e2c9b1f0` | `auth.sessions`, `refresh_tokens.session_id`; deletes pre-session refresh tokens (one relogin) |
 | `e5b8f3a1c2d4` | `auth.devices`, `sessions.device_id` (additive) |
+| `f6c9a4b2d3e5` | app-written timestamps become `timestamptz` (values kept as UTC) |
+| `a7d1c3e5f2b4` | `orders.tasks`, `orders.task_lines`, `pick_item_entries.task_line_id`; `owner_user` nullable for task picks only (CHECK). Downgrade deletes task picks without returning stock |
 
 Integration tests build the schema from empty with `alembic upgrade head`, check the full
 down/up round trip and assert no autogenerate drift. CI's migration gate upgrades from the
@@ -398,6 +414,8 @@ cache.
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
 | `/v2` order picks and unassign | own orders | no (403) |
+| `/v2/tasks`: list, count, pick, unassign, can't finish | own (assigned) tasks; others' are 404 | no (403) |
+| `/admin/tasks`, `/admin/order-tasks`: create, list, detail, cancel, reassign, close | – | yes |
 | Outbound scans: list (open) | own | all open |
 | Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
@@ -524,6 +542,8 @@ name contains the query (`ILIKE`, with `\ % _` escaped).
 
 Lock order everywhere: order (v2 picks and worker deletion) → pick entry → allocations → stock
 rows. v1 operations do not lock the order. The table covers the v1 operations; v2 is below it.
+Every query in this module filters out task picks (`task_line_id IS NULL`, `NOT_TASK`): they are
+never listed, assigned, deleted, released or cleared here (§7.10).
 
 | Operation | Rules | Stock effect | Errors |
 |---|---|---|---|
@@ -615,7 +635,9 @@ admins get `outbound_update`. `/admin/history/outbound` lists closed scans; expo
 - `DELETE /admin/users?username=` (client accounts only, else 404), in one transaction:
   delete the user's pick entries exactly like `DELETE /pick-items/{id}` (allocated stock
   restored, `pick_restore` rows with the deleting admin as actor), its outbound scans and
-  refresh tokens; unassign its orders; delete the user. Then its sockets are closed and
+  refresh tokens; unassign its orders; delete the user. Its **tasks stay** (P-32):
+  `assigned_to` becomes NULL (`assigned_name` keeps the name), and its task picks stay with
+  their task, stock untouched, with `owner_user = NULL`. Then its sockets are closed and
   `pick_item_entries`, `outbound_items` and `shopee_orders` go to admins, `stocks_update`
   to everyone.
 - All three broadcast `users_update` (`[{username, scope}]`) to admins.
@@ -629,6 +651,30 @@ order is past retention when `done_at < cutoff`, or `done = false AND ship_by < 
 purge deletes its recipient row and clears `note` on its packages; order numbers, items and
 tracking numbers stay. Sync never writes buyer data back for such orders. Only counts are
 logged.
+
+### 7.10 Tasks (`queries/tasks.py`, T9.1; V2_TASKS_SPEC, V2_TASKS_DELTA)
+
+An admin assigns a task to a worker (a client account); it completes implicitly. Lock order:
+task → its pick entries → allocations → stock rows. Every stock change a task causes is logged
+with `ref_type = task`, `ref_id` = its id (`pick_ref` for task picks).
+
+| Operation | Rules | Effect |
+|---|---|---|
+| create count | the item by exact SKU; `multi`: the bin is required; `single`: no bin taken (P-29) | `open` task, one `count` line |
+| create pick | lines of internal SKUs, qty > 0; bundles expand through the standard BOM (`order_payload.expand_lines`, the same `_Catalog.expand_line` orders use); zero leaves dropped | `open` task; `entered` lines plus one `leaf` per SKU (snapshot, P-28) |
+| count (worker) | the assignee's open count; scanned item must be the task's SKU; `multi`: scanned bin must be the task's; `single`: a scanned location must match the item's current one (if any); locations match after trim and upper-case only (no format, `_same_location`); and `set` runs **without** a location, so stock is never merged into a scanned place | `apply_stock_update(set)`; `counted_qty`; `done` |
+| pick (worker) | the assignee's open pick task; SKU or barcode resolved (§7.4) and on the task; over-pick allowed | `deduct_for_pick` into the leaf's entry (`order_sn` NULL, `task_line_id` set); `done` when `is_picked` (every leaf exact, nothing else) |
+| unassign (worker) | as v2 order unassign (`restore_pick_quantity`); more than picked → nothing changes | stock back; `done` if now exact |
+| can't finish (worker) | `open` → `blocked` with a non-empty reason | – |
+| cancel (admin) | `open` or `blocked`; return stock (default) or keep it | return: picks restored and deleted; keep: picks stay, one `task_cancel_keep` row per SKU |
+| reassign (admin) | `open` or `blocked` → `open` for another worker; `blocked_reason` cleared | the picks' `owner_user` moves too (T12) |
+| close as picked (admin) | pick tasks, `blocked` only (T8) | `done`, picks kept |
+
+Another worker's task is "not found" (404); a wrong state is `TaskStateError`, a wrong scan
+`TaskScanError` (both 409); other `ValueError`s are 400. "In progress" is derived from the picks, never stored.
+Claimed orders show as tasks too, derived, never stored (P-30). Done and cancelled tasks keep
+their picks as history; task picks never reach `get_pie_data`, v1 pick payloads,
+`count_unassigned_picks`, `release_unassigned_picks` or `clear_open_pick_entries`.
 
 ---
 
@@ -672,6 +718,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 | v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
 | v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
+| task created, cancelled, reassigned, closed, counted, picked, unassigned or blocked | `tasks_update`; `stocks_update` when stock changed | the assigned worker's **v2** sockets (both workers on a reassign) + admins; everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
 one per operator, one for scope-independent events (`users_update`, `stocks_update`). Payload
@@ -768,6 +815,11 @@ committed export `backend/openapi/v2.json`.
 - Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
   delete do not exist in v2. Claim, pick, unassign and outbound require an operator
   (`require_operator`, `OPERATOR_ONLY`).
+- Tasks (T9.2, `routers/v2/tasks.py`, `routers/admin_tasks.py`, `services/task_service.py`;
+  rules in §7.10): `/v2/tasks` for the assigned worker (`require_operator`), `/admin/tasks` and
+  `/admin/order-tasks` for admins. Order-tasks are derived per request (`task_service.order_tasks`,
+  the apps' R4.3 rule: every required SKU exact, none extra). `tasks_update` is sent with
+  `send_to_user(..., min_contract=2)`, so v1 sockets never get it; admins get the default list.
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
@@ -798,9 +850,9 @@ committed export `backend/openapi/v2.json`.
 | Script | Purpose |
 |---|---|
 | `set_admin_password` | apply the configured `ADMIN_PASSWORD` to the existing admin; refuses defaults; revokes its refresh tokens |
-| `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all pick entries and allocations **without** restoring stock; logs `cutover_clear` |
+| `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all order and v1 pick entries and their allocations **without** restoring stock (task picks are kept); logs `cutover_clear` |
 | `stock_merge_single [--confirm]` | merge multi-bin SKUs onto their first bin before switching to `single` (dry run without `--confirm`) |
-| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool) and **restore** their stock; counts only without `--confirm` |
+| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool; never task picks) and **restore** their stock; counts only without `--confirm` |
 | `seed_dev [--reset] [--scenario picking]` | synthetic orders/items for development; refuses under production rules |
 | `ci_migration_gate.sh` | CI: upgrade from the previous release tag to head |
 

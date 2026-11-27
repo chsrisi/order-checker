@@ -444,6 +444,188 @@
         "title": "AdminPasswordReset",
         "type": "object"
       },
+      "AdminTaskDetailResponse": {
+        "properties": {
+          "assigned_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Name"
+          },
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "NULL once the worker was deleted.",
+            "title": "Assigned To"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "current_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Count tasks: where the item is now (its bins).",
+            "title": "Current Location"
+          },
+          "difference": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A done count: counted minus recorded (negative: missing).",
+            "title": "Difference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "in_progress": {
+            "description": "Something is picked (derived, never stored).",
+            "title": "In Progress",
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TaskLineResponse"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recorded_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A done count: the recorded quantity it replaced.",
+            "title": "Recorded Before"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "blocked",
+              "done",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stock_log": {
+            "items": {
+              "$ref": "#/components/schemas/TaskStockLogResponse"
+            },
+            "title": "Stock Log",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "count",
+              "pick"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "in_progress",
+          "assigned_to",
+          "created_by",
+          "created_at",
+          "lines",
+          "stock_log"
+        ],
+        "title": "AdminTaskDetailResponse",
+        "type": "object"
+      },
       "AdminUserCreate": {
         "description": "Admin-side operator creation (A-3). Reuses the ``UserAuth`` username rule.",
         "properties": {
@@ -719,6 +901,56 @@
           "features"
         ],
         "title": "MetaResponse",
+        "type": "object"
+      },
+      "OrderTaskResponse": {
+        "description": "A claimed order that is not *Picked* yet, shown as a task (derived, V2_TASKS_DELTA R1.3).",
+        "properties": {
+          "done_skus": {
+            "title": "Done Skus",
+            "type": "integer"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "owner_user": {
+            "title": "Owner User",
+            "type": "string"
+          },
+          "required_skus": {
+            "title": "Required Skus",
+            "type": "integer"
+          },
+          "ship_by": {
+            "format": "date-time",
+            "title": "Ship By",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "not_started",
+              "partial",
+              "extra"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "owner_user",
+          "ship_by",
+          "status",
+          "state",
+          "done_skus",
+          "required_skus"
+        ],
+        "title": "OrderTaskResponse",
         "type": "object"
       },
       "OutboundCloseResponse": {
@@ -1267,6 +1499,486 @@
           "message"
         ],
         "title": "StockChangeResponse",
+        "type": "object"
+      },
+      "TaskCancelRequest": {
+        "properties": {
+          "return_stock": {
+            "default": true,
+            "description": "Return picked stock (default), or keep it deducted when the goods left.",
+            "title": "Return Stock",
+            "type": "boolean"
+          }
+        },
+        "title": "TaskCancelRequest",
+        "type": "object"
+      },
+      "TaskCountCreate": {
+        "properties": {
+          "assigned_to": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Assigned To",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The bin to count: required in `multi` mode, refused in `single` mode.",
+            "title": "Location"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sku": {
+            "description": "Internal SKU.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "assigned_to"
+        ],
+        "title": "TaskCountCreate",
+        "type": "object"
+      },
+      "TaskLineResponse": {
+        "properties": {
+          "counted_qty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The count, once done.",
+            "title": "Counted Qty"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "kind": {
+            "enum": [
+              "count",
+              "entered",
+              "leaf"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A count's bin (`multi` mode).",
+            "title": "Location"
+          },
+          "picked": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Picked so far (leaf lines).",
+            "title": "Picked"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required quantity; none on a count.",
+            "title": "Qty"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "sku"
+        ],
+        "title": "TaskLineResponse",
+        "type": "object"
+      },
+      "TaskPickCreate": {
+        "properties": {
+          "assigned_to": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Assigned To",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TaskPickLine"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "lines",
+          "assigned_to"
+        ],
+        "title": "TaskPickCreate",
+        "type": "object"
+      },
+      "TaskPickLine": {
+        "properties": {
+          "qty": {
+            "exclusiveMinimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "Internal SKU; a bundle expands.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "title": "TaskPickLine",
+        "type": "object"
+      },
+      "TaskReassignRequest": {
+        "properties": {
+          "assigned_to": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Assigned To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assigned_to"
+        ],
+        "title": "TaskReassignRequest",
+        "type": "object"
+      },
+      "TaskResponse": {
+        "description": "A task. Never carries the recorded stock: counts are blind (T6).",
+        "properties": {
+          "assigned_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Name"
+          },
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "NULL once the worker was deleted.",
+            "title": "Assigned To"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "current_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Count tasks: where the item is now (its bins).",
+            "title": "Current Location"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "in_progress": {
+            "description": "Something is picked (derived, never stored).",
+            "title": "In Progress",
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TaskLineResponse"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "blocked",
+              "done",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "count",
+              "pick"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "in_progress",
+          "assigned_to",
+          "created_by",
+          "created_at",
+          "lines"
+        ],
+        "title": "TaskResponse",
+        "type": "object"
+      },
+      "TaskStockLogResponse": {
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp"
+        ],
+        "title": "TaskStockLogResponse",
         "type": "object"
       },
       "TemporaryTokenResponse": {
@@ -2852,6 +3564,70 @@
         ]
       }
     },
+    "/admin/order-tasks": {
+      "get": {
+        "description": "Read-only: each worker's claimed active orders that are not *Picked* yet, with progress (SKUs picked exactly of required). Derived, never stored.",
+        "operationId": "list_order_tasks_admin_order_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assigned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assigned To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrderTaskResponse"
+                  },
+                  "title": "Response List Order Tasks Admin Order Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claimed orders not yet picked, per worker",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
     "/admin/shopee-config": {
       "get": {
         "description": "Returns credentials only when the temporary configuration token belongs to the current administrator.",
@@ -3243,6 +4019,482 @@
         "summary": "Stock change history",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/admin/tasks": {
+      "get": {
+        "description": "Oldest first. Without `status`: open and blocked tasks, plus those done or cancelled in the last 7 days (the same list `tasks_update` carries to admins). With `status` (repeatable): exactly those, with no time limit.",
+        "operationId": "list_tasks_admin_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assigned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assigned To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "count",
+                    "pick"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "open",
+                      "blocked",
+                      "done",
+                      "cancelled"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskResponse"
+                  },
+                  "title": "Response List Tasks Admin Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List tasks",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/count": {
+      "post": {
+        "description": "Assigns a blind count of one item to a worker. In `multi` mode `location` (the bin) is required; in `single` mode it is refused, and the count sets the item where it is.",
+        "operationId": "create_count_task_admin_tasks_count_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Location missing (`multi`) or given (`single`)"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Item or worker not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a count task",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/pick": {
+      "post": {
+        "description": "Lines of internal SKUs and quantities; a bundle is expanded by the standard BOM now, and the expansion is stored with the task. Done when every leaf is picked exactly.",
+        "operationId": "create_pick_task_admin_tasks_pick_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskPickCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The lines expand to nothing to pick"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Item or worker not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a manual picking task",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/{task_id}": {
+      "get": {
+        "description": "Lines, what was picked, every stock log row the task caused, and for a done count the recorded quantity it replaced and the difference.",
+        "operationId": "get_task_admin_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTaskDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A task with its stock log",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/{task_id}/cancel": {
+      "post": {
+        "description": "Open or blocked tasks. Picked stock is returned by default; with `return_stock: false` it stays deducted (the goods already left). Logged either way.",
+        "operationId": "cancel_task_admin_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "409": {
+            "description": "The task's status does not allow this"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel a task",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/{task_id}/close": {
+      "post": {
+        "description": "Done with what was picked; the picks stay deducted.",
+        "operationId": "close_task_admin_tasks__task_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "409": {
+            "description": "The task's status does not allow this"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Close a blocked pick task as picked",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
+        ]
+      }
+    },
+    "/admin/tasks/{task_id}/reassign": {
+      "post": {
+        "description": "Open or blocked tasks; the task becomes open, and its picks move with it.",
+        "operationId": "reassign_task_admin_tasks__task_id__reassign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskReassignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Task or worker not found"
+          },
+          "409": {
+            "description": "The task's status does not allow this"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Give a task to another worker",
+        "tags": [
+          "admin",
+          "admin \u00b7 tasks"
         ]
       }
     },

@@ -10,6 +10,9 @@ The expansion matches the previous per-order implementation exactly:
   standard BOM of its SKU, else to the warehouse item itself
 * BOM trees are flattened to leaves; a cycle or an empty BOM makes the node a leaf
 * components are summed per ``(sku, name, location)`` in first-seen order
+
+``_Catalog.expand_line`` is the one standard-BOM expansion of a line, shared by orders and
+tasks (``expand_lines``, V2_TASKS_DELTA R1.4, P-28). A BOM generalization plugs in there.
 """
 
 from __future__ import annotations
@@ -132,6 +135,14 @@ class _Catalog:
             leaves.extend(self.standard_leaves(child, quantity_standard * qty, visited | {sku}))
         return leaves
 
+    def expand_line(self, sku: str, qty: int, fallback_name: Optional[str] = None) -> list[Leaf]:
+        """A line by internal SKU: its standard BOM's leaves, else the SKU itself."""
+        if sku and self.standard.get(sku) is not None:
+            return self.standard_leaves(sku, qty)
+        item = self.items.get(sku)
+        name = (item.item_name if item else None) or fallback_name or sku
+        return [(sku, name, qty, self._item_location(sku))]
+
     def marketplace_leaves(self, shopee_id: int, qty: int) -> Optional[list[Leaf]]:
         bom = self.marketplace.get(shopee_id)
         if bom is None:
@@ -154,12 +165,8 @@ def _components(order: ShopeeOrder, catalog: _Catalog) -> list[ShopeeOrderItemBO
         shopee_id = raw.model_id or raw.item_id
         qty = raw.model_quantity_purchased or 1
         leaves = catalog.marketplace_leaves(shopee_id, qty) if shopee_id else None
-        if leaves is None and sku and catalog.standard.get(sku) is not None:
-            leaves = catalog.standard_leaves(sku, qty)
         if leaves is None:
-            item = catalog.items.get(sku)
-            name = (item.item_name if item else None) or raw.item_name or sku
-            leaves = [(sku, name, qty, catalog._item_location(sku))]
+            leaves = catalog.expand_line(sku, qty, raw.item_name)
         for leaf_sku, name, quantity, location in leaves:
             key = (leaf_sku, name, location)
             totals[key] = totals.get(key, 0) + quantity
@@ -169,6 +176,19 @@ def _components(order: ShopeeOrder, catalog: _Catalog) -> list[ShopeeOrderItemBO
         )
         for (sku, name, location), qty in totals.items()
     ]
+
+
+def expand_lines(db: Session, lines: Iterable[tuple[str, int]]) -> list[tuple[str, int]]:
+    """Leaf SKUs and quantities of internal-SKU lines, summed per SKU in first-seen order.
+    The same expansion as an order line without a marketplace BOM (P-28)."""
+    lines = list(lines)
+    catalog = _Catalog(db)
+    catalog.load_standard_closure(sku for sku, _ in lines)
+    totals: dict[str, int] = {}
+    for sku, qty in lines:
+        for leaf_sku, _, quantity, _ in catalog.expand_line(sku, qty):
+            totals[leaf_sku] = totals.get(leaf_sku, 0) + quantity
+    return list(totals.items())
 
 
 def build_order_responses(db: Session, orders: list[ShopeeOrder]) -> list[ShopeeOrderResponse]:

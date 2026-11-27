@@ -394,7 +394,7 @@ private fun OrderCard(
 
 /** The confirmation itself (Q71): names the item, the quantity (default: all) and the result. */
 @Composable
-private fun UnassignDialog(title: String, item: String, max: Int, onDismiss: () -> Unit, onUnassign: (Int) -> Unit) {
+internal fun UnassignDialog(title: String, item: String, max: Int, onDismiss: () -> Unit, onUnassign: (Int) -> Unit) {
     var text by remember { mutableStateOf(max.toString().let { TextFieldValue(it, TextRange(0, it.length)) }) }
     val focus = remember { FocusRequester() }
     val qty = validQty(text.text, max)
