@@ -1288,7 +1288,8 @@ class StockChangeResponse(BaseModel):
         default=None,
         description=(
             "adjust_set, adjust_add, transfer_out, transfer_in, pick, pick_shortfall, "
-            "pick_restore, mode_merge, cutover_clear, migration_merge; null on legacy rows."
+            "pick_restore, mode_merge, cutover_clear, migration_merge, task_cancel_keep; null "
+            "on legacy rows."
         ),
     )
     actor: Optional[str] = None
@@ -1297,6 +1298,10 @@ class StockChangeResponse(BaseModel):
     message: str
     order_sn: Optional[str] = Field(
         default=None, description="For picks: the order of the pick entry, while it exists."
+    )
+    task_id: Optional[int] = Field(
+        default=None,
+        description="The task of a task count, or of a task pick's entry while it exists.",
     )
 
 

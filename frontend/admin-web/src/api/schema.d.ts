@@ -1476,7 +1476,7 @@ export interface components {
             order_sn?: string | null;
             /**
              * Reason
-             * @description adjust_set, adjust_add, transfer_out, transfer_in, pick, pick_shortfall, pick_restore, mode_merge, cutover_clear, migration_merge; null on legacy rows.
+             * @description adjust_set, adjust_add, transfer_out, transfer_in, pick, pick_shortfall, pick_restore, mode_merge, cutover_clear, migration_merge, task_cancel_keep; null on legacy rows.
              */
             reason?: string | null;
             /** Ref Id */
@@ -1488,6 +1488,11 @@ export interface components {
             ref_type?: string | null;
             /** Sku */
             sku?: string | null;
+            /**
+             * Task Id
+             * @description The task of a task count, or of a task pick's entry while it exists.
+             */
+            task_id?: number | null;
             /**
              * Timestamp
              * Format: date-time

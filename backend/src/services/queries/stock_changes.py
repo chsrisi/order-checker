@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlalchemy import String, and_, cast, func, select
 
-from ...models import PickItemEntry, StocksLog, WarehouseItem
+from ...models import PickItemEntry, StocksLog, TaskLine, WarehouseItem
 from ...timezone import as_utc
 from .engine import get_db
 
@@ -48,14 +48,15 @@ def get_stock_changes(
     limit: int, offset: int = 0, f: StockChangeFilter = StockChangeFilter()
 ) -> tuple[list[dict], int]:
     """Returns ``(page, total)``: each row is the log entry plus the item's name and, for a pick
-    or a pick's restore, the order its pick entry belongs to (null once the entry is gone)."""
+    or a pick's restore, the order or task its pick entry belongs to (null once the entry is
+    gone). A task count (``ref_type="task"``) names its task directly."""
     conditions = f.conditions()
     with get_db() as db:
         total = db.execute(
             select(func.count()).select_from(StocksLog).filter(*conditions)
         ).scalar_one()
         rows = db.execute(
-            select(StocksLog, WarehouseItem.item_name, PickItemEntry.order_sn)
+            select(StocksLog, WarehouseItem.item_name, PickItemEntry.order_sn, TaskLine.task_id)
             .outerjoin(WarehouseItem, WarehouseItem.sku == StocksLog.sku)
             .outerjoin(
                 PickItemEntry,
@@ -64,6 +65,7 @@ def get_stock_changes(
                     cast(PickItemEntry.id, String) == StocksLog.ref_id,
                 ),
             )
+            .outerjoin(TaskLine, TaskLine.id == PickItemEntry.task_line_id)
             .filter(*conditions)
             .order_by(StocksLog.timestamp.desc(), StocksLog.id.desc())
             .offset(offset)
@@ -85,7 +87,16 @@ def get_stock_changes(
                 "ref_id": log.ref_id,
                 "message": log.message,
                 "order_sn": order_sn,
+                "task_id": _task_id(log, line_task),
             }
-            for log, name, order_sn in rows
+            for log, name, order_sn, line_task in rows
         ]
         return page, total
+
+
+def _task_id(log: StocksLog, line_task: Optional[int]) -> Optional[int]:
+    if line_task is not None:
+        return line_task
+    if log.ref_type == "task" and log.ref_id and log.ref_id.isdigit():
+        return int(log.ref_id)
+    return None
