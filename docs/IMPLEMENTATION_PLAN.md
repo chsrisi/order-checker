@@ -1450,7 +1450,7 @@ same change as the task.
 | T8.4b | todo | |
 | T8.6 | todo | planned 2026-11-27 (worker switch) |
 | T8.7 | todo | planned 2026-11-27 (worker switch) |
-| T9.1 | todo | planned 2026-11-27 (tasks) |
+| T9.1 | done (2026-11-27) | Migration `a7d1c3e5f2b4`; `queries/tasks.py`; `order_payload.expand_lines` / `_Catalog.expand_line` shared with orders; task picks filtered out of `get_pie_data`, every v1 pick path, `count_unassigned_picks`, `release_unassigned_picks` and `clear_open_pick_entries`. **Planning addition:** `pick_item_entries.owner_user` is nullable for task picks only (CHECK `ck_pick_item_entries_owner`), so a deleted worker's task picks stay with the task (P-32, T12); a reassign moves `owner_user`. Unassigning an over-pick down to exact completes the task. Tests: `tests/integration/test_tasks_pg.py` (both modes), `test_task_rules.py`, tasks downgrade in `test_migrations_pg.py` |
 | T9.2 | todo | planned 2026-11-27 (tasks) |
 | T9.3 | todo | planned 2026-11-27 (tasks) |
 | T9.4 | todo | planned 2026-11-27 (tasks) |

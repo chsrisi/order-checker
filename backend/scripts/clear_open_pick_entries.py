@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from src.models import PickItemEntry
 from src.services.queries.engine import get_db
-from src.services.queries.pick_items import clear_open_pick_entries
+from src.services.queries.pick_items import NOT_TASK, clear_open_pick_entries
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,7 +24,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.confirm:
         with get_db() as db:
-            count = db.execute(select(func.count()).select_from(PickItemEntry)).scalar_one()
+            count = db.execute(
+                select(func.count()).select_from(PickItemEntry).where(NOT_TASK)
+            ).scalar_one()
         print(f"{count} open pick entr(y/ies) would be deleted; re-run with --confirm")
         return 2
     count = clear_open_pick_entries(actor="cutover")

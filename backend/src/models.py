@@ -307,8 +307,19 @@ class OutboundTag(Base):
 
 
 class PickItemEntry(Base):
+    """A picked quantity of one SKU. ``order_sn`` set: an order pick. ``task_line_id`` set: a
+    task pick (V2_TASKS_DELTA T2), never shown as unassigned and never in a v1 or order payload.
+    Neither: a v1 unassigned pick. Only a task pick can lose its owner (a deleted worker, P-32):
+    the task owns its picks (T12)."""
+
     __tablename__ = "pick_item_entries"
-    __table_args__ = {"schema": "orders"}
+    __table_args__ = (
+        CheckConstraint(
+            "owner_user IS NOT NULL OR task_line_id IS NOT NULL",
+            name="ck_pick_item_entries_owner",
+        ),
+        {"schema": "orders"},
+    )
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     sku: Mapped[str] = mapped_column(String, index=True)
     qty: Mapped[int] = mapped_column(Integer)
@@ -316,9 +327,15 @@ class PickItemEntry(Base):
         ForeignKey("shopee.orders.order_sn"), nullable=True
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    owner_user: Mapped[str] = mapped_column(ForeignKey("auth.users.username"))
+    # NULL only on a task pick whose worker was deleted (ck_pick_item_entries_owner).
+    owner_user: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.users.username"), nullable=True
+    )
+    task_line_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("orders.task_lines.id"), nullable=True, index=True
+    )
 
-    owner: Mapped["User"] = relationship("User", back_populates="pies")
+    owner: Mapped[Optional["User"]] = relationship("User", back_populates="pies")
     order: Mapped[Optional["ShopeeOrder"]] = relationship("ShopeeOrder", back_populates="pies")
     allocations: Mapped[List["PickStockAllocation"]] = relationship(
         "PickStockAllocation",
@@ -346,6 +363,77 @@ class PickStockAllocation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     entry: Mapped["PickItemEntry"] = relationship("PickItemEntry", back_populates="allocations")
+
+
+TASK_TYPES = ("count", "pick")
+TASK_STATUSES = ("open", "blocked", "done", "cancelled")
+TASK_LINE_KINDS = ("count", "entered", "leaf")
+
+
+class Task(Base):
+    """Work an admin hands to a worker (V2_TASKS_SPEC, IMPLEMENTATION_PLAN T9.1). It completes
+    implicitly: a count on its count, a pick task when every leaf is picked exactly.
+
+    ``assigned_to`` is set to NULL when the worker is deleted (P-32), so an open task shows as
+    unassigned; ``assigned_name`` keeps the name as text for history. ``in progress`` is
+    derived from the picks, never stored (P-31)."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("type IN ('count', 'pick')", name="ck_tasks_type"),
+        CheckConstraint(
+            "status IN ('open', 'blocked', 'done', 'cancelled')", name="ck_tasks_status"
+        ),
+        {"schema": "orders"},
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="open", index=True)
+    assigned_to: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("auth.users.username", ondelete="SET NULL"), nullable=True, index=True
+    )
+    assigned_name: Mapped[Optional[str]] = mapped_column(String)
+    created_by: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    note: Mapped[Optional[str]] = mapped_column(String)
+    reference: Mapped[Optional[str]] = mapped_column(String)
+    blocked_reason: Mapped[Optional[str]] = mapped_column(String)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[Optional[str]] = mapped_column(String)
+
+    lines: Mapped[List["TaskLine"]] = relationship(
+        "TaskLine",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskLine.id",
+        lazy="selectin",
+    )
+
+
+class TaskLine(Base):
+    """One line of a task. ``count``: the SKU to count, and its bin in ``multi`` mode (P-29).
+    ``entered``: a pick line as the admin typed it (a bundle stays a bundle), for display.
+    ``leaf``: a SKU to pick after BOM expansion, one per SKU and task, snapshotted at creation
+    (P-28); task picks link to these."""
+
+    __tablename__ = "task_lines"
+    __table_args__ = (
+        CheckConstraint("kind IN ('count', 'entered', 'leaf')", name="ck_task_lines_kind"),
+        {"schema": "orders"},
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.tasks.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String)
+    sku: Mapped[str] = mapped_column(String)
+    qty: Mapped[Optional[int]] = mapped_column(Integer)  # NULL on a count line
+    location: Mapped[Optional[str]] = mapped_column(String)
+    counted_qty: Mapped[Optional[int]] = mapped_column(Integer)
+
+    task: Mapped["Task"] = relationship("Task", back_populates="lines")
 
 
 # warehouse

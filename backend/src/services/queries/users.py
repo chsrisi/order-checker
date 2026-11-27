@@ -11,6 +11,7 @@ from ...models import (
     OutboundItem,
     PickItemEntry,
     ShopeeOrder,
+    Task,
 )
 from ...timezone import as_utc
 from .engine import get_db
@@ -60,7 +61,10 @@ def delete_user_by_username(username: str, actor: str = "admin") -> bool:
     """Delete a client account in one transaction. Its pick entries are deleted like
     ``DELETE /pick-items/{id}``: their allocated stock is restored and logged (D1.4.2) with
     ``actor`` (the deleting admin). Outbound scans and refresh tokens are deleted, and
-    claimed orders are released."""
+    claimed orders are released.
+
+    Tasks stay (P-32): the worker's tasks lose their assignee (``assigned_name`` keeps the
+    name), and their task picks stay with the task, stock untouched, without an owner (T12)."""
     with get_db() as db:
         user = db.execute(select(User).filter(User.username == username)).scalars().first()
         if not user or user.scope == "admin":
@@ -74,10 +78,14 @@ def delete_user_by_username(username: str, actor: str = "admin") -> bool:
             .order_by(ShopeeOrder.order_sn)
             .with_for_update(key_share=True)
         ).all()
+        # Tasks before their entries, as in queries/tasks.py.
+        db.execute(
+            select(Task.id).where(Task.assigned_to == username).order_by(Task.id).with_for_update()
+        ).all()
         entries = (
             db.execute(
                 select(PickItemEntry)
-                .filter(PickItemEntry.owner_user == username)
+                .filter(PickItemEntry.owner_user == username, PickItemEntry.task_line_id.is_(None))
                 .order_by(PickItemEntry.sku, PickItemEntry.id)
                 .with_for_update()
             )
@@ -87,6 +95,13 @@ def delete_user_by_username(username: str, actor: str = "admin") -> bool:
         for entry in entries:
             restore_for_pick(db, entry, actor=actor)
             db.delete(entry)
+        db.execute(
+            update(PickItemEntry)
+            .where(PickItemEntry.owner_user == username, PickItemEntry.task_line_id.is_not(None))
+            .values(owner_user=None)
+        )
+        # The FK sets NULL too; explicit, so no task depends on the database doing it.
+        db.execute(update(Task).where(Task.assigned_to == username).values(assigned_to=None))
         db.execute(delete(OutboundItem).where(OutboundItem.owner_user == username))
         db.execute(delete(RefreshToken).where(RefreshToken.username == username))
         db.execute(delete(AuthSession).where(AuthSession.username == username))

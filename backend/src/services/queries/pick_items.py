@@ -8,6 +8,10 @@ Two models share the table until v1 retires (V2_PICKING_DELTA): contract v1 keep
 entries without an order (``create/assign/unassign_pick_item_entry``, ``delete_pie``); contract
 v2 picks straight into an order and returns stock on unassign (``pick_for_order``,
 ``unassign_from_order``) and never writes ``order_sn = NULL``.
+
+Task picks (``task_line_id`` set, queries/tasks.py) share the table and the stock engine but
+none of these paths: every query here filters them out (``NOT_TASK``), so they are never
+unassigned picks, never in a v1 or order payload and never released (V2_TASKS_SPEC §8).
 """
 
 import logging
@@ -24,6 +28,9 @@ from .stocks import deduct_for_pick, move_pick_quantity, restore_for_pick, resto
 from .warehouse import resolve_barcode_to_item
 
 logger = logging.getLogger("backend.services.queries.pick_items")
+
+# Order and v1 picks only: task picks stay out of every path in this module.
+NOT_TASK = PickItemEntry.task_line_id.is_(None)
 
 
 class OrderLine(NamedTuple):
@@ -58,7 +65,7 @@ def _active_order(db: Session, order_sn: str, username: str) -> ShopeeOrder:
 
 
 def _locked_entry(db: Session, **filters) -> Optional[PickItemEntry]:
-    query = select(PickItemEntry).options(selectinload(PickItemEntry.allocations))
+    query = select(PickItemEntry).options(selectinload(PickItemEntry.allocations)).filter(NOT_TASK)
     for column, value in filters.items():
         query = query.filter(getattr(PickItemEntry, column) == value)
     return (
@@ -93,7 +100,7 @@ def get_pie_data(
     entry_id: Optional[int] = None,
     db: Optional[Session] = None,
 ) -> List[PickItemEntry]:
-    query = select(PickItemEntry)
+    query = select(PickItemEntry).filter(NOT_TASK)
     if username is not None:
         query = query.filter(PickItemEntry.owner_user == username)
     if sku is not None:
@@ -208,6 +215,7 @@ def _order_line(db: Session, order_sn: str, sku: str, username: str) -> Optional
                 PickItemEntry.order_sn == order_sn,
                 PickItemEntry.sku == sku,
                 PickItemEntry.owner_user == username,
+                NOT_TASK,
             )
             .order_by(PickItemEntry.id)
             .with_for_update(of=PickItemEntry)
@@ -266,7 +274,9 @@ def unassign_from_order(order_sn: str, sku: str, qty: int, username: str) -> Ord
 def count_unassigned_picks() -> int:
     with get_db() as db:
         return db.execute(
-            select(func.count()).select_from(PickItemEntry).where(PickItemEntry.order_sn.is_(None))
+            select(func.count())
+            .select_from(PickItemEntry)
+            .where(PickItemEntry.order_sn.is_(None), NOT_TASK)
         ).scalar_one()
 
 
@@ -276,7 +286,7 @@ def release_unassigned_picks(actor: str) -> int:
         entries = (
             db.execute(
                 select(PickItemEntry)
-                .where(PickItemEntry.order_sn.is_(None))
+                .where(PickItemEntry.order_sn.is_(None), NOT_TASK)
                 .order_by(PickItemEntry.sku, PickItemEntry.id)
                 .with_for_update(of=PickItemEntry)
             )
@@ -291,11 +301,17 @@ def release_unassigned_picks(actor: str) -> int:
 
 
 def clear_open_pick_entries(actor: str) -> int:
-    """T4.4 / D5 cutover: delete all pick entries WITHOUT restoring stock."""
+    """T4.4 / D5 cutover: delete all order and v1 pick entries WITHOUT restoring stock. Task
+    picks are kept: they belong to their task."""
     with get_db() as db:
-        count = db.execute(select(func.count()).select_from(PickItemEntry)).scalar_one()
-        db.execute(delete(PickStockAllocation))
-        db.execute(delete(PickItemEntry))
+        count = db.execute(
+            select(func.count()).select_from(PickItemEntry).where(NOT_TASK)
+        ).scalar_one()
+        entry_ids = select(PickItemEntry.id).where(NOT_TASK)
+        db.execute(
+            delete(PickStockAllocation).where(PickStockAllocation.pick_entry_id.in_(entry_ids))
+        )
+        db.execute(delete(PickItemEntry).where(NOT_TASK))
         db.add(
             StocksLog(
                 message=f"cutover_clear: deleted {count} open pick entries without restoring stock",
