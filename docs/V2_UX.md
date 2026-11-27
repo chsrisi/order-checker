@@ -668,7 +668,9 @@ accepted.** As built:
 - Moves read "moved from 201 to 203" and are shown on both rows. A pick names its order:
   the endpoint returns `order_sn` through the pick entry, which is null once the entry is gone.
   The order links open Orders → History with that order searched (`/orders?find=…`).
-- Task links wait for step 9: the row already reads "counted for task N".
+- Task links (added after step 9): a task count, a task pick and its return read "counted for
+  task #N", "picked for task #N" and "returned from task #N". Each has *open task*, which opens
+  `/warehouse/tasks?task=N` with that task's detail.
 
 ### 2.12 Admin Tasks (T9.3, 2026-11-27)
 
