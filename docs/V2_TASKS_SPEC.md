@@ -2,8 +2,8 @@
 
 Spec (planning flow step 1), 2026-11-27, checked against `8064ef4` (branch
 `feat/v2-worker-list-theme`, PR #8). No code changes. Background: IMPLEMENTATION_PLAN §5 "next
-up", V2_DELTA Delta 13. A decision delta (`V2_TASKS_DELTA.md`) will follow your answers and win
-over this file.
+up", V2_DELTA Delta 13. Decisions: [V2_TASKS_DELTA.md](V2_TASKS_DELTA.md) (Round 1), which wins over this file. Planned as
+IMPLEMENTATION_PLAN step 9 (T9.1–T9.4).
 
 ## 1. Goal and scope
 

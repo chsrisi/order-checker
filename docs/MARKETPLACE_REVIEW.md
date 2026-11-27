@@ -42,7 +42,7 @@ About 57 source files mention Shopee. These are the ones that shape the design:
 | Sync | `services/shopee_service.py` (~630 lines), token and cache managers, `auto_sync_task` | A second adapter with its own OAuth, token refresh, statuses and rate limits. |
 | Android client | `ORDER_SN_PATTERN = ^\d{6}` (`ops/OrderLogic.kt`); claiming only with the SN barcode | Tokopedia / TikTok order IDs and labels don't fit. |
 | v1 client | Same SN rule in `orders_view.dart`. Contract: `GET /shopee/orders`, `POST /shopee/orders/acquire`, WS `shopee_orders_update` | Contract v1 is frozen (KNOWN_LIMITATIONS #8), so v1 most likely stays Shopee-only. |
-| BOM | Marketplace BOM keyed by `shopee_id` (`queries/bom.py`) | Needs a per-marketplace product mapping. |
+| BOM | Marketplace BOM keyed by `shopee_id` (`queries/bom.py`); its `marketplace` column is never read | Needs a per-marketplace product mapping: a channel-neutral key (`channel`, `external_id`). Tasks (V2_TASKS_DELTA R1.4) snapshot their expansion and share one expansion function, the seam for this change. |
 | Retention | Built on Shopee's 90-day DPP (`retention_service.py`) | TikTok Shop's data rules need their own check. |
 | Console | Order card, filters, History, Settings (Shopee connection) | Marketplace mark and filter, a second connection page. |
 

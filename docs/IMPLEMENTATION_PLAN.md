@@ -123,6 +123,11 @@ that applies unless you say otherwise.
 | P-24 | Device status transitions (T8.1) | Approve: `pending` → `active` only. Revoke: `pending` or `active` → `revoked`, final (W7). Both idempotent: repeating one answers 200 with the current device. Other transitions → 409. | Allow `active` → `pending` ("unapprove"). |
 | P-25 | Device state proof (T8.4a) | ECDSA over `oc-device:state:<device_id>:<nonce>`, nonce claimed once in Redis (like login requests). Max 1 poll per 2 s per device; faster → 429. | A device token (Q9; deferred by W3). |
 | P-26 | Device actions in the console (T8.6) | Revoke and Switch confirm in a dialog that says what happens; Approve and Log out this device act at once. | Confirm every action. |
+| P-28 | Task lines (T9.1) | Store the BOM **leaves** at creation (component SKU, quantity) plus the line as entered; one shared expansion function for orders and tasks (V2_TASKS_DELTA R1.4). | Expand at read time, like orders. |
+| P-29 | Count in `single` mode (T9.1) | The admin picks the item only; the count runs `set` without a location, so it never merges stock elsewhere (R1.5). In `multi` mode, item and bin. | Let the admin pick a location in `single` mode too. |
+| P-30 | Order-tasks (T9.1–T9.4) | Derived from claims and picks, never stored (R1.3). | A task row per claimed order. |
+| P-31 | Task statuses (T9.1) | `open`, `blocked`, `done`, `cancelled`. The worker: pick, count, can't finish. The admin: create, cancel, reassign, close as picked (T8 default). | Add a stored `in_progress`. |
+| P-32 | Deleted worker (T9.1) | `assigned_to` is set to NULL (open tasks show as unassigned for reassignment); `assigned_name` keeps the name as text, so done tasks keep their history. | Block deleting a worker with open tasks. |
 | P-27 | `last_seen_at` from the state poll (T8.4a) | Written at most once per 60 s (as P-16); the console shows "logged out, reachable" when the device polled within 30 s without a live socket. | Leave the console's status as it is. |
 
 ---
@@ -596,6 +601,10 @@ flowchart TD
   T84a --> T86["T8.6 console device actions"]
   T84a --> T87["T8.7 Android switch"]
   DD --> S8["Step 8, rest: T8.2–T8.3, T8.4b, T8.5"]
+  T620["T6.17–T6.20 picking"] --> T91["T9.1 task model, stock paths"]
+  T91 --> T92["T9.2 task routes, tasks_update"]
+  T92 --> T93["T9.3 console Tasks"]
+  T92 --> T94["T9.4 Android Tasks"]
 ```
 
 Hard ordering constraints:
@@ -1145,6 +1154,73 @@ once the login-request work (T6.21–T6.23) is merged there.
 - **T8.5 Per-device config:** `GET /v2/device/config`, including server-profile pushes for
   stage 2.
 
+### Step 9: tasks (V2_TASKS_SPEC, V2_TASKS_DELTA)
+
+An admin assigns a **count** task or a **manual picking** task to a worker; claimed orders show
+as tasks too (derived). Tasks complete implicitly. Precedence: V2_TASKS_DELTA > this plan >
+V2_TASKS_SPEC. Order: T9.1 → T9.2 → T9.3 and T9.4 (either order). Independent of step 8, but they
+share generated files (V2_TASKS_DELTA R1.6). `client_v1.json` stays unchanged. Branch off `dev`
+once PR #8 is merged.
+
+**T9.1 Task model, service and stock paths**
+- Goal: SPEC §3–§5 under SPEC §8, count only (T5).
+- Refs: T1–T5, T7, T11, T12; R1.3–R1.5; P-28–P-32.
+- Change:
+  - migration: `orders.tasks` (type `count` | `pick`, status, assigned worker with
+    `ON DELETE SET NULL` plus the name as text, created by and at, note, reference, blocked
+    reason) and `orders.task_lines` (count: SKU, location in `multi` mode; pick: the line as
+    entered plus its leaves); nullable `pick_item_entries.task_line_id`;
+  - one shared BOM expansion function, used by `order_payload` and tasks (P-28);
+  - count → `apply_stock_update(set)` with a `task` reference in the stock log (P-29);
+  - task picks through `deduct_for_pick` / `restore_pick_quantity`;
+  - completion on the server (exact leaves); can't finish, cancel, reassign (picks move), close
+    as picked;
+  - task picks filtered out of `get_pie_data`, `count_unassigned_picks`,
+    `release_unassigned_picks` and the order payloads.
+- Tests: SPEC §11 list, in both location modes; single mode never merges on a count; a task pick
+  never in a v1 pick payload, a v2 order payload or the release script; BOM leaves snapshotted
+  (a BOM edit after creation changes nothing); orders still expand as before (payload tests
+  unchanged).
+- Docs: SYSTEM_REFERENCE (schema, stock references, tasks), KNOWN_LIMITATIONS if a quirk turns
+  up.
+- Accept: migration gate passes; contract v1 tests unchanged.
+
+**T9.2 Routes, live updates and contract**
+- Goal: the API of SPEC §11 step 2.
+- Refs: T4, T11; P-31.
+- Change: `/admin/tasks` (create, list with filters, detail with stock log rows, cancel,
+  reassign, close as picked) and order-tasks per worker (read-only); `/v2/tasks` (list including
+  order-tasks, count, pick, unassign, can't finish), gated like the rest of `/v2`; `tasks_update`
+  to the assigned worker's v2 sockets and to admins, **never** v1; v2 snapshot and OpenAPI
+  regenerated.
+- Tests: only the assigned worker acts; admins refused on `/v2/tasks` (Q75); v1 sockets never get
+  `tasks_update`; HTTP flows end to end.
+- Docs: API, SYSTEM_REFERENCE §6, §10A.
+- Accept: `client_v1.json` byte-identical; the v2 snapshot grows additively.
+
+**T9.3 Console: Tasks page**
+- Goal: SPEC §6 console part, plus order-tasks per worker (R1.3).
+- Refs: T6, T8, T9 (working defaults, confirm in the brief); P-26 style confirmations.
+- Change: Warehouse → Tasks: create a count (item search; bin in `multi` mode) or a pick (lines,
+  with bundles shown expanded, reference); list by worker, type and status, live; detail with
+  the counted vs. recorded difference; cancel (return or keep picked stock), reassign, close as
+  picked.
+- Tests: create forms, list filters, live updates, the cancel choice.
+- Docs: V2_UX brief first (Q28), admin-web README.
+- Accept: mobile and desktop (D7); your UX acceptance on the dev server.
+
+**T9.4 Android: Tasks**
+- Goal: SPEC §6 Android part.
+- Refs: T6, T7, T11; R1.3, R1.5.
+- Change: a fourth home button with the open count; the list (manual tasks and order-tasks,
+  oldest first, live); the count screen (scan location, scan item, enter quantity; blind by
+  default); the pick-task screen on the Picking layout; can't finish with a reason.
+- Tests: list merging and order; count validation (wrong item or location); pick-task progress
+  and completion; can't finish.
+- Docs: V2_UX brief first, client-android README.
+- Accept: emulator end to end with the console, in `single` mode (your production mode) and
+  `multi` mode.
+
 ### Housekeeping (any time; D2.1)
 
 - **TH.1**
@@ -1185,8 +1261,8 @@ Later: barcode rules (after localization), then marketplaces and UOM at the same
   **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
   Device-local only, no backend change.
 - **New feature: tasks.** An admin assigns a stockkeeping task or a manual (offline) picking
-  task to a worker; it completes implicitly. **Spec written 2026-11-27:**
-  [V2_TASKS_SPEC.md](V2_TASKS_SPEC.md), questions T1–T12 open.
+  task to a worker; it completes implicitly. **Planned 2026-11-27:** step 9 (T9.1–T9.4); spec
+  and delta [V2_TASKS_SPEC.md](V2_TASKS_SPEC.md), [V2_TASKS_DELTA.md](V2_TASKS_DELTA.md).
 - ~~**Console light/dark toggle**~~ **Done 2026-11-27** (V2_ORDERS_SPEC §12): account menu →
   Theme, *System*, *Light* and *Dark*, remembered per browser. Front end only.
 - **Localization, English and Indonesian** (V2_ORDERS_SPEC §12): every string, dates, Shopee
@@ -1265,6 +1341,7 @@ Every finding in the base review maps to a task or to an explicit deferral.
 | Q7 directories | T6.10, T7.1 |
 | Q9 device token (revisited: key signatures now, token in T8.2; V2_WORKER_SWITCH_DELTA W3) | T8.1, T8.2 |
 | Worker switch W1–W9 (V2_WORKER_SWITCH_DELTA), P-23–P-27 | T8.1, T8.4a, T8.6, T8.7 |
+| Tasks T1–T13 (V2_TASKS_DELTA), P-28–P-32 | T9.1–T9.4 |
 | Q10, Q19, Q24 sessions, instant revocation | T6.2 |
 | Q11 no local JWKS | T6.11 |
 | Q12 Android deps, Q18 identity and signing | T6.10 |
@@ -1373,4 +1450,8 @@ same change as the task.
 | T8.4b | todo | |
 | T8.6 | todo | planned 2026-11-27 (worker switch) |
 | T8.7 | todo | planned 2026-11-27 (worker switch) |
+| T9.1 | todo | planned 2026-11-27 (tasks) |
+| T9.2 | todo | planned 2026-11-27 (tasks) |
+| T9.3 | todo | planned 2026-11-27 (tasks) |
+| T9.4 | todo | planned 2026-11-27 (tasks) |
 | T8.5 | todo | |
