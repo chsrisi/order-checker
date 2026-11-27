@@ -145,6 +145,28 @@ def test_admin_history_filters_reach_the_queries(monkeypatch):
     assert response.headers["X-Total-Count"] == "3"
 
 
+def test_admin_stock_changes_passes_filters_and_total(monkeypatch):
+    from fastapi import Response
+
+    seen = {}
+
+    def fake(limit, offset, f):
+        seen.update(limit=limit, offset=offset, f=f)
+        return (["row"], 42)
+
+    monkeypatch.setattr(admin.queries, "get_stock_changes", fake)
+    response = Response()
+    since = datetime(2026, 11, 20, tzinfo=UTC)
+    rows = admin.get_stock_changes(
+        response, 25, 50, actor("admin", "admin"), sku="SKU-A", actor="eko",
+        reason=["pick", "adjust_set"], since=since, until=None,
+    )
+    assert rows == ["row"] and response.headers["X-Total-Count"] == "42"
+    assert (seen["limit"], seen["offset"]) == (25, 50)
+    f = seen["f"]
+    assert (f.sku, f.actor, f.reasons, f.since, f.until) == ("SKU-A", "eko", ("pick", "adjust_set"), since, None)
+
+
 def test_admin_lookup_returns_orders_and_scans(monkeypatch):
     monkeypatch.setattr(
         admin.queries, "lookup_label", lambda label: {"orders": ["o"], "scans": ["s"], "day": None}

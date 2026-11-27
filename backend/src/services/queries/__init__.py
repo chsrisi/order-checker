@@ -25,6 +25,7 @@ from .users import (
     revoke_user_sessions,
 )
 from .history import HistoryFilter, get_day, get_day_history, lookup_label
+from .stock_changes import StockChangeFilter, get_stock_changes
 from .outbound import (
     get_outbounds_data,
     get_all_outbound_data,
@@ -84,6 +85,8 @@ from .csv_export import (
 )
 
 __all__ = [
+    "StockChangeFilter",
+    "get_stock_changes",
     "DeviceRevoked",
     "register_device",
     "device_ids_for_sessions",

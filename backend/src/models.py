@@ -921,6 +921,34 @@ class OutboundCloseResponse(BaseModel):
     orders_done: int = Field(ge=0, description="Orders marked complete.")
 
 
+class StockChangeResponse(BaseModel):
+    """One ``warehouse.stocks_log`` row for the console (T7.13). Rows from before T4.3 have only
+    ``message``; the structured fields are then null."""
+
+    id: int
+    timestamp: UTCDateTime
+    sku: Optional[str] = None
+    item_name: Optional[str] = None
+    location: Optional[str] = None
+    delta: Optional[int] = None
+    before: Optional[int] = None
+    after: Optional[int] = None
+    reason: Optional[str] = Field(
+        default=None,
+        description=(
+            "adjust_set, adjust_add, transfer_out, transfer_in, pick, pick_shortfall, "
+            "pick_restore, mode_merge, cutover_clear, migration_merge; null on legacy rows."
+        ),
+    )
+    actor: Optional[str] = None
+    ref_type: Optional[str] = Field(default=None, description="For example pick_entry or transfer.")
+    ref_id: Optional[str] = None
+    message: str
+    order_sn: Optional[str] = Field(
+        default=None, description="For picks: the order of the pick entry, while it exists."
+    )
+
+
 class StockUpdateResponse(BaseModel):
     success: bool
     sku: str

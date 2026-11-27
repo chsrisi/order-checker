@@ -17,6 +17,7 @@ from ..models import (
     DeleteCountResponse,
     MessageResponse,
     OutboundResponse,
+    StockChangeResponse,
     ShopeeOrderResponse,
     User,
     UserResponse,
@@ -253,6 +254,40 @@ def get_outbound_history(
     )
     response.headers["X-Total-Count"] = str(total)
     return items
+
+
+@router.get(
+    "/stock-changes",
+    response_model=List[StockChangeResponse],
+    summary="Stock change history",
+    description=(
+        "Every stock change from the stock log, newest first, paged (`X-Total-Count`). "
+        "Filters: `sku` and `actor` (exact, case-insensitive), `reason` (repeatable), and a "
+        "`from` / `to` time range (inclusive). Rows from before the structured log have only "
+        "`message`."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_stock_changes(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500, description="Page size (newest first)."),
+    offset: int = HISTORY_OFFSET,
+    current_user: User = Depends(require_admin),
+    sku: Optional[str] = Query(None, max_length=200),
+    actor: Optional[str] = Query(None, max_length=64),
+    reason: Optional[List[str]] = Query(None, max_length=20, description="Any of these reasons."),
+    since: Optional[datetime] = Query(None, alias="from", description="At or after this time."),
+    until: Optional[datetime] = Query(None, alias="to", description="At or before this time."),
+):
+    rows, total = queries.get_stock_changes(
+        limit=limit,
+        offset=offset,
+        f=queries.StockChangeFilter(
+            sku=sku, actor=actor, reasons=tuple(reason or ()), since=since, until=until
+        ),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 @router.get(
