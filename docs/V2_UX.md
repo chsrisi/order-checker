@@ -383,6 +383,9 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 | UX-T2 | A Dashboard card for blocked tasks? | **Yes**: "Blocked tasks (n)", linking to the filtered list; blocked tasks wait for an admin. |
 | UX-T3 | Show bundle components while entering a pick line? | **Yes**, collapsed under the line, so the admin sees what the worker will pick (the task stores exactly that). |
 
+**Round 1: brief and recommendations UX-T1–T3 accepted (2026-11-27); built (2026-11-27), not yet
+accepted.** Bundle components show as one small line under the entry ("Bundle, picked as: …").
+
 ### 2.9 Client Tasks (T9.4, 2026-11-27)
 
 - **Goal:** the worker sees what to do next (tasks from the admin and their claimed orders) and

@@ -56,7 +56,12 @@ fails when the committed file is stale.
 - `src/components/AppShell.vue` (header, sidebar/drawer), `src/views/` (one per screen),
   `src/router/` (routes generated from `nav.ts`), `src/stores/devices.ts` (polled every 30 s).
   Built pages: Dashboard, Workers, Devices, Settings (Shopee connection; config token in memory
-  only), Orders (`src/components/orders/`).
+  only), Orders (`src/components/orders/`), Warehouse → Tasks (`src/components/tasks/`).
+- Tasks (T9.3, V2_UX §2.8): `stores/tasks.ts` keeps the default list from `tasks_update` frames
+  (filtered by worker and type in `lib/tasks.ts`); a status filter loads `/admin/tasks?status=…`
+  and reloads on each frame. Claimed orders (`/admin/order-tasks`) reload 300 ms after an order or
+  pick event. The stock location mode comes from `/meta` (the count form asks for a bin only in
+  `multi` mode). The Dashboard shows a "Blocked tasks" banner linking to `?status=blocked`.
 
 ## Hosting
 

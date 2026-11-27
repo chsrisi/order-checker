@@ -8,6 +8,7 @@ const views: Record<string, () => Promise<unknown>> = {
   workers: () => import('../views/WorkersView.vue'),
   orders: () => import('../views/OrdersView.vue'),
   settings: () => import('../views/SettingsView.vue'),
+  tasks: () => import('../views/TasksView.vue'),
 }
 
 const pageRoutes: RouteRecordRaw[] = allPages.map((page) => ({

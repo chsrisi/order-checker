@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NEmpty, NGrid, NGridItem, NH2, NText } from 'naive-ui'
+import { useTasks } from '../stores/tasks'
 import LoginRequests from '../components/LoginRequests.vue'
 import DeviceCard from '../components/DeviceCard.vue'
 import { useDevices } from '../stores/devices'
@@ -15,12 +16,17 @@ usePolling(async () => {
   now.value = new Date()
 }, 30_000)
 
+// Blocked tasks wait for an admin (V2_UX §2.8, UX-T2); the count follows `tasks_update`.
+const tasks = useTasks()
+void tasks.load()
+
 const online = computed(() => devices.list.filter((d) => d.online).length)
 // Shortcuts only for now (V2_DELTA Q36); dashboard actions are a later iteration.
 const shortcuts = [
   { label: 'Workers', to: '/workers' },
   { label: 'Devices', to: '/devices' },
   { label: 'Orders', to: '/orders' },
+  { label: 'Tasks', to: '/warehouse/tasks' },
   { label: 'Warehouse', to: '/warehouse' },
 ]
 </script>
@@ -28,6 +34,11 @@ const shortcuts = [
 <template>
   <div class="page">
     <LoginRequests />
+    <NAlert v-if="tasks.blockedCount" type="warning" :title="`Blocked tasks (${tasks.blockedCount})`" style="margin-bottom: 16px">
+      A worker could not finish {{ tasks.blockedCount === 1 ? 'a task' : `${tasks.blockedCount} tasks` }}. Reassign, cancel or close
+      {{ tasks.blockedCount === 1 ? 'it' : 'them' }}.
+      <NButton size="small" style="margin-left: 8px" @click="router.push('/warehouse/tasks?status=blocked')">Open</NButton>
+    </NAlert>
     <NH2 style="margin: 0 0 4px">Devices</NH2>
     <NText depth="3">{{ online }} of {{ devices.list.length }} online · refreshes every 30 s</NText>
     <NAlert v-if="devices.error" type="error" style="margin-top: 12px">{{ devices.error }}</NAlert>
