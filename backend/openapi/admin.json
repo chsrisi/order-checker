@@ -1350,7 +1350,7 @@
     },
     "/admin/devices": {
       "get": {
-        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now). Read-only until step 8.",
+        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now).",
         "operationId": "list_devices_admin_devices_get",
         "responses": {
           "200": {
@@ -1377,6 +1377,126 @@
           }
         ],
         "summary": "List v2 devices",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/approve": {
+      "post": {
+        "description": "`pending` \u2192 `active`: the scanner is trusted (a direct worker switch needs it). Idempotent on an `active` device; a `revoked` device answers 409.",
+        "operationId": "approve_device_admin_devices__device_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "409": {
+            "description": "Not allowed from the device's current status"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve a device",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/revoke": {
+      "post": {
+        "description": "`pending` or `active` \u2192 `revoked`, final: every session on the device ends at once (its sockets close) and it can no longer log in, register or ask for a login. The workers stay logged in on their other devices. Idempotent on a `revoked` device.",
+        "operationId": "revoke_device_admin_devices__device_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "409": {
+            "description": "Not allowed from the device's current status"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke a device",
         "tags": [
           "admin"
         ]

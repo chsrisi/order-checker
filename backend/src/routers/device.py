@@ -3,8 +3,6 @@ body reports the app version, and an outdated app must still be identifiable."""
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, Depends
 
 from ..models import DeviceRegisterRequest, DeviceResponse
@@ -26,13 +24,11 @@ router = APIRouter(prefix="/v2/device", tags=["v2 · device"])
     responses={
         400: {"description": "Invalid public key or signature"},
         401: {"description": "Invalid bearer token"},
-        403: {"description": "Device revoked"},
+        403: {"description": "Device revoked (the calling session is revoked too)"},
     },
 )
 async def register_device(
     body: DeviceRegisterRequest,
     principal: Principal = Depends(get_current_principal),
 ):
-    return await asyncio.to_thread(
-        device_service.register, body, principal.user.username or "", principal.sid
-    )
+    return await device_service.register(body, principal.user.username or "", principal.sid)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import date, datetime
 from typing import List, Optional
@@ -25,6 +26,7 @@ from ..dependencies import require_admin
 from ..timezone import business_time
 from ..services import (
     auth_service,
+    device_service,
     login_request_service,
     outbound_service,
     queries,
@@ -102,7 +104,7 @@ async def reset_user_password(
     description=(
         "Registered v2 operator devices, most recently seen first: status, current operator, "
         "model, Android version, app versionCode, last contact, and `online` (a session of the "
-        "device has an open live-update socket right now). Read-only until step 8."
+        "device has an open live-update socket right now)."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
@@ -112,6 +114,51 @@ def list_devices(_admin: User = Depends(require_admin)):
         AdminDeviceResponse.model_validate(d).model_copy(update={"online": d.id in online})
         for d in queries.list_devices()
     ]
+
+
+DEVICE_ACTION_RESPONSES = {
+    403: {"description": "Admin scope required"},
+    404: {"description": "Device not found"},
+    409: {"description": "Not allowed from the device's current status"},
+}
+DeviceId = Path(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+async def _device_action(device_id: str, status: str, admin: User) -> AdminDeviceResponse:
+    device = await device_service.set_status(device_id, status, admin.username or "")
+    online = await asyncio.to_thread(queries.device_ids_for_sessions, conn_mgr.live_session_ids())
+    return AdminDeviceResponse.model_validate(device).model_copy(
+        update={"online": device.id in online}
+    )
+
+
+@router.post(
+    "/devices/{device_id}/approve",
+    response_model=AdminDeviceResponse,
+    summary="Approve a device",
+    description=(
+        "`pending` → `active`: the scanner is trusted (a direct worker switch needs it). "
+        "Idempotent on an `active` device; a `revoked` device answers 409."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def approve_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "active", current_user)
+
+
+@router.post(
+    "/devices/{device_id}/revoke",
+    response_model=AdminDeviceResponse,
+    summary="Revoke a device",
+    description=(
+        "`pending` or `active` → `revoked`, final: every session on the device ends at once "
+        "(its sockets close) and it can no longer log in, register or ask for a login. The "
+        "workers stay logged in on their other devices. Idempotent on a `revoked` device."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def revoke_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "revoked", current_user)
 
 
 @router.get(

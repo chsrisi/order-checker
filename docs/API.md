@@ -35,7 +35,9 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
-| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`, `online` |
+| POST | `/admin/devices/{id}/approve` | Admin | `pending` → `active` (T8.1). Idempotent on `active`; 409 `Device is revoked`; 404 unknown. Returns the device |
+| POST | `/admin/devices/{id}/revoke` | Admin | `pending`/`active` → `revoked`, final. Ends every session on that device and closes its sockets (the workers' other devices stay logged in); the device can no longer register, ask for or collect a login. Idempotent on `revoked`; 404 unknown. Returns the device |
 | GET | `/admin/login-requests` | Admin | Pending login requests, oldest first: `id`, `username`, `match_code`, device, IP, `created_at`, `expires_at` |
 | POST | `/admin/login-requests/{id}/approve`, `/deny` | Admin | Decide. 404 expired or cancelled, 409 already decided |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
@@ -117,7 +119,8 @@ nonce, 503 Redis down. Signed string: SYSTEM_REFERENCE §5.
 last_seen_at}`. `public_key` is the base64 DER SubjectPublicKeyInfo of the app's Android
 Keystore EC P-256 key; `signature` is the base64 DER ECDSA/SHA-256 signature over the UTF-8
 `sid` claim of the access token used for the call. New devices are `pending`; calling it again
-is idempotent (call it after every login). **400** bad key or signature, **403** device revoked.
+is idempotent (call it after every login). **400** bad key or signature, **403** device revoked
+(the calling session is revoked too, T8.1: log out locally).
 It binds the session to the device; from then on every gated `/v2` request updates the
 device's `last_seen_at` and `app_version_code` (from `X-Client-Version`).
 

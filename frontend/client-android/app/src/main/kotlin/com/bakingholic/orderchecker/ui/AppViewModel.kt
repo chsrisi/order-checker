@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.bakingholic.orderchecker.AppGraph
 import com.bakingholic.orderchecker.auth.LoginRequestResult
 import com.bakingholic.orderchecker.auth.LoginWait
+import com.bakingholic.orderchecker.device.DeviceStatus
 import com.bakingholic.orderchecker.net.ApiException
 import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
@@ -21,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+private const val DEVICE_REVOKED = "This device was revoked by the admin."
 
 sealed interface Screen {
     data object Starting : Screen
@@ -59,7 +62,18 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
                 when (event) {
                     is AppEvent.LoggedOut -> {
                         ops.selectOrder(null)
-                        _screen.value = Screen.Login(error = "Session ended. Please log in again.")
+                        // A socket close or 401 can arrive after the revoked registration.
+                        _screen.value = Screen.Login(
+                            error = if (graph.device.status.value == DeviceStatus.Revoked) {
+                                DEVICE_REVOKED
+                            } else {
+                                "Session ended. Please log in again."
+                            },
+                        )
+                    }
+                    is AppEvent.DeviceRevoked -> {
+                        ops.selectOrder(null)
+                        _screen.value = Screen.Login(error = DEVICE_REVOKED)
                     }
                     is AppEvent.UpgradeRequired -> {
                         _screen.value = Screen.UpdateRequired(event.minSupportedVersionCode)
@@ -191,7 +205,7 @@ class AppViewModel(val graph: AppGraph) : ViewModel() {
     }
 
     private fun requestError(e: ApiException): String = when {
-        e.code == 403 && e.detail == "Device revoked" -> "This device was revoked by the admin."
+        e.code == 403 && e.detail == "Device revoked" -> DEVICE_REVOKED
         e.code == 403 -> "This device is not registered yet. Log in with a password once."
         e.code == 429 -> "Too many requests. Wait a few minutes."
         e.code == 503 -> "Requests are not available right now. Use the password."

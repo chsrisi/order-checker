@@ -152,7 +152,7 @@ the refresh-cleanup task once `expires_at` passed, and with the user.
 
 **`auth.devices`** (T6.6): `id` PK (uuid hex); `public_key` UNIQUE (base64 DER SPKI, P-256);
 `status` `pending`|`active`|`revoked` (CHECK); `label`, `model`, `android_version`,
-`app_version_code`; `token_hash` (unused until step 8); `current_username` FK → users
+`app_version_code`; `token_hash` (unused until T8.2); `current_username` FK → users
 `ON DELETE SET NULL` (the SQL word `current_user` is reserved); `enrolled_at`, `last_seen_at`.
 `auth.sessions.device_id` FK → devices `ON DELETE SET NULL` (indexed, NULL for v1 and admin).
 
@@ -280,7 +280,8 @@ session applies to the very next HTTP request (401). Endpoints that need the ses
 in it (a refresh token whose session is gone, revoked or different fails with 401). Ending a
 session revokes it and deletes its refresh tokens in one transaction, then closes its sockets
 (1008): logout ends that session only (`ConnectionManager.disconnect_session`); password reset,
-`POST /admin/users/{username}/logout` and user deletion end all of the user's sessions.
+`POST /admin/users/{username}/logout` and user deletion end all of the user's sessions;
+revoking a device (T8.1) ends every session bound to it, and only those.
 `scripts.set_admin_password` revokes the admin's sessions. v1 clients see a 401, fail their one
 refresh and return to the login screen.
 
@@ -298,6 +299,20 @@ minutes, 20 pending. Unknown usernames and admin accounts get a request no admin
 collection the account must still exist with the same password, and the device must not be
 revoked. Deciding is one NX, collecting one GETDEL, so at most one session results. A password
 lockout does not block requests. Redis down → 503 (password login still works).
+
+**Device approval and revocation** (T8.1, `device_service.set_status`,
+`queries.set_device_status`). `POST /admin/devices/{id}/approve`: `pending` → `active`.
+`/revoke`: `pending` or `active` → `revoked`, final (V2_WORKER_SWITCH_DELTA W7). Both are
+idempotent (200 with the device); approving a revoked device is 409 "Device is revoked"; 404
+for an unknown id. Revoking marks the device and revokes its live sessions and their refresh
+tokens in one transaction (row lock), then closes their sockets (1008); the same workers stay
+logged in on other devices, and v1 sessions (no `device_id`) are untouched. A revoked device
+can't register (`/v2/device/register` answers 403 **and revokes the calling session**, W9, so a
+password login on it ends within one request), ask for a login, or collect one. `pending`
+devices work as before (password login, login requests). Each action is logged
+(`device.approved` / `device.revoked` with `admin`, `device_id`, `username`, `changed`,
+`sessions_revoked`); no audit table. The Android app logs out locally on that 403 and shows
+"This device was revoked by the admin."
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
 under races), then checks expiry, the session (same `sid`, still live) and user existence, and
@@ -348,7 +363,7 @@ cache.
 | Outbound: close period, clear all, history, exports | – | yes |
 | Stocks: read, adjust, transfer | yes | yes |
 | Item search | yes | yes |
-| Users, BOM, Shopee config, sync reset | – | yes |
+| Users, devices (approve, revoke), BOM, Shopee config, sync reset | – | yes |
 | WS `get_users` | error frame "Forbidden" | yes |
 
 `require_admin` returns 403 "Not authorized" for operators.
@@ -715,7 +730,8 @@ committed export `backend/openapi/v2.json`.
   compose mounts `RELEASES_VOLUME` read-only.
 - Devices (T6.6, `routers/device.py`, `services/device_service.py`, `queries/devices.py`):
   `POST /v2/device/register` verifies an ECDSA P-256 signature over the caller's `sid`
-  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403, row lock + retry
+  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403 and the calling
+session revoked (T8.1), row lock + retry
   on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
   `request.state.client_version`; `get_current_principal` passes it to
   `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
@@ -723,7 +739,8 @@ committed export `backend/openapi/v2.json`.
   devices. `GET /admin/devices` lists them (`AdminDeviceResponse`: the device plus `online`,
   true when a live session of the device has an open WebSocket right now, from
   `conn_mgr.live_session_ids()` → `queries.device_ids_for_sessions`; V2_DELTA Q35). `last_seen_at`
-  moves only on HTTP requests, so `online` is what the console shows as status.
+  moves only on HTTP requests, so `online` is what the console shows as status. Approve and
+  revoke: §5 "Device approval and revocation".
 
 ---
 

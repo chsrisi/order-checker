@@ -7,10 +7,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Iterable, List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
-from ...models import AuthSession, Device
+from ...models import AuthSession, Device, RefreshToken
 from .engine import get_db
 
 logger = logging.getLogger("backend.services.queries.devices")
@@ -18,6 +18,23 @@ logger = logging.getLogger("backend.services.queries.devices")
 
 class DeviceRevoked(Exception):
     """The public key belongs to a revoked device; it must not register again."""
+
+
+class DeviceNotFound(Exception):
+    """No device with this id."""
+
+
+class DeviceStatusConflict(Exception):
+    """The status change is not allowed from the device's current status (P-24)."""
+
+    def __init__(self, status: str):
+        super().__init__(status)
+        self.status = status
+
+
+# P-24: approve pending -> active, revoke pending/active -> revoked (final, W7). Repeating a
+# change is idempotent; any other change conflicts.
+_ALLOWED_FROM = {"active": {"pending", "active"}, "revoked": {"pending", "active", "revoked"}}
 
 
 def register_device(
@@ -73,6 +90,46 @@ def register_device(
             db.expunge(device)
             return device
     raise RuntimeError("unreachable")
+
+
+def _revoke_device_sessions(db, device_id: str) -> list[str]:
+    """Revoke every live session bound to the device and delete its refresh tokens (no
+    commit). Sessions of the same workers on other devices are untouched."""
+    sids = list(
+        db.execute(
+            update(AuthSession)
+            .where(AuthSession.device_id == device_id, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(UTC))
+            .returning(AuthSession.id)
+        ).scalars()
+    )
+    if sids:
+        db.execute(delete(RefreshToken).where(RefreshToken.session_id.in_(sids)))
+    return sids
+
+
+def set_device_status(device_id: str, status: str) -> tuple[Device, bool, list[str]]:
+    """Approve (``active``) or revoke (``revoked``) a device (T8.1, P-24). Returns the device,
+    whether its status changed, and the sessions revoked with it (revoking ends every session
+    bound to the device, in the same transaction). Raises ``DeviceNotFound`` or
+    ``DeviceStatusConflict``."""
+    with get_db() as db:
+        device = (
+            db.execute(select(Device).where(Device.id == device_id).with_for_update())
+            .scalars()
+            .first()
+        )
+        if device is None:
+            raise DeviceNotFound()
+        if device.status not in _ALLOWED_FROM[status]:
+            raise DeviceStatusConflict(device.status)
+        changed = device.status != status
+        device.status = status
+        sids = _revoke_device_sessions(db, device_id) if status == "revoked" else []
+        db.commit()
+        db.refresh(device)
+        db.expunge(device)
+        return device, changed, sids
 
 
 def list_devices() -> List[Device]:

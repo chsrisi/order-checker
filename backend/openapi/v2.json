@@ -1713,7 +1713,7 @@
             "description": "Invalid bearer token"
           },
           "403": {
-            "description": "Device revoked"
+            "description": "Device revoked (the calling session is revoked too)"
           },
           "422": {
             "content": {

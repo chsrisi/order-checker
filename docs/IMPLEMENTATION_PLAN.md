@@ -1443,7 +1443,7 @@ same change as the task.
 | T7.10 | done | Devices page (table on desktop, cards on mobile), polled every 30 s, with `online` (2026-11-23). Checked in headless Firefox: emulator shows Online while logged in, Offline after logout |
 | T7.11 | todo | |
 | T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |
-| T8.1 | todo | planned 2026-11-27 (worker switch); device token moved to T8.2 (W3) |
+| T8.1 | done | Approve/revoke routes; revoke ends the device's sessions only; register on a revoked device revokes the calling session (W9, test failed without it); Android logs out on that 403. No migration; `client_v1.json` and `client_v2.json` unchanged; `openapi/v2.json` only the register 403 text. Device token moved to T8.2 (W3) |
 | T8.2 | todo | |
 | T8.3 | todo | |
 | T8.4a | todo | planned 2026-11-27 (worker switch) |
