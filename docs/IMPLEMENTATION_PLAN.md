@@ -1200,7 +1200,7 @@ once PR #8 is merged.
 
 **T9.3 Console: Tasks page**
 - Goal: SPEC §6 console part, plus order-tasks per worker (R1.3).
-- Refs: T6, T8, T9 (working defaults, confirm in the brief); P-26 style confirmations.
+- Refs: T6, T8, T9 (decided, V2_TASKS_DELTA Round 2); P-26 style confirmations.
 - Change: Warehouse → Tasks: create a count (item search; bin in `multi` mode) or a pick (lines,
   with bundles shown expanded, reference); list by worker, type and status, live; detail with
   the counted vs. recorded difference; cancel (return or keep picked stock), reassign, close as

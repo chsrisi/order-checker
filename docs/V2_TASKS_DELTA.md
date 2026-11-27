@@ -91,7 +91,7 @@ example because offline bundles are mostly listing-only.
 
 | Ref | Question | Working default | Status |
 |---|---|---|---|
-| T13 | Pull the BOM generalization forward for offline bundles? | **No**: snapshot leaves on the task, one shared expansion function, (a) for listing-only bundles. | ❓ before planning, working default used in the plan |
+| T13 | Pull the BOM generalization forward for offline bundles? | **No**: snapshot leaves on the task, one shared expansion function, (a) for listing-only bundles. | ❓ before planning, working default used in the plan (Round 2: ✅ 📌) |
 
 ### R1.5 Count only, in single location mode (T5)
 
@@ -113,3 +113,15 @@ example because offline bundles are mostly listing-only.
   exports, `WSMessageType` and the plan's tracker. If they are built in parallel sessions,
   regenerate the snapshot and exports after merging instead of hand-merging them.
 - MARKETPLACE_REVIEW §3 "BOM" gains a pointer to R1.4.
+
+## Round 2 (2026-11-27)
+
+| Ref | Decision | Status |
+|---|---|---|
+| T6 | Blind count: the worker doesn't see the recorded quantity; the console shows the difference. | ✅ |
+| T8 | The admin can close a blocked pick task as picked, keeping what was picked. | ✅ |
+| T9 | Cancelling a task with picks asks, defaulting to returning the stock; logged either way. | ✅ |
+| T13 | Working default kept for now (no BOM generalization pulled forward; leaves snapshotted, one shared expansion function). **Pinned for a later review**, with the marketplace milestone. | ✅ 📌 |
+| P-28–P-32 | Planning defaults accepted. | ✅ |
+
+No open questions before building.
