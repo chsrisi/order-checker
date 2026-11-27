@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NButton, NEmpty, NSpin, NTag, NText } from 'naive-ui'
+import { NButton, NEmpty, NSpin, NTag, NText, useThemeVars } from 'naive-ui'
 import CloseAction from './CloseAction.vue'
 import OrderCard from './OrderCard.vue'
 import OrderFilters from './OrderFilters.vue'
@@ -16,6 +16,7 @@ import { normLabel, packageCoverage, progress, statusLabel, type Order, type Out
  */
 const store = useOrders()
 const board = useOrdersBoard()
+const themeVars = useThemeVars()
 
 const isPacked = (x: { order: Order } | undefined) => !!x && store.packed.has(x.order.order_sn)
 const firstPacked = (items: { order: Order }[], i: number) => isPacked(items[i]) && !isPacked(items[i - 1])
@@ -167,14 +168,8 @@ function emptySlot(order: Order): { text: string; wait: boolean } {
 .prow:hover :deep(.card),
 .prow:hover :deep(.scan),
 .prow:hover .slot.empty {
-  border-color: #18a058;
-}
-@media (prefers-color-scheme: dark) {
-  .prow:hover :deep(.card),
-  .prow:hover :deep(.scan),
-  .prow:hover .slot.empty {
-    border-color: #63e2b7;
-  }
+  /* Naive's primary colour: #18a058 light, #63e2b7 dark. It follows the theme toggle. */
+  border-color: v-bind('themeVars.primaryColor');
 }
 .prow:hover :deep(.scan.on) {
   border-color: #d03050;

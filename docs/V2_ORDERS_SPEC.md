@@ -402,8 +402,8 @@ Round 2 plus one change, in every layout (paired rows, two lists, mobile):
   May → *Mei*, Aug → *Agu*, Oct → *Okt*, Dec → *Des*), the Shopee status names and the close
   review's sentences, which build plurals. Naive UI ships both locales (`enUS`/`idID` and
   `dateEnUS`/`dateIdID`). Scanner labels, SKUs and buyer notes stay as they are.
-- **To-do: light/dark toggle.** Today the theme follows the system setting. Add a switch with
-  *System*, *Light* and *Dark*, remembered per browser. Both themes are already supported, and
+- **Done (2026-11-27): light/dark toggle.** Account menu → Theme: *System*, *Light* and
+  *Dark*, remembered per browser. Both themes are already supported, and
   C9 (never colour alone) still applies.
 - **Future milestone, not a major focus for v2: Tokopedia and TikTok Shop API integration.** Their
   orders would join the ongoing list like Shopee's, so their outbound scans stop showing up as

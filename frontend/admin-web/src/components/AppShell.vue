@@ -21,6 +21,7 @@ import { useLoginRequests } from '../stores/loginRequests'
 import { usePolling } from '../lib/usePolling'
 import { dashboard, groups, type NavPage } from '../nav'
 import { useIsMobile } from '../lib/useIsMobile'
+import { themeModes, useTheme, type ThemeMode } from '../lib/theme'
 
 const session = useSession()
 const live = useLive()
@@ -51,13 +52,20 @@ const liveTag = computed(() =>
       ? { type: 'warning' as const, text: 'Connecting…' }
       : { type: 'error' as const, text: 'Offline' },
 )
-const accountMenu = [
+const theme = useTheme()
+const accountMenu = computed(() => [
   { key: 'about', label: 'Server info' },
+  {
+    key: 'theme',
+    label: 'Theme',
+    children: themeModes.map((m) => ({ key: `theme:${m.key}`, label: `${theme.mode.value === m.key ? '✓ ' : ''}${m.label}` })),
+  },
   { key: 'classic', label: 'Classic admin' },
   { key: 'logout', label: 'Log out' },
-]
+])
 async function onAccount(key: string) {
-  if (key === 'about') await router.push({ name: 'about' })
+  if (key.startsWith('theme:')) theme.setMode(key.slice('theme:'.length) as ThemeMode)
+  else if (key === 'about') await router.push({ name: 'about' })
   else if (key === 'classic') window.location.href = '/'
   else {
     await session.logout()

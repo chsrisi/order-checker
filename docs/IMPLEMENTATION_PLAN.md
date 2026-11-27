@@ -1106,13 +1106,13 @@ Later: barcode rules (after localization), then marketplaces and UOM at the same
   directly, or end the session and preselect a worker on the login screen. Builds on Devices
   (T7.10), log out everywhere (T6.2) and login requests (T6.21–T6.23).
   Its spec brings step 8 forward (device trust T8.1, device commands T8.4; Delta 13).
-- **Edit the "previously logged in" worker list from the client's hidden settings.** Delete
-  entries from the login picker's local list of the 20 most recent workers (V2_UX §2.7).
+- ~~**Edit the "previously logged in" worker list from the client's hidden settings.**~~
+  **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
   Device-local only, no backend change.
 - **New feature: tasks.** Not yet defined. It needs its own spec (planning flow step 1) before
   any planning.
-- **Console light/dark toggle** (small, V2_ORDERS_SPEC §12): *System*, *Light* and *Dark*,
-  remembered per browser. Front end only.
+- ~~**Console light/dark toggle**~~ **Done 2026-11-27** (V2_ORDERS_SPEC §12): account menu →
+  Theme, *System*, *Light* and *Dark*, remembered per browser. Front end only.
 - **Localization, English and Indonesian** (V2_ORDERS_SPEC §12): every string, dates, Shopee
   status names and plurals. Both apps, Android first (Q86).
 - **Finder** (client and console): proposal in V2_UX §3.1 (Q84). Not now.
