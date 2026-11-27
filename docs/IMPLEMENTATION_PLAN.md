@@ -1184,8 +1184,9 @@ Later: barcode rules (after localization), then marketplaces and UOM at the same
 - ~~**Edit the "previously logged in" worker list from the client's hidden settings.**~~
   **Done 2026-11-27:** Remove per name, Remove all with a confirmation (V2_UX §2.7).
   Device-local only, no backend change.
-- **New feature: tasks.** Not yet defined. It needs its own spec (planning flow step 1) before
-  any planning.
+- **New feature: tasks.** An admin assigns a stockkeeping task or a manual (offline) picking
+  task to a worker; it completes implicitly. **Spec written 2026-11-27:**
+  [V2_TASKS_SPEC.md](V2_TASKS_SPEC.md), questions T1–T12 open.
 - ~~**Console light/dark toggle**~~ **Done 2026-11-27** (V2_ORDERS_SPEC §12): account menu →
   Theme, *System*, *Light* and *Dark*, remembered per browser. Front end only.
 - **Localization, English and Indonesian** (V2_ORDERS_SPEC §12): every string, dates, Shopee
