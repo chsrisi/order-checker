@@ -457,6 +457,56 @@
         "title": "OrderPickResponse",
         "type": "object"
       },
+      "OrderTaskResponse": {
+        "description": "A claimed order that is not *Picked* yet, shown as a task (derived, V2_TASKS_DELTA R1.3).",
+        "properties": {
+          "done_skus": {
+            "title": "Done Skus",
+            "type": "integer"
+          },
+          "order_sn": {
+            "title": "Order Sn",
+            "type": "string"
+          },
+          "owner_user": {
+            "title": "Owner User",
+            "type": "string"
+          },
+          "required_skus": {
+            "title": "Required Skus",
+            "type": "integer"
+          },
+          "ship_by": {
+            "format": "date-time",
+            "title": "Ship By",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "not_started",
+              "partial",
+              "extra"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_sn",
+          "owner_user",
+          "ship_by",
+          "status",
+          "state",
+          "done_skus",
+          "required_skus"
+        ],
+        "title": "OrderTaskResponse",
+        "type": "object"
+      },
       "OutboundCreate": {
         "properties": {
           "content": {
@@ -922,6 +972,349 @@
         "title": "StockUpdateResponse",
         "type": "object"
       },
+      "TaskBlockRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "TaskBlockRequest",
+        "type": "object"
+      },
+      "TaskCountRequest": {
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The scanned location: required in `multi` mode, a check in `single` mode.",
+            "title": "Location"
+          },
+          "qty": {
+            "description": "The quantity counted.",
+            "minimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "Scanned SKU or barcode.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "title": "TaskCountRequest",
+        "type": "object"
+      },
+      "TaskLineResponse": {
+        "properties": {
+          "counted_qty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The count, once done.",
+            "title": "Counted Qty"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "kind": {
+            "enum": [
+              "count",
+              "entered",
+              "leaf"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A count's bin (`multi` mode).",
+            "title": "Location"
+          },
+          "picked": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Picked so far (leaf lines).",
+            "title": "Picked"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required quantity; none on a count.",
+            "title": "Qty"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "sku"
+        ],
+        "title": "TaskLineResponse",
+        "type": "object"
+      },
+      "TaskPickResponse": {
+        "properties": {
+          "item_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Name"
+          },
+          "qty": {
+            "description": "What the task now has of this SKU.",
+            "minimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "required": {
+            "title": "Required",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "The resolved warehouse SKU.",
+            "title": "Sku",
+            "type": "string"
+          },
+          "status": {
+            "description": "`done` once every line is picked exactly.",
+            "enum": [
+              "open",
+              "blocked",
+              "done",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "sku",
+          "qty",
+          "required",
+          "status"
+        ],
+        "title": "TaskPickResponse",
+        "type": "object"
+      },
+      "TaskResponse": {
+        "description": "A task. Never carries the recorded stock: counts are blind (T6).",
+        "properties": {
+          "assigned_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Name"
+          },
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "NULL once the worker was deleted.",
+            "title": "Assigned To"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "current_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Count tasks: where the item is now (its bins).",
+            "title": "Current Location"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "in_progress": {
+            "description": "Something is picked (derived, never stored).",
+            "title": "In Progress",
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TaskLineResponse"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "blocked",
+              "done",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "count",
+              "pick"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "in_progress",
+          "assigned_to",
+          "created_by",
+          "created_at",
+          "lines"
+        ],
+        "title": "TaskResponse",
+        "type": "object"
+      },
       "Token": {
         "properties": {
           "access_token": {
@@ -974,6 +1367,32 @@
           "password"
         ],
         "title": "UserAuth",
+        "type": "object"
+      },
+      "V2TaskListResponse": {
+        "properties": {
+          "order_tasks": {
+            "description": "Claimed orders not yet picked.",
+            "items": {
+              "$ref": "#/components/schemas/OrderTaskResponse"
+            },
+            "title": "Order Tasks",
+            "type": "array"
+          },
+          "tasks": {
+            "description": "Open and blocked tasks, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/TaskResponse"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tasks",
+          "order_tasks"
+        ],
+        "title": "V2TaskListResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -2345,6 +2764,440 @@
         "summary": "Adjust or transfer inventory",
         "tags": [
           "v2 \u00b7 stocks"
+        ]
+      }
+    },
+    "/v2/tasks": {
+      "get": {
+        "description": "The caller's open and blocked tasks (oldest first), and their claimed orders that are not *Picked* yet. Live: `tasks_update` on `/v2/ws` carries the task list.",
+        "operationId": "list_my_tasks_v2_tasks_get",
+        "parameters": [
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2TaskListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on tasks"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My tasks",
+        "tags": [
+          "v2 \u00b7 tasks"
+        ]
+      }
+    },
+    "/v2/tasks/{task_id}/block": {
+      "post": {
+        "description": "Marks an open task blocked, with a reason; an admin then decides.",
+        "operationId": "block_v2_tasks__task_id__block_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on tasks"
+          },
+          "404": {
+            "description": "Task not found or not assigned to the caller"
+          },
+          "409": {
+            "description": "The task is not open"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Can't finish",
+        "tags": [
+          "v2 \u00b7 tasks"
+        ]
+      }
+    },
+    "/v2/tasks/{task_id}/count": {
+      "post": {
+        "description": "Sets the counted quantity (blind: the recorded stock is never shown) and completes the task. The scanned item must be the task's; in `multi` mode the scanned location must be its bin, in `single` mode a scanned location must be where the item is.",
+        "operationId": "count_v2_tasks__task_id__count_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on tasks"
+          },
+          "404": {
+            "description": "Task not found or not assigned to the caller"
+          },
+          "409": {
+            "description": "Wrong item or location, or the task is not open"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record a count",
+        "tags": [
+          "v2 \u00b7 tasks"
+        ]
+      }
+    },
+    "/v2/tasks/{task_id}/picks": {
+      "post": {
+        "description": "Resolves the SKU/barcode and deducts stock bin by bin, as for an order. The task is done when every line is picked exactly (`status`).",
+        "operationId": "pick_v2_tasks__task_id__picks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderPickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPickResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on tasks"
+          },
+          "404": {
+            "description": "SKU/barcode not found, or task not assigned to the caller"
+          },
+          "409": {
+            "description": "Item not on the task, task not open, or not enough stock (only with `STOCK_STRICT`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pick an item into a task",
+        "tags": [
+          "v2 \u00b7 tasks"
+        ]
+      }
+    },
+    "/v2/tasks/{task_id}/picks/unassign": {
+      "post": {
+        "description": "Returns the quantity to stock at once. `sku` is the stored SKU of the line.",
+        "operationId": "unassign_v2_tasks__task_id__picks_unassign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Task Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required. The app's integer versionCode.",
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required. The app's integer versionCode.",
+              "title": "X-Client-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderPickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPickResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Missing or malformed X-Client-Version header"
+          },
+          "403": {
+            "description": "Admin accounts cannot work on tasks"
+          },
+          "404": {
+            "description": "Task not assigned to the caller, or nothing of the SKU picked"
+          },
+          "409": {
+            "description": "Task not open, or more than is picked; nothing changes"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "426": {
+            "description": "Client update required: `{detail, min_supported_version_code}`; the app must update before it can continue"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove a picked quantity from a task",
+        "tags": [
+          "v2 \u00b7 tasks"
         ]
       }
     }

@@ -321,6 +321,205 @@
       },
       "success_200": true
     },
+    "GET /v2/tasks": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        }
+      },
+      "request": null,
+      "response": {
+        "nullable": false,
+        "properties": {
+          "order_tasks": {
+            "items": {
+              "nullable": false,
+              "properties": {
+                "done_skus": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "integer"
+                },
+                "order_sn": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "owner_user": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "required_skus": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "integer"
+                },
+                "ship_by": {
+                  "format": "date-time",
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "state": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "nullable": false,
+            "required": true,
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "nullable": false,
+              "properties": {
+                "assigned_name": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "assigned_to": {
+                  "nullable": true,
+                  "required": true,
+                  "type": "string"
+                },
+                "blocked_reason": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "closed_at": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "closed_by": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "created_by": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "current_location": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "id": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "integer"
+                },
+                "in_progress": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "boolean"
+                },
+                "lines": {
+                  "items": {
+                    "nullable": false,
+                    "properties": {
+                      "counted_qty": {
+                        "nullable": true,
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "id": {
+                        "nullable": false,
+                        "required": true,
+                        "type": "integer"
+                      },
+                      "item_name": {
+                        "nullable": true,
+                        "required": false,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "nullable": false,
+                        "required": true,
+                        "type": "string"
+                      },
+                      "location": {
+                        "nullable": true,
+                        "required": false,
+                        "type": "string"
+                      },
+                      "picked": {
+                        "nullable": true,
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "qty": {
+                        "nullable": true,
+                        "required": false,
+                        "type": "integer"
+                      },
+                      "sku": {
+                        "nullable": false,
+                        "required": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "nullable": false,
+                  "required": true,
+                  "type": "array"
+                },
+                "note": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "reference": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "type": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "nullable": false,
+            "required": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
     "POST /v2/auth/login": {
       "params": {
         "X-Client-Version": {
@@ -1064,6 +1263,477 @@
             "nullable": false,
             "required": true,
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/tasks/{task_id}/block": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "task_id": {
+          "in": "path",
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "assigned_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "assigned_to": {
+            "nullable": true,
+            "required": true,
+            "type": "string"
+          },
+          "blocked_reason": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "closed_at": {
+            "format": "date-time",
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "closed_by": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "created_by": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "current_location": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "id": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "in_progress": {
+            "nullable": false,
+            "required": true,
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "nullable": false,
+              "properties": {
+                "counted_qty": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "id": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "integer"
+                },
+                "item_name": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "kind": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "location": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "picked": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "qty": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "sku": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "nullable": false,
+            "required": true,
+            "type": "array"
+          },
+          "note": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "reference": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "type": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/tasks/{task_id}/count": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "task_id": {
+          "in": "path",
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "location": {
+            "maxLength": 128,
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "assigned_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "assigned_to": {
+            "nullable": true,
+            "required": true,
+            "type": "string"
+          },
+          "blocked_reason": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "closed_at": {
+            "format": "date-time",
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "closed_by": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "created_by": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "current_location": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "id": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "in_progress": {
+            "nullable": false,
+            "required": true,
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "nullable": false,
+              "properties": {
+                "counted_qty": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "id": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "integer"
+                },
+                "item_name": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "kind": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                },
+                "location": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "string"
+                },
+                "picked": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "qty": {
+                  "nullable": true,
+                  "required": false,
+                  "type": "integer"
+                },
+                "sku": {
+                  "nullable": false,
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "nullable": false,
+            "required": true,
+            "type": "array"
+          },
+          "note": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "reference": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "type": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/tasks/{task_id}/picks": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "task_id": {
+          "in": "path",
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "item_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "required": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "task_id": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "success_200": true
+    },
+    "POST /v2/tasks/{task_id}/picks/unassign": {
+      "params": {
+        "X-Client-Version": {
+          "in": "header",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "task_id": {
+          "in": "path",
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        }
+      },
+      "request": {
+        "nullable": false,
+        "properties": {
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "response": {
+        "nullable": false,
+        "properties": {
+          "item_name": {
+            "nullable": true,
+            "required": false,
+            "type": "string"
+          },
+          "qty": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "required": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          },
+          "sku": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "task_id": {
+            "nullable": false,
+            "required": true,
+            "type": "integer"
           }
         },
         "type": "object"

@@ -304,6 +304,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/order-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Claimed orders not yet picked, per worker
+         * @description Read-only: each worker's claimed active orders that are not *Picked* yet, with progress (SKUs picked exactly of required). Derived, never stored.
+         */
+        get: operations["list_order_tasks_admin_order_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/shopee-config": {
         parameters: {
             query?: never;
@@ -362,6 +382,146 @@ export interface paths {
          * @description Re-authenticates the administrator and returns a separate temporary configuration token.
          */
         post: operations["unlock_shopee_config_admin_shopee_config_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tasks
+         * @description Oldest first. Without `status`: open and blocked tasks, plus those done or cancelled in the last 7 days (the same list `tasks_update` carries to admins). With `status` (repeatable): exactly those, with no time limit.
+         */
+        get: operations["list_tasks_admin_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a count task
+         * @description Assigns a blind count of one item to a worker. In `multi` mode `location` (the bin) is required; in `single` mode it is refused, and the count sets the item where it is.
+         */
+        post: operations["create_count_task_admin_tasks_count_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a manual picking task
+         * @description Lines of internal SKUs and quantities; a bundle is expanded by the standard BOM now, and the expansion is stored with the task. Done when every leaf is picked exactly.
+         */
+        post: operations["create_pick_task_admin_tasks_pick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A task with its stock log
+         * @description Lines, what was picked, every stock log row the task caused, and for a done count the recorded quantity it replaced and the difference.
+         */
+        get: operations["get_task_admin_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/{task_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a task
+         * @description Open or blocked tasks. Picked stock is returned by default; with `return_stock: false` it stays deducted (the goods already left). Logged either way.
+         */
+        post: operations["cancel_task_admin_tasks__task_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/{task_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a blocked pick task as picked
+         * @description Done with what was picked; the picks stay deducted.
+         */
+        post: operations["close_task_admin_tasks__task_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tasks/{task_id}/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give a task to another worker
+         * @description Open or blocked tasks; the task becomes open, and its picks move with it.
+         */
+        post: operations["reassign_task_admin_tasks__task_id__reassign_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -748,6 +908,69 @@ export interface components {
              */
             password: string;
         };
+        /** AdminTaskDetailResponse */
+        AdminTaskDetailResponse: {
+            /** Assigned Name */
+            assigned_name?: string | null;
+            /**
+             * Assigned To
+             * @description NULL once the worker was deleted.
+             */
+            assigned_to: string | null;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Closed By */
+            closed_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Current Location
+             * @description Count tasks: where the item is now (its bins).
+             */
+            current_location?: string | null;
+            /**
+             * Difference
+             * @description A done count: counted minus recorded (negative: missing).
+             */
+            difference?: number | null;
+            /** Id */
+            id: number;
+            /**
+             * In Progress
+             * @description Something is picked (derived, never stored).
+             */
+            in_progress: boolean;
+            /** Lines */
+            lines: components["schemas"]["TaskLineResponse"][];
+            /** Note */
+            note?: string | null;
+            /**
+             * Recorded Before
+             * @description A done count: the recorded quantity it replaced.
+             */
+            recorded_before?: number | null;
+            /** Reference */
+            reference?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "blocked" | "done" | "cancelled";
+            /** Stock Log */
+            stock_log: components["schemas"]["TaskStockLogResponse"][];
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "count" | "pick";
+        };
         /**
          * AdminUserCreate
          * @description Admin-side operator creation (A-3). Reuses the ``UserAuth`` username rule.
@@ -849,6 +1072,32 @@ export interface components {
             };
             /** Stock Location Mode */
             stock_location_mode: string;
+        };
+        /**
+         * OrderTaskResponse
+         * @description A claimed order that is not *Picked* yet, shown as a task (derived, V2_TASKS_DELTA R1.3).
+         */
+        OrderTaskResponse: {
+            /** Done Skus */
+            done_skus: number;
+            /** Order Sn */
+            order_sn: string;
+            /** Owner User */
+            owner_user: string;
+            /** Required Skus */
+            required_skus: number;
+            /**
+             * Ship By
+             * Format: date-time
+             */
+            ship_by: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_started" | "partial" | "extra";
+            /** Status */
+            status: string;
         };
         /** OutboundCloseResponse */
         OutboundCloseResponse: {
@@ -993,6 +1242,170 @@ export interface components {
             split_up?: boolean | null;
             /** Status */
             status: string;
+        };
+        /** TaskCancelRequest */
+        TaskCancelRequest: {
+            /**
+             * Return Stock
+             * @description Return picked stock (default), or keep it deducted when the goods left.
+             * @default true
+             */
+            return_stock: boolean;
+        };
+        /** TaskCountCreate */
+        TaskCountCreate: {
+            /** Assigned To */
+            assigned_to: string;
+            /**
+             * Location
+             * @description The bin to count: required in `multi` mode, refused in `single` mode.
+             */
+            location?: string | null;
+            /** Note */
+            note?: string | null;
+            /**
+             * Sku
+             * @description Internal SKU.
+             */
+            sku: string;
+        };
+        /** TaskLineResponse */
+        TaskLineResponse: {
+            /**
+             * Counted Qty
+             * @description The count, once done.
+             */
+            counted_qty?: number | null;
+            /** Id */
+            id: number;
+            /** Item Name */
+            item_name?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "count" | "entered" | "leaf";
+            /**
+             * Location
+             * @description A count's bin (`multi` mode).
+             */
+            location?: string | null;
+            /**
+             * Picked
+             * @description Picked so far (leaf lines).
+             */
+            picked?: number | null;
+            /**
+             * Qty
+             * @description Required quantity; none on a count.
+             */
+            qty?: number | null;
+            /** Sku */
+            sku: string;
+        };
+        /** TaskPickCreate */
+        TaskPickCreate: {
+            /** Assigned To */
+            assigned_to: string;
+            /** Lines */
+            lines: components["schemas"]["TaskPickLine"][];
+            /** Note */
+            note?: string | null;
+            /** Reference */
+            reference?: string | null;
+        };
+        /** TaskPickLine */
+        TaskPickLine: {
+            /** Qty */
+            qty: number;
+            /**
+             * Sku
+             * @description Internal SKU; a bundle expands.
+             */
+            sku: string;
+        };
+        /** TaskReassignRequest */
+        TaskReassignRequest: {
+            /** Assigned To */
+            assigned_to: string;
+        };
+        /**
+         * TaskResponse
+         * @description A task. Never carries the recorded stock: counts are blind (T6).
+         */
+        TaskResponse: {
+            /** Assigned Name */
+            assigned_name?: string | null;
+            /**
+             * Assigned To
+             * @description NULL once the worker was deleted.
+             */
+            assigned_to: string | null;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Closed By */
+            closed_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Current Location
+             * @description Count tasks: where the item is now (its bins).
+             */
+            current_location?: string | null;
+            /** Id */
+            id: number;
+            /**
+             * In Progress
+             * @description Something is picked (derived, never stored).
+             */
+            in_progress: boolean;
+            /** Lines */
+            lines: components["schemas"]["TaskLineResponse"][];
+            /** Note */
+            note?: string | null;
+            /** Reference */
+            reference?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "blocked" | "done" | "cancelled";
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "count" | "pick";
+        };
+        /** TaskStockLogResponse */
+        TaskStockLogResponse: {
+            /** Actor */
+            actor?: string | null;
+            /** After */
+            after?: number | null;
+            /** Before */
+            before?: number | null;
+            /** Delta */
+            delta?: number | null;
+            /** Id */
+            id: number;
+            /** Location */
+            location?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
         };
         /** TemporaryTokenResponse */
         TemporaryTokenResponse: {
@@ -1680,6 +2093,44 @@ export interface operations {
             };
         };
     };
+    list_order_tasks_admin_order_tasks_get: {
+        parameters: {
+            query?: {
+                assigned_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderTaskResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_shopee_config_admin_shopee_config_get: {
         parameters: {
             query?: never;
@@ -1838,6 +2289,363 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_tasks_admin_tasks_get: {
+        parameters: {
+            query?: {
+                assigned_to?: string | null;
+                type?: ("count" | "pick") | null;
+                status?: ("open" | "blocked" | "done" | "cancelled")[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"][];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_count_task_admin_tasks_count_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCountCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Location missing (`multi`) or given (`single`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Item or worker not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_pick_task_admin_tasks_pick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskPickCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description The lines expand to nothing to pick */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Item or worker not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_admin_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTaskDetailResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_task_admin_tasks__task_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The task's status does not allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_task_admin_tasks__task_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The task's status does not allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reassign_task_admin_tasks__task_id__reassign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskReassignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task or worker not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The task's status does not allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

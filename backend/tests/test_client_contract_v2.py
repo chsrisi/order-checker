@@ -37,6 +37,11 @@ CLIENT_V2_OPERATIONS: list[tuple[str, str]] = [
     ("get", "/v2/client/latest"),
     ("get", "/v2/client/apk/{version_code}"),
     ("post", "/v2/device/register"),
+    ("get", "/v2/tasks"),
+    ("post", "/v2/tasks/{task_id}/count"),
+    ("post", "/v2/tasks/{task_id}/picks"),
+    ("post", "/v2/tasks/{task_id}/picks/unassign"),
+    ("post", "/v2/tasks/{task_id}/block"),
 ]
 
 

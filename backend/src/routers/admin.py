@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
+from .admin_tasks import tasks_router
 from ..models import (
     AdminDayDetailResponse,
     AdminDayResponse,
@@ -37,6 +38,7 @@ logger = logging.getLogger("backend.routers.admin")
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(bom_router)
 router.include_router(shopee_config_router)
+router.include_router(tasks_router)
 
 
 @router.get(

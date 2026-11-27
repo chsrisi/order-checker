@@ -225,9 +225,13 @@ def list_tasks(
     assigned_to: Optional[str] = None,
     task_type: Optional[str] = None,
     statuses: Optional[Iterable[str]] = None,
+    closed_since: Optional[datetime] = None,
 ) -> list[Task]:
-    """Oldest first (T11)."""
+    """Oldest first (T11). ``closed_since`` keeps open and blocked tasks and only the done or
+    cancelled ones closed since then (the console's default view)."""
     query = select(Task).order_by(Task.created_at, Task.id)
+    if closed_since is not None:
+        query = query.where(Task.closed_at.is_(None) | (Task.closed_at >= closed_since))
     if assigned_to is not None:
         query = query.where(Task.assigned_to == assigned_to)
     if task_type is not None:

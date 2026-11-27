@@ -1451,7 +1451,7 @@ same change as the task.
 | T8.6 | todo | planned 2026-11-27 (worker switch) |
 | T8.7 | todo | planned 2026-11-27 (worker switch) |
 | T9.1 | done (2026-11-27) | Migration `a7d1c3e5f2b4`; `queries/tasks.py`; `order_payload.expand_lines` / `_Catalog.expand_line` shared with orders; task picks filtered out of `get_pie_data`, every v1 pick path, `count_unassigned_picks`, `release_unassigned_picks` and `clear_open_pick_entries`. **Planning addition:** `pick_item_entries.owner_user` is nullable for task picks only (CHECK `ck_pick_item_entries_owner`), so a deleted worker's task picks stay with the task (P-32, T12); a reassign moves `owner_user`. Unassigning an over-pick down to exact completes the task. Tests: `tests/integration/test_tasks_pg.py` (both modes), `test_task_rules.py`, tasks downgrade in `test_migrations_pg.py` |
-| T9.2 | todo | planned 2026-11-27 (tasks) |
+| T9.2 | done (2026-11-27) | `/admin/tasks` (+ `/count`, `/pick`, `/{id}`, `/cancel`, `/reassign`, `/close`), `/admin/order-tasks`; `/v2/tasks` (list with order-tasks, `/count`, `/picks`, `/picks/unassign`, `/block`); `tasks_update` via `send_to_user(min_contract=2)` and to admins. **Planning defaults used:** the admin default list (and its `tasks_update`) is open + blocked + closed in the last 7 days; `tasks_update` carries manual tasks only, order-tasks follow the order and pick events (and `GET /v2/tasks`); no WS command for tasks (the shared command loop would serve v1 too). `client_v1.json` unchanged; `client_v2.json` +5 operations; OpenAPI exports and the console `schema.d.ts` regenerated. Tests: `test_task_routes.py`, `integration/test_task_routes_pg.py` |
 | T9.3 | todo | planned 2026-11-27 (tasks) |
 | T9.4 | todo | planned 2026-11-27 (tasks) |
 | T8.5 | todo | |

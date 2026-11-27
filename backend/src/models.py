@@ -50,6 +50,7 @@ class WSMessageType(str, PyEnum):
     PICK_ITEM_ENTRIES = "pick_item_entries_update"
     STOCKS = "stocks_update"
     LOGIN_REQUESTS = "login_requests_update"
+    TASKS = "tasks_update"  # v2 operator sockets and admins only, never v1 operators (T9.2)
     ERROR = "error"
 
 
@@ -949,6 +950,153 @@ class PickItemEntryUnassign(BaseModel):
     order_sn: str = Field(min_length=1, max_length=ORDER_SN_MAX_LENGTH)
     sku: str = Field(min_length=1, max_length=SCAN_MAX_LENGTH)
     qty: int = Field(gt=0)
+
+
+# Tasks (IMPLEMENTATION_PLAN T9.2) ----
+TASK_NOTE_MAX_LENGTH = 500
+TASK_REFERENCE_MAX_LENGTH = 200
+TASK_REASON_MAX_LENGTH = 200
+TASK_LINES_MAX_ITEMS = 200
+SKU_MAX_LENGTH = 200
+
+Username = Annotated[str, Field(min_length=1, max_length=64)]
+TaskType = Literal["count", "pick"]
+TaskStatus = Literal["open", "blocked", "done", "cancelled"]
+
+
+class TaskCountCreate(BaseModel):
+    sku: str = Field(min_length=1, max_length=SKU_MAX_LENGTH, description="Internal SKU.")
+    assigned_to: Username
+    location: Optional[str] = Field(
+        default=None,
+        max_length=LOCATION_MAX_LENGTH,
+        description="The bin to count: required in `multi` mode, refused in `single` mode.",
+    )
+    note: Optional[str] = Field(default=None, max_length=TASK_NOTE_MAX_LENGTH)
+
+
+class TaskPickLine(BaseModel):
+    sku: str = Field(
+        min_length=1, max_length=SKU_MAX_LENGTH, description="Internal SKU; a bundle expands."
+    )
+    qty: int = Field(gt=0)
+
+
+class TaskPickCreate(BaseModel):
+    lines: List[TaskPickLine] = Field(min_length=1, max_length=TASK_LINES_MAX_ITEMS)
+    assigned_to: Username
+    reference: Optional[str] = Field(default=None, max_length=TASK_REFERENCE_MAX_LENGTH)
+    note: Optional[str] = Field(default=None, max_length=TASK_NOTE_MAX_LENGTH)
+
+
+class TaskCancelRequest(BaseModel):
+    return_stock: bool = Field(
+        default=True,
+        description="Return picked stock (default), or keep it deducted when the goods left.",
+    )
+
+
+class TaskReassignRequest(BaseModel):
+    assigned_to: Username
+
+
+class TaskBlockRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=TASK_REASON_MAX_LENGTH)
+
+
+class TaskCountRequest(BaseModel):
+    sku: str = Field(
+        min_length=1, max_length=SCAN_MAX_LENGTH, description="Scanned SKU or barcode."
+    )
+    qty: int = Field(ge=0, description="The quantity counted.")
+    location: Optional[str] = Field(
+        default=None,
+        max_length=LOCATION_MAX_LENGTH,
+        description="The scanned location: required in `multi` mode, a check in `single` mode.",
+    )
+
+
+class TaskLineResponse(BaseModel):
+    id: int
+    kind: Literal["count", "entered", "leaf"]
+    sku: str
+    item_name: Optional[str] = None
+    qty: Optional[int] = Field(default=None, description="Required quantity; none on a count.")
+    location: Optional[str] = Field(default=None, description="A count's bin (`multi` mode).")
+    picked: Optional[int] = Field(default=None, description="Picked so far (leaf lines).")
+    counted_qty: Optional[int] = Field(default=None, description="The count, once done.")
+
+
+class TaskResponse(BaseModel):
+    """A task. Never carries the recorded stock: counts are blind (T6)."""
+
+    id: int
+    type: TaskType
+    status: TaskStatus
+    in_progress: bool = Field(description="Something is picked (derived, never stored).")
+    assigned_to: Optional[str] = Field(description="NULL once the worker was deleted.")
+    assigned_name: Optional[str] = None
+    created_by: str
+    created_at: UTCDateTime
+    note: Optional[str] = None
+    reference: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    closed_at: Optional[UTCDateTime] = None
+    closed_by: Optional[str] = None
+    current_location: Optional[str] = Field(
+        default=None, description="Count tasks: where the item is now (its bins)."
+    )
+    lines: List[TaskLineResponse]
+
+
+class TaskStockLogResponse(BaseModel):
+    id: int
+    timestamp: UTCDateTime
+    sku: Optional[str] = None
+    location: Optional[str] = None
+    delta: Optional[int] = None
+    before: Optional[int] = None
+    after: Optional[int] = None
+    reason: Optional[str] = None
+    actor: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminTaskDetailResponse(TaskResponse):
+    stock_log: List[TaskStockLogResponse]
+    recorded_before: Optional[int] = Field(
+        default=None, description="A done count: the recorded quantity it replaced."
+    )
+    difference: Optional[int] = Field(
+        default=None, description="A done count: counted minus recorded (negative: missing)."
+    )
+
+
+class TaskPickResponse(BaseModel):
+    task_id: int
+    sku: str = Field(description="The resolved warehouse SKU.")
+    qty: int = Field(ge=0, description="What the task now has of this SKU.")
+    required: int
+    item_name: Optional[str] = None
+    status: TaskStatus = Field(description="`done` once every line is picked exactly.")
+
+
+class OrderTaskResponse(BaseModel):
+    """A claimed order that is not *Picked* yet, shown as a task (derived, V2_TASKS_DELTA R1.3)."""
+
+    order_sn: str
+    owner_user: str
+    ship_by: UTCDateTime
+    status: str
+    state: Literal["not_started", "partial", "extra"]
+    done_skus: int
+    required_skus: int
+
+
+class V2TaskListResponse(BaseModel):
+    tasks: List[TaskResponse] = Field(description="Open and blocked tasks, oldest first.")
+    order_tasks: List[OrderTaskResponse] = Field(description="Claimed orders not yet picked.")
 
 
 class MessageResponse(BaseModel):

@@ -37,6 +37,7 @@ from .routers import (
     device,
 )
 from .routers.v2 import include_v2, login_requests, order_picks
+from .routers.v2 import tasks as v2_tasks
 
 load_dotenv(find_dotenv())
 configure_logging()
@@ -245,6 +246,7 @@ app.include_router(device.router)
 app.include_router(meta.router)
 app.include_router(order_picks.router)
 app.include_router(login_requests.router)
+app.include_router(v2_tasks.router)
 # Contract v2 mirrors the client operations registered above (T6.3).
 include_v2(
     app,

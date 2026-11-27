@@ -359,6 +359,8 @@ cache.
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
 | `/v2` order picks and unassign | own orders | no (403) |
+| `/v2/tasks`: list, count, pick, unassign, can't finish | own (assigned) tasks; others' are 404 | no (403) |
+| `/admin/tasks`, `/admin/order-tasks`: create, list, detail, cancel, reassign, close | – | yes |
 | Outbound scans: list (open) | own | all open |
 | Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
@@ -613,8 +615,8 @@ with `ref_type = task`, `ref_id` = its id (`pick_ref` for task picks).
 | reassign (admin) | `open` or `blocked` → `open` for another worker; `blocked_reason` cleared | the picks' `owner_user` moves too (T12) |
 | close as picked (admin) | pick tasks, `blocked` only (T8) | `done`, picks kept |
 
-Another worker's task is "not found"; a wrong state is `TaskStateError`, a wrong scan
-`TaskScanError` (both 409 in T9.2). "In progress" is derived from the picks, never stored.
+Another worker's task is "not found" (404); a wrong state is `TaskStateError`, a wrong scan
+`TaskScanError` (both 409); other `ValueError`s are 400. "In progress" is derived from the picks, never stored.
 Claimed orders show as tasks too, derived, never stored (P-30). Done and cancelled tasks keep
 their picks as history; task picks never reach `get_pie_data`, v1 pick payloads,
 `count_unassigned_picks`, `release_unassigned_picks` or `clear_open_pick_entries`.
@@ -660,6 +662,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 | v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
 | v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
+| task created, cancelled, reassigned, closed, counted, picked, unassigned or blocked | `tasks_update`; `stocks_update` when stock changed | the assigned worker's **v2** sockets (both workers on a reassign) + admins; everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
 one per operator, one for scope-independent events (`users_update`, `stocks_update`). Payload
@@ -751,6 +754,11 @@ committed export `backend/openapi/v2.json`.
 - Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
   delete do not exist in v2. Claim, pick, unassign and outbound require an operator
   (`require_operator`, `OPERATOR_ONLY`).
+- Tasks (T9.2, `routers/v2/tasks.py`, `routers/admin_tasks.py`, `services/task_service.py`;
+  rules in §7.10): `/v2/tasks` for the assigned worker (`require_operator`), `/admin/tasks` and
+  `/admin/order-tasks` for admins. Order-tasks are derived per request (`task_service.order_tasks`,
+  the apps' R4.3 rule: every required SKU exact, none extra). `tasks_update` is sent with
+  `send_to_user(..., min_contract=2)`, so v1 sockets never get it; admins get the default list.
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
