@@ -27,8 +27,8 @@ from ..models import (
     User,
     WSMessageType,
 )
-from . import auth_service, queries
-from .device_service import verify_signature
+from . import queries
+from .device_service import start_bound_session, verify_signature
 from .managers import conn_mgr
 from .managers import login_request_manager as store
 from .managers.login_request_manager import LoginRequest, TooManyRequests, login_request_mgr
@@ -64,7 +64,8 @@ def _log(event: str, request: LoginRequest, **extra: Any) -> None:
     )
 
 
-def _credential(user: User | None) -> str:
+def credential(user: User | None) -> str:
+    """Changes with the password, and when the account is recreated."""
     return hashlib.sha256((user.password_hash or "").encode()).hexdigest() if user else ""
 
 
@@ -96,7 +97,7 @@ async def create(body: LoginRequestCreate, ip_address: str | None) -> LoginReque
             request = await login_request_mgr.create(
                 username=body.username,
                 real=user is not None and user.scope == "client",
-                credential=_credential(user),
+                credential=credential(user),
                 device_id=device.id,
                 device_name=device.label or device.model or device.id[:8],
                 public_key=body.public_key,
@@ -124,7 +125,7 @@ async def poll(request_id: str, proof: LoginRequestProof) -> LoginRequestPoll:
             await login_request_mgr.drop(request_id)
             return LoginRequestPoll(status="denied")
         user = await asyncio.to_thread(queries.get_user_data, request.username)
-        if user is None or user.scope != "client" or _credential(user) != request.credential:
+        if user is None or user.scope != "client" or credential(user) != request.credential:
             await login_request_mgr.drop(request_id)
             return LoginRequestPoll(status="expired")
         if not await login_request_mgr.collect(request_id):
@@ -137,14 +138,8 @@ async def poll(request_id: str, proof: LoginRequestProof) -> LoginRequestPoll:
 
 
 def _start_session(user: User, request: LoginRequest) -> dict | None:
-    sid = auth_service.new_session_id()
-    tokens = auth_service.get_tokens(
-        user, ip_address=request.ip_address, agent="login-request", new_sid=sid
-    )
-    if queries.bind_session_to_device(sid, request.device_id, user.username or ""):
-        return tokens
-    queries.revoke_session(sid)  # the device was revoked while the request was open
-    return None
+    # None when the device was revoked while the request was open.
+    return start_bound_session(user, request.device_id, request.ip_address, "login-request")
 
 
 async def cancel(request_id: str, proof: LoginRequestProof) -> None:

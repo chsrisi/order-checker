@@ -35,7 +35,13 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
-| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`, `online`, `reachable` (polled from its login screen within 30 s), `assignment` (`{username, mode, admin, created_at, expires_at}` or null), `last_assignment` (`{username, mode, admin, outcome, at}`, outcome `collected`/`expired`/`replaced`/`cancelled`/`invalid`, kept 1 h). Live: WS `devices_update` |
+| POST | `/admin/devices/{id}/approve` | Admin | `pending` → `active` (T8.1). Idempotent on `active`; 409 `Device is revoked`; 404 unknown. Returns the device |
+| PATCH | `/admin/devices/{id}` | Admin | Rename `{label}` (at most 40, trimmed; empty or null clears it) (T8.6). 404 unknown. Returns the device |
+| POST | `/admin/devices/{id}/logout` | Admin | "Log out this device" (T8.4a): ends every session on it (sockets close), drops a waiting switch; the workers' other devices stay. 409 revoked, 404 unknown. `{message}` |
+| POST | `/admin/devices/{id}/assign` | Admin | Switch the worker `{username, mode: direct\|preselect}` (default `direct`). Ends the device's sessions; the device collects it on its next state poll within 10 min. `direct` needs `active` (409 "Device is not approved"); 409 revoked; 404 unknown device or not a client account; 503 Redis down (nothing changed). A new one replaces the old. Returns the device |
+| DELETE | `/admin/devices/{id}/assign` | Admin | Cancel a waiting switch; idempotent. 503 Redis down. Returns the device |
+| POST | `/admin/devices/{id}/revoke` | Admin | `pending`/`active` → `revoked`, final. Ends every session on that device and closes its sockets (the workers' other devices stay logged in); the device can no longer register, ask for or collect a login. Idempotent on `revoked`; 404 unknown. Returns the device |
 | GET | `/admin/login-requests` | Admin | Pending login requests, oldest first: `id`, `username`, `match_code`, device, IP, `created_at`, `expires_at` |
 | POST | `/admin/login-requests/{id}/approve`, `/deny` | Admin | Decide. 404 expired or cancelled, 409 already decided |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
@@ -117,9 +123,21 @@ nonce, 503 Redis down. Signed string: SYSTEM_REFERENCE §5.
 last_seen_at}`. `public_key` is the base64 DER SubjectPublicKeyInfo of the app's Android
 Keystore EC P-256 key; `signature` is the base64 DER ECDSA/SHA-256 signature over the UTF-8
 `sid` claim of the access token used for the call. New devices are `pending`; calling it again
-is idempotent (call it after every login). **400** bad key or signature, **403** device revoked.
+is idempotent (call it after every login). **400** bad key or signature, **403** device revoked
+(the calling session is revoked too, T8.1: log out locally).
 It binds the session to the device; from then on every gated `/v2` request updates the
 device's `last_seen_at` and `app_version_code` (from `X-Client-Version`).
+
+**Device state (no token, gated, signed by the device key; T8.4a).** `POST /v2/device/state`
+`{device_id, nonce, signature}` → `{assignment, logout_reason}`. `nonce` is
+`<unix seconds>-<8–48 of [A-Za-z0-9_]>`; `signature` is over
+`oc-device:state:<device_id>:<nonce>`. Poll every 5 s on the login screen in the foreground.
+`assignment` (once): `{username, mode: "direct", tokens}` (a session bound to this device: use
+it like an approved login request) or `{username, mode: "preselect", tokens: null}` (select the
+worker, ask for the password). `logout_reason` (once): `{kind: "logout"}` or
+`{kind: "switch", username}`. **400** bad signature, reused nonce, or clock more than 5 min off;
+**403** device not registered or revoked; **429** more than one poll per 2 s; **503** Redis
+down (password login still works).
 
 **Client updates (public, not gated).** `GET /v2/client/latest` →
 `{version_code, version_name, apk_url, sha256, size_bytes, min_supported_version_code, notes,
@@ -202,7 +220,7 @@ updates. Responses and server broadcasts have this envelope:
 {"type": "outbound_update", "data": []}
 ```
 
-Valid types are `users_update`, `login_requests_update` (admins), `outbound_update`, `shopee_orders_update`,
+Valid types are `users_update`, `login_requests_update` (admins), `devices_update` (admins), `outbound_update`, `shopee_orders_update`,
 `pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
 

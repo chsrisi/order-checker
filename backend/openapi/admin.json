@@ -69,6 +69,119 @@
         "title": "AdminDayResponse",
         "type": "object"
       },
+      "AdminDeviceAssign": {
+        "properties": {
+          "mode": {
+            "default": "direct",
+            "description": "`direct`: the device is logged in as the worker without a password (needs an `active` device). `preselect`: the login screen selects the worker and asks for the password.",
+            "enum": [
+              "direct",
+              "preselect"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "AdminDeviceAssign",
+        "type": "object"
+      },
+      "AdminDeviceAssignment": {
+        "description": "A worker switch waiting for the device (T8.4a).",
+        "properties": {
+          "admin": {
+            "title": "Admin",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "direct",
+              "preselect"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "mode",
+          "admin",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "AdminDeviceAssignment",
+        "type": "object"
+      },
+      "AdminDeviceLastAssignment": {
+        "description": "What happened to the device's last assignment, kept for an hour.",
+        "properties": {
+          "admin": {
+            "title": "Admin",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "direct",
+              "preselect"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "`invalid`: the worker was deleted, had their password reset or became an admin before the device collected it, or the device was revoked.",
+            "enum": [
+              "collected",
+              "expired",
+              "replaced",
+              "cancelled",
+              "invalid"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "mode",
+          "admin",
+          "outcome",
+          "at"
+        ],
+        "title": "AdminDeviceLastAssignment",
+        "type": "object"
+      },
       "AdminDeviceResponse": {
         "description": "Admin listing: the device plus whether one of its sessions has a live socket now\n(V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected\ndevice would otherwise look stale.",
         "properties": {
@@ -93,6 +206,17 @@
               }
             ],
             "title": "App Version Code"
+          },
+          "assignment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminDeviceAssignment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A worker switch waiting for the device to collect it."
           },
           "current_username": {
             "anyOf": [
@@ -125,6 +249,16 @@
             ],
             "title": "Label"
           },
+          "last_assignment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminDeviceLastAssignment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_seen_at": {
             "anyOf": [
               {
@@ -153,6 +287,12 @@
             "title": "Online",
             "type": "boolean"
           },
+          "reachable": {
+            "default": false,
+            "description": "The device polled its state within the last 30 s (it is on its login screen). With `online` false: logged out but reachable (P-27).",
+            "title": "Reachable",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -164,6 +304,25 @@
           "enrolled_at"
         ],
         "title": "AdminDeviceResponse",
+        "type": "object"
+      },
+      "AdminDeviceUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name the console shows, e.g. `MT67-2`. Empty or null clears it.",
+            "title": "Label"
+          }
+        },
+        "title": "AdminDeviceUpdate",
         "type": "object"
       },
       "AdminLoginRequest": {
@@ -1350,7 +1509,7 @@
     },
     "/admin/devices": {
       "get": {
-        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now). Read-only until step 8.",
+        "description": "Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, `online` (a session of the device has an open live-update socket right now), `reachable` (it polled from its login screen within 30 s), a waiting worker switch (`assignment`) and what happened to the last one. Live updates: the admin WebSocket frame `devices_update` carries this same list.",
         "operationId": "list_devices_admin_devices_get",
         "responses": {
           "200": {
@@ -1377,6 +1536,384 @@
           }
         ],
         "summary": "List v2 devices",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}": {
+      "patch": {
+        "description": "Sets the name the console shows (`label`, at most 40 characters; empty clears it).",
+        "operationId": "update_device_admin_devices__device_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDeviceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename a device",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/approve": {
+      "post": {
+        "description": "`pending` \u2192 `active`: the scanner is trusted (a direct worker switch needs it). Idempotent on an `active` device; a `revoked` device answers 409.",
+        "operationId": "approve_device_admin_devices__device_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "409": {
+            "description": "Not allowed from the device's current status"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve a device",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/assign": {
+      "delete": {
+        "description": "Drops the waiting assignment; idempotent. The device stays logged out.",
+        "operationId": "cancel_device_assignment_admin_devices__device_id__assign_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Redis unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel a worker switch",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Ends the device's sessions and leaves an assignment that the device collects on its next state poll, within `DEVICE_ASSIGNMENT_TTL_SECONDS` (600). `direct` logs the worker in without a password and needs an `active` device; `preselect` selects the worker on the login screen. A new assignment replaces the previous one. The worker's sessions on other devices are untouched.",
+        "operationId": "assign_device_admin_devices__device_id__assign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDeviceAssign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device or client account not found"
+          },
+          "409": {
+            "description": "Device is revoked, or not approved (direct mode)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Redis unavailable (nothing was changed)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Switch the worker on a device",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/logout": {
+      "post": {
+        "description": "Ends every session on the device at once (its sockets close) and drops a waiting worker switch. The workers stay logged in on their other devices. The device's login screen is told why on its next state poll.",
+        "operationId": "logout_device_admin_devices__device_id__logout_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "409": {
+            "description": "Device is revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Log out this device",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/devices/{device_id}/revoke": {
+      "post": {
+        "description": "`pending` or `active` \u2192 `revoked`, final: every session on the device ends at once (its sockets close) and it can no longer log in, register or ask for a login. The workers stay logged in on their other devices. Idempotent on a `revoked` device.",
+        "operationId": "revoke_device_admin_devices__device_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDeviceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Admin scope required"
+          },
+          "404": {
+            "description": "Device not found"
+          },
+          "409": {
+            "description": "Not allowed from the device's current status"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke a device",
         "tags": [
           "admin"
         ]

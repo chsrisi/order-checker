@@ -1,7 +1,13 @@
 from .engine import get_db, SessionLocal
 from .devices import (
+    DeviceNotFound,
     DeviceRevoked,
+    DeviceStatusConflict,
     register_device,
+    set_device_status,
+    set_device_label,
+    revoke_device_sessions,
+    touch_device,
     device_ids_for_sessions,
     list_devices,
     get_device,
@@ -84,7 +90,13 @@ from .csv_export import (
 )
 
 __all__ = [
+    "DeviceNotFound",
     "DeviceRevoked",
+    "DeviceStatusConflict",
+    "set_device_status",
+    "set_device_label",
+    "revoke_device_sessions",
+    "touch_device",
     "register_device",
     "device_ids_for_sessions",
     "list_devices",

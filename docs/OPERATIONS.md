@@ -193,6 +193,7 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 | `LOGIN_REQUEST_MAX_PER_DEVICE` | int | `5` | No | Login requests per device in `LOGIN_REQUEST_RATE_WINDOW_SECONDS`. |
 | `LOGIN_REQUEST_RATE_WINDOW_SECONDS` | int | `600` | No | Window of the limit above. |
 | `LOGIN_REQUEST_MAX_PENDING` | int | `20` | No | Pending login requests overall. Audit: log events `auth.login_request.*`. |
+| `DEVICE_ASSIGNMENT_TTL_SECONDS` | int | `600` | No | How long a worker switch from the console waits for the scanner to collect it (V2_WORKER_SWITCH_DELTA W4). Audit: log events `device.logout`, `device.assignment.*`, `device.approved`, `device.revoked`. |
 | `ACCESS_TTL_SECONDS` | int | `900` | No | Lifetime of issued JWT access tokens in seconds (default: 15 minutes). |
 | `REFRESH_TTL_SECONDS` | int | `86400` | No | Lifetime of issued refresh tokens in seconds (default: 24 hours). |
 | `REFRESH_CLEANUP_INTERVAL_SECONDS` | int | `3600` | No | Interval in seconds for background task purging expired/revoked refresh tokens from PostgreSQL (default: 1 hour). |

@@ -27,7 +27,7 @@ sealed interface DeviceStatus {
 
     data class Registered(val deviceId: String, val status: String) : DeviceStatus
 
-    /** The server revoked this device (403): it cannot be used until re-enrolled (step 8). */
+    /** The server revoked this device (403): final; a recovered scanner is reinstalled (W7). */
     data object Revoked : DeviceStatus
 
     data class Rejected(val reason: String) : DeviceStatus
@@ -102,7 +102,9 @@ class DeviceRegistrar(
                 true
             }
             response.code == 403 -> {
+                // The server also ended this session (T8.1, W9): log out here, no retry.
                 _status.value = DeviceStatus.Revoked
+                session.endBecauseDeviceRevoked()
                 true
             }
             response.code in 400..499 -> {
