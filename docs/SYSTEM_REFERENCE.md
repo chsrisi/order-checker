@@ -257,6 +257,11 @@ previous release tag.
 | `login_req:<id>` | login request (JSON, no tokens) | `LOGIN_REQUEST_TTL_SECONDS` (120); on a decision `LOGIN_REQUEST_COLLECT_SECONDS` (30) | asking device |
 | `login_req_decision:<id>` | `approved:<admin>` / `denied:<admin>`, set once (NX) | both of the above | admins |
 | `login_req_device:<device>`, `login_req_rate:<device>`, `login_req_nonce:<scope>:<nonce>`, `login_req_index` | current request, rate counter, seen nonces, open requests by expiry | request TTL; 600 s; 600 s (create: 30 days); none (pruned) | asking device |
+| `device_assign:<device>` | worker switch (JSON: id, username, mode, admin, credential fingerprint, times; no tokens) | `DEVICE_ASSIGNMENT_TTL_SECONDS` (600) | admins (assign); taken with `GETDEL` by the device's poll or a cancel |
+| `device_assign_index` | sorted set of the assignments' JSON by expiry | none (members removed on collect, cancel, replace, expiry) | admins; the expiry sweeper |
+| `device_assign_last:<device>` | last assignment's outcome (JSON) | 3600 s | admin actions, polls, sweeper |
+| `device_logout_reason:<device>` | `{kind: logout\|switch, admin, username}` | 24 h; read once (`GETDEL`) | admin logout or switch that ended a session |
+| `device_state_rate:<device>`, `device_state_nonce:<device>:<nonce>`, `device_seen:<device>` | poll limit, seen nonces, "reachable" | 2 s; 600 s; 30 s | device state polls |
 
 Redis needs ≥ 6.2 (`GETDEL`). Compose ships `redis:8.8-alpine`.
 
@@ -313,6 +318,39 @@ devices work as before (password login, login requests). Each action is logged
 (`device.approved` / `device.revoked` with `admin`, `device_id`, `username`, `changed`,
 `sessions_revoked`); no audit table. The Android app logs out locally on that 403 and shows
 "This device was revoked by the admin."
+
+**Per-device logout and worker switch** (T8.4a, `device_assignment_service`,
+`managers/device_assignment_manager.py`; V2_WORKER_SWITCH_DELTA). Admin side:
+- `POST /admin/devices/{id}/logout` ends every session on the device (sockets closed), drops a
+  waiting assignment (`cancelled`) and leaves the reason `logout` for the device. Works without
+  Redis (then without the reason). 409 on a revoked device.
+- `POST /admin/devices/{id}/assign` `{username, mode}`: `direct` (default) needs an `active`
+  device (409 "Device is not approved", W2); `preselect` also works on `pending`. Client accounts
+  only (404 for unknown and admin accounts); 409 on a revoked device. The assignment is stored
+  **first** (Redis down → 503 and nothing changes), then the device's sessions end and the reason
+  `switch` (with the new worker) is left. One per device: a new one replaces the old (`replaced`,
+  last admin wins). The new worker's sessions on other devices are untouched.
+- `DELETE /admin/devices/{id}/assign` cancels; idempotent.
+- Revoking a device (T8.1) drops its assignment (`invalid`).
+
+Device side: `POST /v2/device/state` `{device_id, nonce, signature}`, ECDSA over
+`oc-device:state:<device_id>:<nonce>` with the registered key (P-25). The nonce is
+`<unix seconds>-<random>`: more than 300 s off the server's clock → 400 "Nonce out of time";
+each nonce works once (kept 600 s), so a captured poll can't be replayed. Unknown device → 403
+"Device not registered"; after the signature, revoked → 403 "Device revoked"; more than one poll
+per 2 s → 429. A poll marks the device reachable for 30 s and writes `last_seen_at` at most once
+per 60 s (P-27). It returns the logout reason once and the assignment once (`GETDEL`, so racing
+polls yield at most one session). At hand-over the worker must still exist as a client account
+with the same password fingerprint (as login requests), and a `direct` assignment needs the
+device still `active`; otherwise the outcome is `invalid` and nothing is handed over. `direct`
+issues a session (agent `device-assignment`) bound to the device, like an approved login request
+(`device_service.start_bound_session`); `preselect` hands over only the name.
+
+Outcomes (`last_assignment.outcome`): `collected`, `expired` (the background sweeper,
+every 5 s, from `device_assign_index`), `replaced`, `cancelled`, `invalid`. Each change sends
+admins `devices_update`. Log events `device.logout`, `device.assignment.{created, replaced,
+cancelled, collected, expired, invalid}` with `admin`, `device_id`, `old_worker`, `new_worker`,
+`mode`; tokens are never logged or stored.
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
 under races), then checks expiry, the session (same `sid`, still live) and user existence, and
@@ -621,6 +659,7 @@ so every event reaches v1 and v2 devices and both admins alike.
 |---|---|---|
 | user created/registered/reset/deleted | `users_update` | admins |
 | login request created, decided or cancelled | `login_requests_update` (all pending ones) | admins |
+| device approved, revoked or logged out; assignment created, replaced, cancelled, collected, expired or invalidated | `devices_update` (the whole `GET /admin/devices` list) | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
 | claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |
@@ -731,8 +770,7 @@ committed export `backend/openapi/v2.json`.
 - Devices (T6.6, `routers/device.py`, `services/device_service.py`, `queries/devices.py`):
   `POST /v2/device/register` verifies an ECDSA P-256 signature over the caller's `sid`
   (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403 and the calling
-session revoked (T8.1), row lock + retry
-  on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
+  session revoked (T8.1), row lock + retry on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
   `request.state.client_version`; `get_current_principal` passes it to
   `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
   the 60 s throttle, `app_version_code` at once when it changed. Root (v1) requests never touch
@@ -740,7 +778,11 @@ session revoked (T8.1), row lock + retry
   true when a live session of the device has an open WebSocket right now, from
   `conn_mgr.live_session_ids()` → `queries.device_ids_for_sessions`; V2_DELTA Q35). `last_seen_at`
   moves only on HTTP requests, so `online` is what the console shows as status. Approve and
-  revoke: §5 "Device approval and revocation".
+  revoke: §5 "Device approval and revocation". The list also carries `reachable`, `assignment`
+  and `last_assignment` (§5 "Per-device logout and worker switch").
+- Device state (T8.4a, `routers/device.py`, `services/device_assignment_service.py`):
+  `POST /v2/device/state`, gated, no user token, signed with the device key (§5). The only
+  `/v2/device/*` operation behind the version gate.
 
 ---
 

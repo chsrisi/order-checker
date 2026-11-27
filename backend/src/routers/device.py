@@ -3,11 +3,12 @@ body reports the app version, and an outdated app must still be identifiable."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from ..models import DeviceRegisterRequest, DeviceResponse
-from ..services import device_service
+from ..models import DeviceRegisterRequest, DeviceResponse, DeviceStateRequest, DeviceStateResponse
+from ..services import device_assignment_service, device_service
 from ..services.auth_service import Principal, get_current_principal
+from .v2 import GATE_RESPONSES, require_client_version
 
 router = APIRouter(prefix="/v2/device", tags=["v2 · device"])
 
@@ -32,3 +33,33 @@ async def register_device(
     principal: Principal = Depends(get_current_principal),
 ):
     return await device_service.register(body, principal.user.username or "", principal.sid)
+
+
+@router.post(
+    "/state",
+    response_model=DeviceStateResponse,
+    summary="Poll this device's state",
+    description=(
+        "No user token: signed with the registered device key (T8.4a). The login screen calls "
+        "it every 5 s while in the foreground, at most once per 2 s. Returns a worker switch by "
+        "the admin once (`direct`: with the new session's tokens, bound to this device), and "
+        "why the device was last logged out by the admin, once."
+    ),
+    dependencies=[Depends(require_client_version)],
+    responses={
+        **GATE_RESPONSES,
+        400: {
+            "description": (
+                "X-Client-Version missing, bad signature, nonce reused or more than 5 minutes "
+                "off the server's time"
+            )
+        },
+        403: {"description": "Device not registered, or revoked"},
+        429: {"description": "Polling faster than once per 2 s"},
+        503: {"description": "Redis unavailable"},
+    },
+)
+async def device_state(body: DeviceStateRequest, request: Request):
+    return await device_assignment_service.state(
+        body, request.client.host if request.client else None
+    )

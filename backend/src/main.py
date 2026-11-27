@@ -21,7 +21,14 @@ from .logging_config import configure_logging, request_id_context
 from .config import API_VERSION, EXPOSE_API_DOCS, PRODUCTION_RULES, get_config_value
 from .settings_guard import enforce_startup_rules
 from .services.redis_service import redis_mgr
-from .services import auth_service, managers, queries, retention_service, shopee_service
+from .services import (
+    auth_service,
+    device_assignment_service,
+    managers,
+    queries,
+    retention_service,
+    shopee_service,
+)
 from .services.shopee_service import shopee_client_session
 from .routers import (
     auth,
@@ -73,6 +80,7 @@ async def lifespan(_app: FastAPI):
     bg_tasks.append(asyncio.create_task(auth_service.remove_outdated_refresh_task()))
     bg_tasks.append(asyncio.create_task(retention_service.recipient_retention_task()))
     bg_tasks.append(asyncio.create_task(shopee_service.auto_sync_task()))
+    bg_tasks.append(asyncio.create_task(device_assignment_service.assignment_expiry_task()))
 
     # Initialize Persistent aiohttp Session
     session = aiohttp.ClientSession()

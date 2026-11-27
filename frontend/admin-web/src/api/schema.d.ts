@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * List v2 devices
-         * @description Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, and `online` (a session of the device has an open live-update socket right now).
+         * @description Registered v2 operator devices, most recently seen first: status, current operator, model, Android version, app versionCode, last contact, `online` (a session of the device has an open live-update socket right now), `reachable` (it polled from its login screen within 30 s), a waiting worker switch (`assignment`) and what happened to the last one. Live updates: the admin WebSocket frame `devices_update` carries this same list.
          */
         get: operations["list_devices_admin_devices_get"];
         put?: never;
@@ -118,6 +118,50 @@ export interface paths {
          * @description `pending` → `active`: the scanner is trusted (a direct worker switch needs it). Idempotent on an `active` device; a `revoked` device answers 409.
          */
         post: operations["approve_device_admin_devices__device_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/devices/{device_id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch the worker on a device
+         * @description Ends the device's sessions and leaves an assignment that the device collects on its next state poll, within `DEVICE_ASSIGNMENT_TTL_SECONDS` (600). `direct` logs the worker in without a password and needs an `active` device; `preselect` selects the worker on the login screen. A new assignment replaces the previous one. The worker's sessions on other devices are untouched.
+         */
+        post: operations["assign_device_admin_devices__device_id__assign_post"];
+        /**
+         * Cancel a worker switch
+         * @description Drops the waiting assignment; idempotent. The device stays logged out.
+         */
+        delete: operations["cancel_device_assignment_admin_devices__device_id__assign_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/devices/{device_id}/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log out this device
+         * @description Ends every session on the device at once (its sockets close) and drops a waiting worker switch. The workers stay logged in on their other devices. The device's login screen is told why on its next state poll.
+         */
+        post: operations["logout_device_admin_devices__device_id__logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -698,6 +742,69 @@ export interface components {
              */
             tags: string[];
         };
+        /** AdminDeviceAssign */
+        AdminDeviceAssign: {
+            /**
+             * Mode
+             * @description `direct`: the device is logged in as the worker without a password (needs an `active` device). `preselect`: the login screen selects the worker and asks for the password.
+             * @default direct
+             * @enum {string}
+             */
+            mode: "direct" | "preselect";
+            /** Username */
+            username: string;
+        };
+        /**
+         * AdminDeviceAssignment
+         * @description A worker switch waiting for the device (T8.4a).
+         */
+        AdminDeviceAssignment: {
+            /** Admin */
+            admin: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "direct" | "preselect";
+            /** Username */
+            username: string;
+        };
+        /**
+         * AdminDeviceLastAssignment
+         * @description What happened to the device's last assignment, kept for an hour.
+         */
+        AdminDeviceLastAssignment: {
+            /** Admin */
+            admin: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "direct" | "preselect";
+            /**
+             * Outcome
+             * @description `invalid`: the worker was deleted, had their password reset or became an admin before the device collected it, or the device was revoked.
+             * @enum {string}
+             */
+            outcome: "collected" | "expired" | "replaced" | "cancelled" | "invalid";
+            /** Username */
+            username: string;
+        };
         /**
          * AdminDeviceResponse
          * @description Admin listing: the device plus whether one of its sessions has a live socket now
@@ -709,6 +816,8 @@ export interface components {
             android_version?: string | null;
             /** App Version Code */
             app_version_code?: number | null;
+            /** @description A worker switch waiting for the device to collect it. */
+            assignment?: components["schemas"]["AdminDeviceAssignment"] | null;
             /** Current Username */
             current_username?: string | null;
             /**
@@ -720,6 +829,7 @@ export interface components {
             id: string;
             /** Label */
             label?: string | null;
+            last_assignment?: components["schemas"]["AdminDeviceLastAssignment"] | null;
             /** Last Seen At */
             last_seen_at?: string | null;
             /** Model */
@@ -729,6 +839,12 @@ export interface components {
              * @default false
              */
             online: boolean;
+            /**
+             * Reachable
+             * @description The device polled its state within the last 30 s (it is on its login screen). With `online` false: logged out but reachable (P-27).
+             * @default false
+             */
+            reachable: boolean;
             /** Status */
             status: string;
         };
@@ -1323,6 +1439,173 @@ export interface operations {
                 content?: never;
             };
             /** @description Not allowed from the device's current status */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_device_admin_devices__device_id__assign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDeviceAssign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeviceResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device or client account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device is revoked, or not approved (direct mode) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Redis unavailable (nothing was changed) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_device_assignment_admin_devices__device_id__assign_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeviceResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Redis unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    logout_device_admin_devices__device_id__logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description Admin scope required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Device is revoked */
             409: {
                 headers: {
                     [name: string]: unknown;

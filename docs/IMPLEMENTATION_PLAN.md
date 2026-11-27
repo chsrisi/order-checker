@@ -1446,7 +1446,7 @@ same change as the task.
 | T8.1 | done | Approve/revoke routes; revoke ends the device's sessions only; register on a revoked device revokes the calling session (W9, test failed without it); Android logs out on that 403. No migration; `client_v1.json` and `client_v2.json` unchanged; `openapi/v2.json` only the register 403 text. Device token moved to T8.2 (W3) |
 | T8.2 | todo | |
 | T8.3 | todo | |
-| T8.4a | todo | planned 2026-11-27 (worker switch) |
+| T8.4a | done | Logout, assign, cancel, signed `/v2/device/state`, `devices_update`, `reachable`, `last_assignment`. Redis only, no migration; v2 snapshot +1 operation, `client_v1.json` unchanged. **Additions:** the poll nonce carries the device's Unix time (±300 s; the device id never expires, so this stops a late replay); `last_assignment` (outcome kept 1 h) so the console can show "expired" after a reload. Race guard broken on purpose once (non-atomic take): the test failed |
 | T8.4b | todo | |
 | T8.6 | todo | planned 2026-11-27 (worker switch) |
 | T8.7 | todo | planned 2026-11-27 (worker switch) |

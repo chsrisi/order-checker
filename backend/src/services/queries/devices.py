@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Iterable, List, Optional
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ...models import AuthSession, Device, RefreshToken
@@ -106,6 +106,29 @@ def _revoke_device_sessions(db, device_id: str) -> list[str]:
     if sids:
         db.execute(delete(RefreshToken).where(RefreshToken.session_id.in_(sids)))
     return sids
+
+
+def revoke_device_sessions(device_id: str) -> list[str]:
+    """End every live session on the device ("Log out this device", a worker switch)."""
+    with get_db() as db:
+        sids = _revoke_device_sessions(db, device_id)
+        db.commit()
+        return sids
+
+
+def touch_device(device_id: str, interval: timedelta) -> None:
+    """Set ``last_seen_at`` to now unless it was set within ``interval`` (state polls, P-27)."""
+    now = datetime.now(UTC)
+    with get_db() as db:
+        db.execute(
+            update(Device)
+            .where(
+                Device.id == device_id,
+                or_(Device.last_seen_at.is_(None), Device.last_seen_at < now - interval),
+            )
+            .values(last_seen_at=now)
+        )
+        db.commit()
 
 
 def set_device_status(device_id: str, status: str) -> tuple[Device, bool, list[str]]:

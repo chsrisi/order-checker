@@ -84,7 +84,16 @@ class FakeRedis:
 
     async def zrem(self, key, member):
         await self._step()
-        self.zsets.get(key, {}).pop(member, None)
+        return int(self.zsets.get(key, {}).pop(member, None) is not None)
+
+    async def zrangebyscore(self, key, low, high):
+        await self._step()
+        zset = self.zsets.get(key, {})
+        return sorted((m for m, s in zset.items() if low <= s <= high), key=zset.get)
+
+    async def exists(self, key):
+        await self._step()
+        return key in self.values
 
     async def zcard(self, key):
         await self._step()

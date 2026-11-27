@@ -19,8 +19,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from ..exceptions import DomainException
-from ..models import Device, DeviceRegisterRequest
-from . import queries
+from ..models import Device, DeviceRegisterRequest, User
+from . import auth_service, queries
 from .managers import conn_mgr
 
 logger = logging.getLogger("backend.services.device_service")
@@ -113,3 +113,15 @@ async def set_status(device_id: str, status: str, admin: str) -> Device:
         },
     )
     return device
+
+
+def start_bound_session(user: User, device_id: str, ip_address: str | None, agent: str) -> dict | None:
+    """Issue a session for ``user`` without a password, bound to the device (an approved login
+    request, a direct worker switch). None, with the session revoked again, when the device was
+    revoked meanwhile."""
+    sid = auth_service.new_session_id()
+    tokens = auth_service.get_tokens(user, ip_address=ip_address, agent=agent, new_sid=sid)
+    if queries.bind_session_to_device(sid, device_id, user.username or ""):
+        return tokens
+    queries.revoke_session(sid)
+    return None
