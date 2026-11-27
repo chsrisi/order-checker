@@ -47,7 +47,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        viewModel.setForeground(true) // the login screen's state poll (T8.7, W5)
         viewModel.checkForUpdate(minIntervalMillis = 60_000) // T6.12: also on resume
+    }
+
+    override fun onPause() {
+        viewModel.setForeground(false)
+        super.onPause()
     }
 }
 
@@ -63,6 +69,7 @@ private fun App(vm: AppViewModel) {
     val device by vm.deviceStatus.collectAsStateWithLifecycle()
     val scanSuffix by vm.scanSuffix.collectAsStateWithLifecycle()
     val knownWorkers by vm.knownWorkers.collectAsStateWithLifecycle()
+    val homeNotice by vm.homeNotice.collectAsStateWithLifecycle()
     val graph = vm.graph
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column {
@@ -116,6 +123,8 @@ private fun App(vm: AppViewModel) {
                             InfoRow("Network", if (onFallback) "LAN fallback" else "primary"),
                         ),
                         onLogout = vm::logout,
+                        notice = homeNotice,
+                        onNoticeShown = vm::homeNoticeShown,
                         footer = { },
                     )
                     screen is Screen.UpdateRequired -> UpdateBlockingScreen(update, graph.appInfo.label, vm::installUpdate, vm::checkForUpdate)

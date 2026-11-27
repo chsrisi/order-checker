@@ -7,6 +7,7 @@ import com.bakingholic.orderchecker.auth.Tokens
 import com.bakingholic.orderchecker.core.AppInfo
 import com.bakingholic.orderchecker.net.AddressSelector
 import com.bakingholic.orderchecker.net.ApiClient
+import com.bakingholic.orderchecker.net.AppEvent
 import com.bakingholic.orderchecker.net.ServerProfile
 import java.security.KeyPairGenerator
 import java.security.Signature
@@ -23,6 +24,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -61,10 +63,13 @@ class DeviceRegistrarTest {
     @After
     fun tearDown() = server.shutdown()
 
+    private val tokens = InMemoryTokenStore(Tokens(access, "r"))
+    private val events = mutableListOf<AppEvent>()
+
     private fun registrar(): DeviceRegistrar {
         val profile = ServerProfile(server.url("/").toString().trimEnd('/'))
         val api = ApiClient(OkHttpClient(), AppInfo(5, "2.0.4"), { profile }, AddressSelector())
-        val session = SessionManager(api, InMemoryTokenStore(Tokens(access, "r")))
+        val session = SessionManager(api, tokens, onEvent = { events += it })
         return DeviceRegistrar(session, keys, AppInfo(5, "2.0.4"), "Newland MT67", "11", store)
     }
 
@@ -116,10 +121,14 @@ class DeviceRegistrarTest {
     }
 
     @Test
-    fun aRevokedDeviceStopsRetrying() = runBlocking {
+    fun aRevokedDeviceStopsRetryingAndLogsOutLocally() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"detail":"Device revoked"}"""))
         val r = registrar()
         assertTrue(r.registerOnce())
         assertEquals(DeviceStatus.Revoked, r.status.value)
+        // T8.1: the server ended the session too; the app clears it and says why.
+        assertNull(tokens.load())
+        assertEquals(listOf<AppEvent>(AppEvent.DeviceRevoked), events)
+        assertEquals(1, server.requestCount) // no logout call for a session that is gone
     }
 }

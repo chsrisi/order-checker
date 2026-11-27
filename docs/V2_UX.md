@@ -345,6 +345,135 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 
 **Round 1: built (2026-11-25), not yet accepted.**
 
+**Worker switch from the console (T8.7, V2_WORKER_SWITCH_DELTA W1, W5, W8; built 2026-11-27).**
+- The login screen asks the server every 5 s whether the admin switched this scanner, only
+  while it is idle and the app is in the foreground. It stops in the background, during a
+  password login or a login request, and once logged in.
+- **Direct:** the scanner logs in by itself and goes home; a snackbar says "Logged in by the
+  admin as *eko*."
+- **Preselect:** that worker is selected and the password step opens (also for a worker who
+  never logged in on this scanner); the line under the form says "The admin chose *eko*. Enter
+  the password." The red "Session ended" line goes away.
+- **Why logged out:** under "Session ended. Please log in again." a plain line says "Logged out
+  by the admin." or "Switched by the admin to *eko*.", from the first poll after the logout.
+- **Revoked:** red "This device was revoked by the admin.", and the poll stops. **Clock more
+  than 5 minutes off:** a line says the admin can't switch workers on this scanner.
+- Checked on the API 30 emulator against a local backend: switch while logged in, admin logout
+  then preselect while logged out, switch while in the background, switch while the app was
+  closed then opened, revoke.
+
+### 2.8 Admin device actions and worker switch (T8.6, 2026-11-27)
+
+Refs: V2_WORKER_SWITCH_SPEC §4.4, V2_WORKER_SWITCH_DELTA W1, W2, W4, W7, plan P-26, P-27. The
+backend is done (T8.1, T8.4a) and the scanner side is built (T8.7, §2.7).
+
+- **Goal:** from the console, approve and revoke scanners, log one out, and choose which worker
+  is logged in on it, then see the switch land.
+- **v1 checklist:** none. v1 has no device list, and the console's Devices page is read-only
+  today.
+- **Problems addressed:**
+  - Revoking a scanner or logging one worker out on one scanner needs SQL today.
+  - "Log out everywhere" (§2.4) also logs the worker out on every other scanner.
+  - A shift change at a scanner needs the worker to type a password.
+- **Where:** the Devices page (a table on desktop, cards on mobile) and the device cards on the
+  Dashboard. Every device has the same ⋯ menu as the worker rows in §2.4. On desktop, the most
+  likely action is also a button in the row.
+
+- **Actions per status:**
+
+  | Status | Button | ⋯ menu |
+  |---|---|---|
+  | `pending` | **Approve** | Switch worker… (preselect only, see open point 1), Revoke… |
+  | `active` | **Switch worker…** | Log out this device, Revoke… |
+  | `revoked` | none | none. Grey "Revoked: reinstall the app to use this scanner again" |
+
+  - **Approve** and **Log out this device** act at once (P-26), with a toast: "MT67-2 approved",
+    "dina logged out on MT67-2". Logging out also cancels a waiting switch.
+  - **Revoke…** asks first (P-26) with a red button: "Revoke MT67-2? Every session on it ends
+    now, and it can't log in or ask for approval again. This is final: to use the scanner again,
+    reinstall the app."
+
+- **Status line** (replaces today's Online/Offline tag; P-27):
+  - **● Online · dina:** a live socket.
+  - **◐ Logged out, reachable:** its login screen polled within 30 s, so a switch lands within
+    5 s.
+  - **○ Offline:** off, asleep or out of range. A switch waits up to 10 minutes.
+
+- **Switch worker… dialog:**
+  - **Search box** (focused) over the list of client workers, sorted by name.
+    - The worker on this device now is marked "on this device".
+    - A worker logged in on another scanner shows "also on MT67-1". That session stays: a
+      worker can use two scanners.
+  - **Mode:** two choices, the first preselected:
+    - "Log in directly (no password)": direct, W1. Disabled on a `pending` device, with the hint
+      "Approve the device first."
+    - "Select on the scanner (the worker types the password)": preselect.
+  - **Summary line** that says exactly what happens:
+    - Direct: "*dina* is logged out on *MT67-2*; *eko* is logged in without a password."
+    - Preselect: "… *eko* is selected on its login screen."
+    - Offline device: "MT67-2 is offline: it switches when it checks in within 10 min."
+  - **Switch** button. The dialog closes, and the device shows the waiting state below.
+
+- **Waiting and outcome on the device**, live from the admin frame `devices_update`. On a socket
+  reconnect the list is loaded again over HTTP, because the frame has no request type. The
+  30 s poll stays as a fallback.
+  - **Waiting:** "⟳ Switching to *eko* · waiting for the scanner · 9:41 left" with **Cancel**.
+  - **Collected:** "✓ *eko* logged in by *boss* (direct)" or "✓ *eko* selected on the scanner"
+    (preselect), shown for 1 minute.
+  - **Expired:** a warning, "Switch to *eko* expired: the scanner didn't check in within
+    10 min", with **Try again** (the dialog reopens with the same choice).
+  - **Replaced:** "Replaced by *ana*'s switch to *rudi*", when another admin switched it.
+  - **Invalid:** "Switch to *eko* dropped: the worker was deleted, had the password reset, or
+    the device was revoked."
+
+```text
+Desktop (Devices page)
+┌──────────┬──────────────────────────┬─────────┬───────┬──────────┬─────────────────────┐
+│ Device   │ Status                   │ Trust   │ App   │ Seen     │                     │
+├──────────┼──────────────────────────┼─────────┼───────┼──────────┼─────────────────────┤
+│ MT67-1   │ ● Online · dina          │ active  │ 2.0.1 │ just now │ [Switch worker…] ⋯  │
+│ MT67-2   │ ⟳ Switching to eko · 9:41│ active  │ 2.0.1 │ 1 min    │ [Cancel]         ⋯  │
+│ MT67-3   │ ◐ Logged out, reachable  │ pending │ 2.0.1 │ 10 s     │ [Approve]        ⋯  │
+│ MT67-4   │ ○ Offline                │ active  │ 2.0.0 │ 2 h      │ [Switch worker…] ⋯  │
+└──────────┴──────────────────────────┴─────────┴───────┴──────────┴─────────────────────┘
+Show revoked (1)
+
+Mobile card                          Switch worker… (MT67-1)
+┌──────────────────────────────┐     ┌──────────────────────────────────┐
+│ MT67-1             active  ⋯ │     │ [ Search workers…            ]   │
+│ ● Online · dina              │     │  ○ ana                           │
+│ app 2.0.1 · seen just now    │     │  ○ dina      on this device      │
+│ [ Switch worker…           ] │     │  ● eko       also on MT67-4      │
+└──────────────────────────────┘     │ (●) Log in directly (no password)│
+                                     │ ( ) Select on the scanner        │
+                                     │ dina is logged out on MT67-1;    │
+                                     │ eko is logged in without a       │
+                                     │ password.                        │
+                                     │          [Cancel]  [Switch]      │
+                                     └──────────────────────────────────┘
+```
+
+- **Backend change:** none (T8.1, T8.4a). Open point 2 would add one small admin route.
+- **Open points** (each with my recommendation; answer before building):
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | 1 | Offer **Switch worker…** on a `pending` device (preselect only)? The backend allows it; SPEC §4.4 listed only Approve and Revoke there. | **Yes**, with direct disabled and "Approve the device first". It helps on a new scanner before anyone approved it. |
+  | 2 | **Device names.** Every scanner shows its model ("Newland MT67"), so picking the right one is guesswork. `label` exists in the table, but nothing sets it. | **Add "Rename…"** to the ⋯ menu, with an additive `PATCH /admin/devices/{id}` `{label}` in this task. Without it the switch is hard to use with several scanners. |
+  | 3 | Hide revoked devices by default? | **Yes**, behind "Show revoked (n)": they never come back (W7). |
+  | 4 | How long to show "✓ *eko* logged in"? | **1 minute**, then the normal status line. The outcome stays readable in the device's details for an hour (`last_assignment`). |
+  | 5 | Switch from the Workers page too ("Put on a scanner…")? | **Not now.** One place first; add it if you look for it there. |
+
+**Brief and all five recommendations accepted (maintainer, 2026-11-27).**
+
+**Round 1: built and accepted (2026-11-27).** As the brief, plus:
+- An expired or dropped switch stays on the card for 10 minutes (a collected one for 1 minute),
+  with **Try again** in place of the button after an expiry.
+- Another admin's waiting switch names them ("⟳ ana is switching to rudi…"), so a replaced
+  switch shows on the card without a separate message.
+- The Dashboard hides revoked devices; the Devices page has "Show revoked (n)".
+- Rename… is also on `pending` devices; a revoked device has no actions.
+
 ### 2.10 Client Stockkeeping, guided actions (T6.15e, V2_STOCK_DELTA R1.2)
 
 - **Goal:** a Stockkeeping that is quick to use right and hard to use wrong. Operations say v1's
@@ -490,8 +619,6 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
   the endpoint returns `order_sn` through the pick entry, which is null once the entry is gone.
   The order links open Orders → History with that order searched (`/orders?find=…`).
 - Task links wait for step 9: the row already reads "counted for task N".
-
-**Round 1: brief accepted (2026-11-27, V2_STOCK_DELTA Round 2); building.**
 
 ## 3. Later (not scheduled)
 

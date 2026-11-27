@@ -1501,13 +1501,13 @@ same change as the task.
 | T6.25 | todo | planned 2026-11-27 (map backend) |
 | T6.26 | todo | planned 2026-11-27 (Android map) |
 | T7.12 | done | Checked in headless Firefox, desktop and phone width: live card, approve, deny. Good (2026-11-27); final review pinned for the device day |
-| T8.1 | todo | planned 2026-11-27 (worker switch); device token moved to T8.2 (W3) |
+| T8.1 | done | Approve/revoke routes; revoke ends the device's sessions only; register on a revoked device revokes the calling session (W9, test failed without it); Android logs out on that 403. No migration; `client_v1.json` and `client_v2.json` unchanged; `openapi/v2.json` only the register 403 text. Device token moved to T8.2 (W3) |
 | T8.2 | todo | |
 | T8.3 | todo | |
-| T8.4a | todo | planned 2026-11-27 (worker switch) |
+| T8.4a | done | Logout, assign, cancel, signed `/v2/device/state`, `devices_update`, `reachable`, `last_assignment`. Redis only, no migration; v2 snapshot +1 operation, `client_v1.json` unchanged. **Additions:** the poll nonce carries the device's Unix time (±300 s; the device id never expires, so this stops a late replay); `last_assignment` (outcome kept 1 h) so the console can show "expired" after a reload. Race guard broken on purpose once (non-atomic take): the test failed |
 | T8.4b | todo | |
-| T8.6 | todo | planned 2026-11-27 (worker switch) |
-| T8.7 | todo | planned 2026-11-27 (worker switch) |
+| T8.6 | done | Brief V2_UX §2.8 and its 5 recommendations accepted (2026-11-27); adds `PATCH /admin/devices/{id}` (rename, open point 2; admin API additive, `client_v1.json` and `client_v2.json` unchanged). Device actions, switch dialog, live waiting state from `devices_update`, "logged out, reachable". Accepted by the maintainer on the dev server (2026-11-27) |
+| T8.7 | done | Login-screen poll (`DeviceStatePoller`), direct, preselect, logout reason, revoked, clock off. Checked on the API 30 emulator with real Redis and PostgreSQL (2026-11-27): switch while logged in, while logged out (preselect), in the background (no poll until it returns), closed then opened; revoke stops the poll. Found there and fixed: the home snackbar was cancelled by its own key change; "Session ended" stayed red next to a preselection |
 | T9.1 | todo | planned 2026-11-27 (tasks) |
 | T9.2 | todo | planned 2026-11-27 (tasks) |
 | T9.3 | todo | planned 2026-11-27 (tasks) |

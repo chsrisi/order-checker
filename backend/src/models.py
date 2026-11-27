@@ -50,6 +50,7 @@ class WSMessageType(str, PyEnum):
     PICK_ITEM_ENTRIES = "pick_item_entries_update"
     STOCKS = "stocks_update"
     LOGIN_REQUESTS = "login_requests_update"
+    DEVICES = "devices_update"  # admins only (T8.4a)
     ERROR = "error"
 
 
@@ -179,12 +180,75 @@ class DeviceResponse(BaseModel):
     last_seen_at: Optional[UTCDateTime] = None
 
 
+DEVICE_ASSIGN_MODES = ("direct", "preselect")
+
+
+class AdminDeviceAssignment(BaseModel):
+    """A worker switch waiting for the device (T8.4a)."""
+
+    username: str
+    mode: Literal["direct", "preselect"]
+    admin: str
+    created_at: UTCDateTime
+    expires_at: UTCDateTime
+
+
+class AdminDeviceLastAssignment(BaseModel):
+    """What happened to the device's last assignment, kept for an hour."""
+
+    username: str
+    mode: Literal["direct", "preselect"]
+    admin: str
+    outcome: Literal["collected", "expired", "replaced", "cancelled", "invalid"] = Field(
+        description="`invalid`: the worker was deleted, had their password reset or became "
+        "an admin before the device collected it, or the device was revoked."
+    )
+    at: UTCDateTime
+
+
 class AdminDeviceResponse(DeviceResponse):
     """Admin listing: the device plus whether one of its sessions has a live socket now
     (V2_DELTA D8 / Q35). ``last_seen_at`` only moves on HTTP requests, so an idle but connected
     device would otherwise look stale."""
 
     online: bool = False
+    reachable: bool = Field(
+        False,
+        description=(
+            "The device polled its state within the last 30 s (it is on its login screen). "
+            "With `online` false: logged out but reachable (P-27)."
+        ),
+    )
+    assignment: Optional[AdminDeviceAssignment] = Field(
+        None, description="A worker switch waiting for the device to collect it."
+    )
+    last_assignment: Optional[AdminDeviceLastAssignment] = None
+
+
+class AdminDeviceUpdate(BaseModel):
+    label: Optional[str] = Field(
+        None,
+        max_length=40,
+        description="The name the console shows, e.g. `MT67-2`. Empty or null clears it.",
+    )
+
+    @field_validator("label")
+    @classmethod
+    def strip_label(cls, v: Optional[str]) -> Optional[str]:
+        v = v.strip() if v is not None else None
+        return v or None
+
+
+class AdminDeviceAssign(BaseModel):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    mode: Literal["direct", "preselect"] = Field(
+        "direct",
+        description=(
+            "`direct`: the device is logged in as the worker without a password (needs an "
+            "`active` device). `preselect`: the login screen selects the worker and asks for "
+            "the password."
+        ),
+    )
 
 
 class RefreshToken(Base):
@@ -585,6 +649,57 @@ class UserAuth(BaseModel):
 
 
 NONCE_PATTERN = r"^[A-Za-z0-9_-]{16,64}$"
+
+
+# Device state polls (T8.4a, P-25): the device's Unix time, a dash, then random characters.
+DEVICE_NONCE_PATTERN = r"^[0-9]{10}-[A-Za-z0-9_]{8,48}$"
+
+
+class DeviceStateRequest(BaseModel):
+    """A signature by the registered device key over ``oc-device:state:<device_id>:<nonce>``."""
+
+    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    nonce: str = Field(
+        pattern=DEVICE_NONCE_PATTERN,
+        description=(
+            "`<unix seconds>-<8–48 random [A-Za-z0-9_]>`, fresh per call. Refused when the time "
+            "is more than 5 minutes off the server's, or the nonce was used before."
+        ),
+    )
+    signature: str = Field(
+        max_length=512,
+        description=(
+            "Base64 DER ECDSA signature (SHA-256) over the UTF-8 string "
+            "`oc-device:state:<device_id>:<nonce>`."
+        ),
+    )
+
+
+class DeviceStateAssignment(BaseModel):
+    username: str
+    mode: Literal["direct", "preselect"] = Field(
+        description="`direct`: `tokens` hold the new session. `preselect`: select the worker "
+        "and ask for the password."
+    )
+    tokens: Optional[Token] = Field(None, description="Only with `direct`, handed over once.")
+
+
+class DeviceLogoutReason(BaseModel):
+    kind: Literal["logout", "switch"] = Field(
+        description="`logout`: the admin logged this device out. `switch`: the admin switched "
+        "it to `username`."
+    )
+    username: Optional[str] = None
+
+
+class DeviceStateResponse(BaseModel):
+    assignment: Optional[DeviceStateAssignment] = Field(
+        None, description="A worker switch by the admin, handed over once."
+    )
+    logout_reason: Optional[DeviceLogoutReason] = Field(
+        None,
+        description="Why the device was last logged out by the admin, given once (W8).",
+    )
 
 
 class LoginRequestProof(BaseModel):

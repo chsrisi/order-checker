@@ -59,6 +59,7 @@ fun LoginScreen(
     val submit: () -> Unit = {
         if (!state.busy) form.credentials(known)?.let { (name, password) -> onLogin(name, password) }
     }
+    LaunchedEffect(state.preselect) { state.preselect?.let { form = form.preselect(it) } }
     if (state.waiting != null) {
         BackHandler(onBack = onCancelRequest)
         WaitingForAdmin(state.waiting, onCancelRequest)
@@ -92,6 +93,7 @@ fun LoginScreen(
             )
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.notice?.let { Text(it, modifier = Modifier.testTag("login_notice")) }
         if (state.busy) {
             CircularProgressIndicator()
         } else {
