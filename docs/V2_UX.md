@@ -345,6 +345,82 @@ unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md]
 
 **Round 1: built (2026-11-25), not yet accepted.**
 
+### 2.8 Admin Tasks (T9.3, 2026-11-27)
+
+- **Goal:** hand a count or a manual pick to a worker, and see in one place what everyone is
+  doing: manual tasks and claimed orders.
+- **v1 checklist:** none (new). Spec: V2_TASKS_SPEC §6, V2_TASKS_DELTA (T6, T8, T9, R1.3, R1.5).
+- **Place:** Warehouse → **Tasks** (`/warehouse/tasks`), a new nav entry next to Stock and BOM.
+- **Flow:**
+  - **Header:** filters for worker, type (Count, Pick) and status (Open, Blocked, Done,
+    Cancelled; default *Open + Blocked*, with done and cancelled from the last 7 days shown
+    under a "Recently closed" fold), and **New task** (a menu: *Count* · *Pick*).
+  - **List, grouped by worker** (unassigned first, highlighted: a deleted worker's tasks wait
+    there for reassignment). Each row shows the type, what it is ("Count A01_001 Flour · bin A1",
+    "Pick · Toko Sinar, inv. 123 · 3/5 SKUs"), the age, and the status in words and colour
+    (*Open*, *In progress*, *Blocked: "only 3 on the shelf"*, *Done*, *Cancelled*). Under each
+    worker, their **claimed orders** follow as read-only rows ("260101ABC · Picking 2/5"), from
+    `GET /admin/order-tasks`, linking to Orders. Desktop: a table. Mobile: cards.
+  - **New count:** item search (SKU, name or barcode, `/items/find`); in `multi` mode a bin
+    picker from the item's bins (or typed); in `single` mode the item's location is shown,
+    read-only (P-29). Worker, optional note. The form says the count is blind.
+  - **New pick:** lines of item + quantity (add, remove; a bundle shows its components as it
+    will be picked, from the BOM tree endpoint), reference, worker, optional note.
+  - **Detail** (side panel on desktop, a page on mobile): lines with required and picked, the
+    stock log rows, and for a done count **"Counted 17 · recorded 20 · −3"**. Actions by state:
+    - *Open / Blocked:* **Reassign** (worker picker; acts at once), **Cancel**: a dialog that,
+      when something is picked, asks *Return the picked stock* (default) or *Keep it deducted
+      (the goods already left)*, and says it is logged either way (T9, P-26 style).
+    - *Blocked pick task:* **Close as picked** with a confirmation listing what was picked (T8).
+  - **Live:** `tasks_update` replaces the list; order rows reload on `shopee_orders_update` and
+    `pick_item_entries_update`.
+- **Backend change:** none (T9.2 done).
+- **Open points:**
+
+| Ref | Question | Recommendation |
+|---|---|---|
+| UX-T1 | Group the list by worker, or one flat list with a worker column? | **By worker**: it answers "what is everyone doing"; the worker filter narrows it to one. |
+| UX-T2 | A Dashboard card for blocked tasks? | **Yes**: "Blocked tasks (n)", linking to the filtered list; blocked tasks wait for an admin. |
+| UX-T3 | Show bundle components while entering a pick line? | **Yes**, collapsed under the line, so the admin sees what the worker will pick (the task stores exactly that). |
+
+### 2.9 Client Tasks (T9.4, 2026-11-27)
+
+- **Goal:** the worker sees what to do next (tasks from the admin and their claimed orders) and
+  does it on a screen made for it.
+- **v1 checklist:** none (new). Spec: V2_TASKS_SPEC §6, V2_TASKS_DELTA (T6, T7, T11, R1.3, R1.5).
+- **Home:** today it has four buttons (Picking, Outbound, Stockkeeping, Finder). **Tasks**
+  becomes a fifth, at the top, with the open count: **"Tasks (3)"**. The buttons get a little
+  lower so five fit on the scanner screen without scrolling.
+- **List** (oldest first, nothing locked, T11): manual tasks and order-tasks together. Each row
+  shows the type, what it is, the progress, and *Blocked* when it is. Live from `tasks_update`;
+  order-tasks are derived in the app with the Picking progress rule (`OrderLogic.progress`), so
+  they follow the order and pick events the app already has.
+  - **Order-task** → Picking with that order selected. It leaves the list once *Picked*.
+  - **Count task** → the count screen. **Pick task** → the pick-task screen.
+- **Count screen** (R1.5, its own small screen):
+  1. *Scan location*: shows the expected place ("Bin A1"; in `single` mode the item's current
+     location). A wrong scan is refused with an alert. If the item has no location, this step
+     is skipped.
+  2. *Scan item*: a wrong item is refused.
+  3. *Counted quantity*: a number field and **Save**. **Blind**: the recorded quantity is never
+     shown (T6).
+  Save → "Count saved", back to the list.
+- **Pick-task screen:** the Picking layout (Input / List) with the task's lines in place of an
+  order's: required and picked per SKU, the same over-quantity alert, unassign from the List.
+  The reference is in the header. Done when every line is exact: "Task done", back to the list.
+- **Can't finish** (both task screens, in the ⋯ menu): a reason (required, a few quick choices
+  plus free text: *Not enough stock*, *Item not found*, *Damaged*), then the task shows
+  *Blocked* and waits for the admin.
+- **Backend change:** none (T9.2 done).
+- **Open points:**
+
+| Ref | Question | Recommendation |
+|---|---|---|
+| UX-T4 | Tasks first on Home, or after Finder? | **First**: it is the worker's to-do list. |
+| UX-T5 | Does the open count on Home include claimed orders? | **Yes**, manual tasks plus order-tasks not *Picked*; blocked tasks are not counted. |
+| UX-T6 | Count screen: may the worker skip the location scan when the item has one? | **No** in round 1: the scan is the check that they are at the right shelf (SPEC §4). Revisit after use (T7 ⚠️). |
+| UX-T7 | Quick reasons for *Can't finish*? | **Yes**, three plus free text; the admin sees the text. |
+
 ## 3. Later (not scheduled)
 
 - **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
