@@ -22,7 +22,7 @@ class GeneratedModelsTest {
 
     @Test
     fun parsesMeta() {
-        val body = """{"api_version":"0.6.0","client_contract":{"min":1,"max":2},
+        val body = """{"server_version":"0.6.0","api_version":"0.6.0","client_contract":{"min":1,"max":2},
             "app_env":"production","stock_location_mode":"multi","features":{}}"""
         val meta = json.decodeFromString(MetaResponse.serializer(), body)
         assertEquals(2, meta.clientContract.max)

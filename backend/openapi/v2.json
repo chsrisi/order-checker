@@ -487,6 +487,8 @@
       "MetaResponse": {
         "properties": {
           "api_version": {
+            "deprecated": true,
+            "description": "Deprecated: the same value as server_version, kept for compatibility. Removed when v1 is sunset.",
             "title": "Api Version",
             "type": "string"
           },
@@ -504,12 +506,18 @@
             "title": "Features",
             "type": "object"
           },
+          "server_version": {
+            "description": "Backend release version (SemVer). Not the contract: see client_contract.",
+            "title": "Server Version",
+            "type": "string"
+          },
           "stock_location_mode": {
             "title": "Stock Location Mode",
             "type": "string"
           }
         },
         "required": [
+          "server_version",
           "api_version",
           "client_contract",
           "app_env",
@@ -2438,7 +2446,7 @@
     },
     "/v2/meta": {
       "get": {
-        "description": "Public. API version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.",
+        "description": "Public. Server version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.",
         "operationId": "v2_get_meta_v2_meta_get",
         "responses": {
           "200": {

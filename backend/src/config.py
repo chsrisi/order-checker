@@ -232,7 +232,11 @@ _api_version_override = get_config_value("API_VERSION")
 if _api_version_override and APP_ENV != "development":
     logger.warning("API_VERSION is ignored outside development; the version comes from pyproject")
     _api_version_override = None
-API_VERSION: str = _api_version_override or PROJECT_VERSION
+# The backend (server) version, SemVer per release. It is not the operator API contract version,
+# which is the integer range in GET /meta ``client_contract`` (v1, v2). The env name
+# ``API_VERSION`` and the constant alias below are legacy; both go when v1 is sunset.
+SERVER_VERSION: str = _api_version_override or PROJECT_VERSION
+API_VERSION: str = SERVER_VERSION  # legacy alias, removed when v1 is sunset
 
 # Token identity is per environment, not per release: a dev token is never accepted by
 # production, and upgrading the backend no longer logs everyone out. Explicit

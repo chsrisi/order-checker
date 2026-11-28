@@ -31,7 +31,7 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/auth/logout` | Public | End the refresh token's session (its tokens stop working at once, its sockets close) |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
-| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
+| GET | `/meta` | Public | `{server_version, api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. `server_version` is the backend release (SemVer); the contract version is `client_contract`, not a SemVer. `api_version` is a deprecated alias of `server_version`, removed when v1 is sunset; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
