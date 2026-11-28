@@ -147,6 +147,11 @@
             "required": true,
             "type": "object"
           },
+          "server_version": {
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
           "stock_location_mode": {
             "nullable": false,
             "required": true,

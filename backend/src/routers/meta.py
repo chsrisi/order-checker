@@ -2,7 +2,7 @@
 so frontends can adapt (KNOWN_LIMITATIONS #3). No secrets, hostnames or user data."""
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import config
 
@@ -15,7 +15,16 @@ class ContractRange(BaseModel):
 
 
 class MetaResponse(BaseModel):
-    api_version: str
+    server_version: str = Field(
+        description="Backend release version (SemVer). Not the contract: see client_contract."
+    )
+    api_version: str = Field(
+        deprecated=True,
+        description=(
+            "Deprecated: the same value as server_version, kept for compatibility. "
+            "Removed when v1 is sunset."
+        ),
+    )
     client_contract: ContractRange
     app_env: str
     stock_location_mode: str
@@ -27,13 +36,14 @@ class MetaResponse(BaseModel):
     response_model=MetaResponse,
     summary="Server metadata",
     description=(
-        "Public. API version, supported operator-client contract range, environment, stock "
+        "Public. Server version, supported operator-client contract range, environment, stock "
         "location mode and feature flags. Contains no secrets or hostnames."
     ),
 )
 def get_meta() -> MetaResponse:
     return MetaResponse(
-        api_version=config.API_VERSION,
+        server_version=config.SERVER_VERSION,
+        api_version=config.SERVER_VERSION,
         client_contract=ContractRange(
             min=config.CLIENT_CONTRACT_MIN, max=config.CLIENT_CONTRACT_MAX
         ),

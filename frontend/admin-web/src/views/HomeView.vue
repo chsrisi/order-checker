@@ -25,7 +25,7 @@ onMounted(async () => {
     <NCard title="Server">
       <NAlert v-if="error" type="error">{{ error }}</NAlert>
       <NDescriptions v-else-if="meta" :column="1" label-placement="left">
-        <NDescriptionsItem label="API version">{{ meta.api_version }}</NDescriptionsItem>
+        <NDescriptionsItem label="Server version">{{ meta.server_version }}</NDescriptionsItem>
         <NDescriptionsItem label="Environment">{{ meta.app_env }}</NDescriptionsItem>
         <NDescriptionsItem label="Stock locations">{{ meta.stock_location_mode }}</NDescriptionsItem>
         <NDescriptionsItem label="Client contracts">{{ meta.client_contract.min }}–{{ meta.client_contract.max }}</NDescriptionsItem>

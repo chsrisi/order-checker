@@ -829,7 +829,7 @@ export interface paths {
         };
         /**
          * Server metadata
-         * @description Public. API version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.
+         * @description Public. Server version, supported operator-client contract range, environment, stock location mode and feature flags. Contains no secrets or hostnames.
          */
         get: operations["get_meta_meta_get"];
         put?: never;
@@ -1265,7 +1265,11 @@ export interface components {
         };
         /** MetaResponse */
         MetaResponse: {
-            /** Api Version */
+            /**
+             * Api Version
+             * @deprecated
+             * @description Deprecated: the same value as server_version, kept for compatibility. Removed when v1 is sunset.
+             */
             api_version: string;
             /** App Env */
             app_env: string;
@@ -1274,6 +1278,11 @@ export interface components {
             features: {
                 [key: string]: boolean;
             };
+            /**
+             * Server Version
+             * @description Backend release version (SemVer). Not the contract: see client_contract.
+             */
+            server_version: string;
             /** Stock Location Mode */
             stock_location_mode: string;
         };

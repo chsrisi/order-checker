@@ -18,7 +18,7 @@ from .exceptions import (
 )
 from .logging_config import configure_logging, request_id_context
 
-from .config import API_VERSION, EXPOSE_API_DOCS, PRODUCTION_RULES, get_config_value
+from .config import EXPOSE_API_DOCS, SERVER_VERSION, PRODUCTION_RULES, get_config_value
 from .settings_guard import enforce_startup_rules
 from .services.redis_service import redis_mgr
 from .services import (
@@ -127,7 +127,7 @@ app = FastAPI(
         "a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is "
         "documented in the project API guide because OpenAPI does not describe it."
     ),
-    version=API_VERSION,
+    version=SERVER_VERSION,
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
     license_info={"name": "Proprietary"},

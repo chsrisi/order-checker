@@ -181,7 +181,7 @@ Logging is split into a console handler (stdout / docker logs) and an optional r
 
 | Name | Type | Default | Required | Notes |
 | --- | --- | --- | --- | --- |
-| `API_VERSION` | string | `[project].version` in `backend/pyproject.toml` | No | The backend version (OpenAPI `info.version`, later `GET /meta`) is read from `pyproject.toml`. This variable overrides it **in development only**; it is ignored with a warning elsewhere. |
+| `API_VERSION` | string | `[project].version` in `backend/pyproject.toml` | No | The backend version (OpenAPI `info.version`, later `GET /meta`) is read from `pyproject.toml`. This variable overrides it **in development only**; it is ignored with a warning elsewhere. Legacy name: it sets the *server* version (`server_version` in `/meta`), not the API contract; renamed or dropped when v1 is sunset. |
 | `JWT_VERSION` | string | — | No | **Deprecated and ignored** (logs a warning). Token identity now derives from `APP_ENV`. |
 | `KEYS_DIR` | string | `data/keys` | No | Directory where RSA key pairs (`.key` and `.pub`) are stored and rotated. Mounted as a persistent host volume in Docker. |
 | `KEY_CACHE_TTL_SECONDS` | int | `300` | No | In-memory cache duration for public JWKS keys before re-scanning disk (default: 5 minutes). |
