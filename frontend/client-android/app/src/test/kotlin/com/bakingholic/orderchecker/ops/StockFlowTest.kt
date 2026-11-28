@@ -157,6 +157,19 @@ class StockFlowTest {
     }
 
     @Test
+    fun backToTheShelfScanForgetsTheShelf() {
+        val atShelf = at(StockAction.COUNT, true, single, "201").chooseItem(mug, single).enterQty("36", single).next()
+        assertEquals("201", atShelf.location) // the next item stays at the same shelf
+        val back = atShelf.back()
+        assertEquals(StockStep.LOCATION, back.step)
+        assertNull(back.location)
+        assertNull(back.item)
+        // Same in a count task (T9.4), which uses this flow.
+        val task = StockFlow(StockAction.COUNT, true, lock = StockLock(sku = "SKU-0012", location = null)).scanLocation("201", single)
+        assertNull(task.back().location)
+    }
+
+    @Test
     fun anEmptyScanIsAnError() {
         assertNotNull(StockFlow(StockAction.COUNT, true).scanLocation("  ", single).error)
     }

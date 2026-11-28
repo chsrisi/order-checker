@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +41,10 @@ fun OutboundScreen(ops: OpsController, suffix: ScanSuffix) {
     RefocusOn(ops, scan)
     val tags = outbounds.flatMap { it.tags.orEmpty() }.distinct()
     val shown = outbounds.filter { tag == null || it.tags.orEmpty().contains(tag) }
+    // A new scan goes on top; without this the list keeps the previous row in place and the new
+    // one ends up half above the view (seen on a short screen).
+    val list = rememberLazyListState()
+    LaunchedEffect(shown.firstOrNull()?.id) { list.scrollToItem(0) }
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScanField(state = scan, suffix = suffix, label = "Scan shipping label", enabled = !saving, onScan = { ops.outbound(it.value) })
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -46,7 +52,7 @@ fun OutboundScreen(ops: OpsController, suffix: ScanSuffix) {
             items(tags) { t -> FilterChip(selected = tag == t, onClick = { tag = if (tag == t) null else t }, label = { Text(t) }) }
         }
         if (shown.isEmpty()) Text("No items scanned yet")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(shown, key = { it.id }) { item ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     Row {

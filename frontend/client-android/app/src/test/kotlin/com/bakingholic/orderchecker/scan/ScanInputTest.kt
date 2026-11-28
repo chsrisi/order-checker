@@ -15,6 +15,16 @@ class ScanInputTest {
     }
 
     @Test
+    fun aScanWhileSavingIsRefusedAndNotRemembered() {
+        var now = 1_000L
+        val gate = ScanGate(dedupeWindowMs = 300, clock = { now })
+        assertNull(gate.accept("LBL-2", busy = true))
+        now += 50
+        // The operator scans it again once the save is done: not taken for a double fire.
+        assertEquals("LBL-2", gate.accept("LBL-2", busy = false))
+    }
+
+    @Test
     fun gateDropsWedgeDoubleFireButNotARealRescan() {
         var now = 1_000L
         val gate = ScanGate(dedupeWindowMs = 300, clock = { now })

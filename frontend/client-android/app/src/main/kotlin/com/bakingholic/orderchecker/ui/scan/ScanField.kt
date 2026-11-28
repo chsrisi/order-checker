@@ -83,6 +83,9 @@ fun rememberScanFieldState(): ScanFieldState = remember { ScanFieldState() }
  * unless asked ("Type" button or a tap on the field). [acceptAnySuffix] is for the scanner test.
  * [keepText] leaves the submitted text in the field (search, SKU) until the next scan replaces it.
  * [refocusAfterScan] returns false when the screen moved focus elsewhere in [onScan].
+ * [enabled] false (the screen is saving) keeps the field focused and refuses scans with "scan
+ * again": a disabled field would lose the focus, and the wedge's next Enter would press whatever
+ * button took it (seen on the device: Outbound's back arrow, losing the scan).
  */
 @Composable
 fun ScanField(
@@ -106,7 +109,11 @@ fun ScanField(
         state.text = TextFieldValue(shown, TextRange(shown.length))
         state.replaceNext = keepText
         state.typing = false
-        val accepted = state.gate.accept(raw)?.also { onScan(Scan(it, ending)) }
+        val accepted = state.gate.accept(raw, busy = !enabled)?.also { onScan(Scan(it, ending)) }
+        if (accepted == null && !enabled && raw.isNotBlank()) {
+            state.text = TextFieldValue("")
+            state.feedback = ScanFeedback.Warning("Still saving. Scan ${raw.trim()} again.")
+        }
         // A screen may move on to another field after a scan (v1: SKU → quantity).
         if (accepted == null || refocusAfterScan()) state.refocus()
     }
@@ -142,8 +149,8 @@ fun ScanField(
             },
             label = { Text(label) },
             singleLine = true,
-            enabled = enabled,
-            readOnly = !state.typing,
+            // Never disabled: see [enabled] above.
+            readOnly = !state.typing || !enabled,
             interactionSource = interactions,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, showKeyboardOnFocus = false),
             keyboardActions = KeyboardActions(onDone = { submit(state.text.text, ScanEnding.IME) }),

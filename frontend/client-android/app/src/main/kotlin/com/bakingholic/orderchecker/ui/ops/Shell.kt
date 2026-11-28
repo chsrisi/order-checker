@@ -3,19 +3,26 @@ package com.bakingholic.orderchecker.ui.ops
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -34,11 +41,15 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bakingholic.orderchecker.R
+import com.bakingholic.orderchecker.ops.menuButtonHeight
 import com.bakingholic.orderchecker.ops.openTaskCount
 import com.bakingholic.orderchecker.ops.taskEntries
 import com.bakingholic.orderchecker.scan.ScanSuffix
@@ -98,18 +109,21 @@ fun MainShell(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // The top bar never takes key focus: a scanner's Enter must not press it.
                 if (destination != Destination.HOME) {
-                    TextButton(onClick = { destination = Destination.HOME }, modifier = Modifier.testTag("back")) { Text("←") }
+                    IconButton(onClick = { destination = Destination.HOME }, modifier = Modifier.noKeyFocus().testTag("back")) {
+                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back", modifier = Modifier.size(28.dp))
+                    }
                 }
                 Text(
                     destination.title,
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
                 )
-                if (onFallback) AssistChip(onClick = {}, label = { Text("LAN") })
+                if (onFallback) AssistChip(onClick = {}, label = { Text("LAN") }, modifier = Modifier.noKeyFocus())
                 TextButton(
                     onClick = { destination = Destination.DEVICE_INFO },
-                    modifier = Modifier.testTag("username"),
+                    modifier = Modifier.noKeyFocus().testTag("username"),
                 ) { Text(username ?: "—") }
             }
             HorizontalDivider()
@@ -162,16 +176,21 @@ private fun HomeMenu(ops: OpsController, onOpen: (Destination) -> Unit) {
     val picks by ops.repo.picks.collectAsStateWithLifecycle()
     // Tasks first (UX-T4): manual tasks plus claimed orders not yet picked, blocked ones not counted (UX-T5).
     val open = openTaskCount(taskEntries(tasks, orders, picks))
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-    ) {
-        listOf(Destination.TASKS, Destination.PICKING, Destination.OUTBOUND, Destination.STOCK, Destination.FINDER).forEach { d ->
-            val label = if (d == Destination.TASKS && open > 0) "${d.title} ($open)" else d.title
-            Button(
-                onClick = { onOpen(d) },
-                modifier = Modifier.fillMaxWidth().height(72.dp).testTag("home_${d.name.lowercase()}"),
-            ) { Text(label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
+    val entries = listOf(Destination.TASKS, Destination.PICKING, Destination.OUTBOUND, Destination.STOCK, Destination.FINDER)
+    // Buttons shrink to fit short scanner screens (72 dp down to 48 dp); below that, it scrolls.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val buttonHeight = menuButtonHeight(maxHeight.value, entries.size, MENU_PADDING.toFloat(), MENU_GAP.toFloat()).dp
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 24.dp, vertical = MENU_PADDING.dp),
+            verticalArrangement = Arrangement.spacedBy(MENU_GAP.dp, Alignment.CenterVertically),
+        ) {
+            entries.forEach { d ->
+                val label = if (d == Destination.TASKS && open > 0) "${d.title} ($open)" else d.title
+                Button(
+                    onClick = { onOpen(d) },
+                    modifier = Modifier.fillMaxWidth().height(buttonHeight).testTag("home_${d.name.lowercase()}"),
+                ) { Text(label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
+            }
         }
     }
 }
@@ -189,6 +208,12 @@ private fun DeviceInfoScreen(rows: List<InfoRow>, onLogout: () -> Unit) {
         OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().testTag("logout")) { Text("Log out") }
     }
 }
+
+private const val MENU_PADDING = 12 // matches menuButtonHeight defaults
+private const val MENU_GAP = 10
+
+/** Taps still work; the hardware keys (and a scanner's Enter) skip it. */
+internal fun Modifier.noKeyFocus(): Modifier = focusProperties { canFocus = false }
 
 /** Puts the cursor back into [scan] whenever a pop-up of [ops] closed. */
 @Composable
