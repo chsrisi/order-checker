@@ -31,14 +31,33 @@ the next request and closes its WebSocket connections (code 1008). Public signin
 | POST | `/auth/logout` | Public | End the refresh token's session (its tokens stop working at once, its sockets close) |
 | POST | `/auth/ws-token` | User | Create 30-second one-use WS ticket |
 | GET | `/.well-known/jwks.json` | Public | Token verification keys |
-| GET | `/meta` | Public | `{api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
+| GET | `/meta` | Public | `{server_version, api_version, client_contract: {min, max}, app_env, stock_location_mode, features}`. `server_version` is the backend release (SemVer); the contract version is `client_contract`, not a SemVer. `api_version` is a deprecated alias of `server_version`, removed when v1 is sunset; `client_contract` is `{min: 1, max: 2}` since v0.6.0. No secrets or hostnames. New clients read it to negotiate the contract and adapt the stock UX |
 | GET/DELETE | `/admin/users` | Admin | List/delete client users. Delete restores the stock of the user's pick entries (like `DELETE /pick-items/{id}`), deletes its scans and tokens, releases its orders and closes its WebSocket sessions |
 | POST | `/admin/users` | Admin | Create a client-scope operator `{username, password}`; 409 if the username exists |
 | POST | `/admin/users/{username}/password` | Admin | Reset a client password `{password}`; revokes all sessions and closes sockets; 404 for unknown or admin accounts |
-| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`. Read-only (approve/revoke come with step 8) |
+| GET | `/admin/devices` | Admin | v2 devices, most recently seen first: `id`, `status` (`pending`/`active`/`revoked`), `current_username`, `model`, `android_version`, `app_version_code`, `enrolled_at`, `last_seen_at`, `online`, `reachable` (polled from its login screen within 30 s), `assignment` (`{username, mode, admin, created_at, expires_at}` or null), `last_assignment` (`{username, mode, admin, outcome, at}`, outcome `collected`/`expired`/`replaced`/`cancelled`/`invalid`, kept 1 h). Live: WS `devices_update` |
+| POST | `/admin/devices/{id}/approve` | Admin | `pending` → `active` (T8.1). Idempotent on `active`; 409 `Device is revoked`; 404 unknown. Returns the device |
+| PATCH | `/admin/devices/{id}` | Admin | Rename `{label}` (at most 40, trimmed; empty or null clears it) (T8.6). 404 unknown. Returns the device |
+| POST | `/admin/devices/{id}/logout` | Admin | "Log out this device" (T8.4a): ends every session on it (sockets close), drops a waiting switch; the workers' other devices stay. 409 revoked, 404 unknown. `{message}` |
+| POST | `/admin/devices/{id}/assign` | Admin | Switch the worker `{username, mode: direct\|preselect}` (default `direct`). Ends the device's sessions; the device collects it on its next state poll within 10 min. `direct` needs `active` (409 "Device is not approved"); 409 revoked; 404 unknown device or not a client account; 503 Redis down (nothing changed). A new one replaces the old. Returns the device |
+| DELETE | `/admin/devices/{id}/assign` | Admin | Cancel a waiting switch; idempotent. 503 Redis down. Returns the device |
+| POST | `/admin/devices/{id}/revoke` | Admin | `pending`/`active` → `revoked`, final. Ends every session on that device and closes its sockets (the workers' other devices stay logged in); the device can no longer register, ask for or collect a login. Idempotent on `revoked`; 404 unknown. Returns the device |
+| GET | `/admin/login-requests` | Admin | Pending login requests, oldest first: `id`, `username`, `match_code`, device, IP, `created_at`, `expires_at` |
+| POST | `/admin/login-requests/{id}/approve`, `/deny` | Admin | Decide. 404 expired or cancelled, 409 already decided |
 | POST | `/admin/users/{username}/logout` | Admin | "Log out everywhere": revoke every session of a client account, close its sockets; the password is unchanged; 404 for unknown or admin accounts |
-| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`) |
-| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total |
+| GET | `/admin/history/outbound` | Admin | Closed scans, newest first, paged like order history (`limit`/`offset`, `X-Total-Count`). Optional filters (since 2026-11-24): `closed_from`/`closed_to` (close time, inclusive; ISO 8601, UTC without an offset), `day_from`/`day_to` (business days by scan time, `YYYY-MM-DD`), `q` (label, worker or tag, case-insensitive) |
+| GET | `/admin/history/shopee/orders` | Admin | Completed order history, most recently completed first. `?limit=` (1–2000, default 500) and `&offset=`; the `X-Total-Count` header gives the total. Same optional filters, `closed_from`/`closed_to` on `done_at`; `q` matches SN, worker, tracking number, pickup code, courier or buyer name (buyer names only within the retention window) |
+| GET | `/admin/history/days` | Admin | One row per business day (`BUSINESS_UTC_OFFSET`), newest first: `{day, outbound, orders_done, tags}`. A closed scan counts on the day it was **made**. `limit` 1–500 (default 50), `offset`, `day_from`/`day_to`, `q` (only days holding a matching scan or order, with their full counts); `X-Total-Count`. Replaces `/admin/history/closes` (V2_ORDERS_DELTA C2) |
+| GET | `/admin/history/days/{day}` | Admin | `{day, orders, scans}`: all of one day, unpaged |
+| GET | `/admin/lookup?label=` | Admin | Where an exact label is (V2_ORDERS_DELTA Q49): `{label, orders, scans}`, the orders whose SN or a tracking number is the label (ongoing or done; `done_at` is its close), its scans, open or closed, newest first, and `day` (the History day it left on, or null). Exact after trimming |
+| GET | `/admin/tasks` | Admin | Tasks, oldest first. Filters `assigned_to`, `type` (`count`/`pick`), `status` (repeatable). Without `status`: open and blocked, plus those closed in the last 7 days (what `tasks_update` carries) |
+| POST | `/admin/tasks/count` | Admin | `{sku, assigned_to, location?, note?}`: a blind count of one item. `location` (the bin) required in `multi` mode, refused (400) in `single` mode. 404 unknown item or worker |
+| POST | `/admin/tasks/pick` | Admin | `{lines: [{sku, qty}], assigned_to, reference?, note?}`: a manual picking task; bundles expand by the standard BOM, stored with the task. 404 unknown item or worker |
+| GET | `/admin/tasks/{id}` | Admin | The task plus `stock_log` (every row it caused) and, for a done count, `recorded_before` and `difference` (counted − recorded) |
+| POST | `/admin/tasks/{id}/cancel` | Admin | `{return_stock: true}` (default) returns picked stock; `false` keeps it deducted. Open or blocked only (409) |
+| POST | `/admin/tasks/{id}/reassign` | Admin | `{assigned_to}`: open or blocked → open for that worker; picks move with the task |
+| POST | `/admin/tasks/{id}/close` | Admin | Close a **blocked** pick task as done with what was picked (409 otherwise) |
+| GET | `/admin/order-tasks` | Admin | Claimed active orders not yet *Picked*, per worker (`?assigned_to=`): `{order_sn, owner_user, ship_by, status, state, done_skus, required_skus}`; read-only, derived |
 | GET | `/admin/export/scans` | Admin | CSV of every outbound scan (open and closed), newest first |
 | GET | `/admin/export/stocks` | Admin | Inventory CSV |
 | DELETE | `/admin/clear/outbound-items` | Admin | Permanently clear scan records |
@@ -72,14 +91,30 @@ operations are also served under `/v2` for the v2 operator app, by **the same ha
 | v2 path | Same as |
 |---|---|
 | `POST /v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/logout`, `/v2/auth/ws-token` | `/auth/...` |
-| `POST /v2/outbound` | `POST /outbound` |
-| `POST /v2/pick-items`, `/v2/pick-items/{id}/assign`, `/v2/pick-items/unassign`, `DELETE /v2/pick-items/{id}` | `/pick-items...` |
-| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...` |
+| `POST /v2/outbound` | `POST /outbound`, but 403 for admins |
+| `GET /v2/shopee/orders`, `POST /v2/shopee/orders/acquire` | `/shopee/orders...`, but acquire answers 403 to admins |
 | `GET /v2/items/find` | `GET /items/find` |
 | `POST /v2/stocks/update` | `POST /stocks/update` |
 | `GET /v2/meta` | `GET /meta` |
 
-Not under `/v2`: registration, JWKS (the v2 app does not verify tokens locally), and every
+v2 only (V2_PICKING_DELTA; admins get 403):
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks` `{sku, qty}` | Pick into a claimed order → `{order_sn, sku, qty, item_name}` with the resolved SKU and the line's total. 404 unknown item or order; 409 completed, not active on Shopee, or not enough stock (`STOCK_STRICT`) |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign` `{sku, qty}` | Take a quantity off the order and return it to stock. 404 not picked; 409 completed, or more than is picked |
+
+Tasks (T9.2; only the assigned worker, admins get 403; 404 when the task is not the caller's):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v2/tasks` | `{tasks, order_tasks}`: the caller's open and blocked tasks (oldest first) and claimed orders not yet *Picked* |
+| `POST /v2/tasks/{id}/count` `{sku, qty, location?}` | Record a blind count: `set` the quantity, task done. 409 wrong item, wrong location (`multi`: the task's bin, required; `single`: where the item is; compared after trim and upper-case), or not open |
+| `POST /v2/tasks/{id}/picks` `{sku, qty}` | Pick into the task → `{task_id, sku, qty, required, item_name, status}`; `status` is `done` once every line is exact. 404 unknown item; 409 not on the task, not open, or strict stock |
+| `POST /v2/tasks/{id}/picks/unassign` `{sku, qty}` | Return a picked quantity to stock (same response). 409 more than is picked |
+| `POST /v2/tasks/{id}/block` `{reason}` | Can't finish: open → blocked |
+
+Not under `/v2`: the v1 `/pick-items` operations, registration, JWKS (the v2 app does not verify tokens locally), and every
 admin operation (the admin API stays at the root).
 
 **Version gate.** Every `/v2` operation except `/v2/meta` (and the update and device-registration
@@ -93,15 +128,34 @@ endpoints) requires `X-Client-Version: <versionCode>`:
 The minimum comes from the published release metadata (OPERATIONS "Publishing a client
 release"); with nothing published there is no minimum.
 
+**Login requests (no token, gated, signed by the device key).**
+`POST /v2/auth/login-requests` `{username, public_key, nonce, signature}` →
+`{id, match_code, expires_in}`; 403 device not registered or revoked, 429 limits.
+`POST …/{id}/poll` `{nonce, signature}` → `{status, tokens}` with `pending`, `approved` (tokens,
+once), `denied` or `expired`. `POST …/{id}/cancel` is idempotent. 400 bad signature or reused
+nonce, 503 Redis down. Signed string: SYSTEM_REFERENCE §5.
+
 **Device registration (operator token, not gated).** `POST /v2/device/register`
 `{public_key, model, android_version, app_version_code, signature}` → the device
 `{id, status, label, model, android_version, app_version_code, current_username, enrolled_at,
 last_seen_at}`. `public_key` is the base64 DER SubjectPublicKeyInfo of the app's Android
 Keystore EC P-256 key; `signature` is the base64 DER ECDSA/SHA-256 signature over the UTF-8
 `sid` claim of the access token used for the call. New devices are `pending`; calling it again
-is idempotent (call it after every login). **400** bad key or signature, **403** device revoked.
+is idempotent (call it after every login). **400** bad key or signature, **403** device revoked
+(the calling session is revoked too, T8.1: log out locally).
 It binds the session to the device; from then on every gated `/v2` request updates the
 device's `last_seen_at` and `app_version_code` (from `X-Client-Version`).
+
+**Device state (no token, gated, signed by the device key; T8.4a).** `POST /v2/device/state`
+`{device_id, nonce, signature}` → `{assignment, logout_reason}`. `nonce` is
+`<unix seconds>-<8–48 of [A-Za-z0-9_]>`; `signature` is over
+`oc-device:state:<device_id>:<nonce>`. Poll every 5 s on the login screen in the foreground.
+`assignment` (once): `{username, mode: "direct", tokens}` (a session bound to this device: use
+it like an approved login request) or `{username, mode: "preselect", tokens: null}` (select the
+worker, ask for the password). `logout_reason` (once): `{kind: "logout"}` or
+`{kind: "switch", username}`. **400** bad signature, reused nonce, or clock more than 5 min off;
+**403** device not registered or revoked; **429** more than one poll per 2 s; **503** Redis
+down (password login still works).
 
 **Client updates (public, not gated).** `GET /v2/client/latest` →
 `{version_code, version_name, apk_url, sha256, size_bytes, min_supported_version_code, notes,
@@ -184,8 +238,8 @@ updates. Responses and server broadcasts have this envelope:
 {"type": "outbound_update", "data": []}
 ```
 
-Valid types are `users_update`, `outbound_update`, `shopee_orders_update`,
-`pick_item_entries_update`, `stocks_update`, and `error`. Clients should ignore
+Valid types are `users_update`, `login_requests_update` (admins), `devices_update` (admins), `outbound_update`, `shopee_orders_update`,
+`pick_item_entries_update`, `stocks_update`, `tasks_update` (admins and v2 sockets only), and `error`. Clients should ignore
 unknown future event types and reconnect with a newly issued ticket.
 
 **Contract v2 socket (`/v2/ws`, since v0.6.0).** Ticket from `POST /v2/auth/ws-token`, then
@@ -197,6 +251,9 @@ same events, same `data` payloads as v1 (built once per audience for both). Diff
   malformed `X-Client-Version`, **4401** ticket missing/used/expired or its session revoked,
   **4426** client below `min_supported_version_code` (show the update screen). A revoked
   session's open socket is closed with **1008**, as for v1.
+- `tasks_update` (T9.2) reaches only v2 sockets of the assigned worker (never a v1 socket) and
+  admins. `data` is the recipient's task list, the same objects as `GET /v2/tasks` `tasks`
+  (admins: as `GET /admin/tasks` without filters). Order-tasks follow the order and pick events.
 
 
 **Frame rule (client contract v1):** `data` is always a JSON array of objects, for every

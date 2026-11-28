@@ -9,6 +9,7 @@ from src.models import (
     ODItemList,
     ODPackageList,
     ODRecipientAddress,
+    ShopeeOrder,
     ShopeeOrderInfo,
     ShopeeOrderItemList,
     ShopeeOrderRecipientAddress,
@@ -16,7 +17,7 @@ from src.models import (
 )
 from src.services import queries
 
-from .factories import add_order
+from .factories import add_order, add_user
 
 
 def _detail(sn, status="PROCESSED", ship_by=None, item="Synthetic A", note="note"):
@@ -96,3 +97,31 @@ def test_failed_packages_keep_their_tracking_number(pg_session_factory):
     queries.sync_shopee_orders_to_db([([detail], {}, {"PKG-TRACKED"})])
     with pg_session_factory() as db:
         assert db.execute(select(ShopeeOrderInfo.tracking_number)).scalar_one() == "TRK-KEEP"
+
+
+def test_sync_names_the_owners_of_orders_that_left_the_active_list(pg_session_factory):
+    """V2_PICKING_DELTA Q83."""
+    plan = {  # sn: (owner, done, status before, status now)
+        "CANCELLED": ("alice", False, "PROCESSED", "CANCELLED"),
+        "CANCELLED2": ("alice", False, "READY_TO_SHIP", "IN_CANCEL"),
+        "SHIPPED": ("bob", False, "PROCESSED", "SHIPPED"),
+        "STAYS": ("carol", False, "READY_TO_SHIP", "PROCESSED"),
+        "DONE": ("dave", True, "PROCESSED", "COMPLETED"),
+        "GONE": ("erin", False, "SHIPPED", "COMPLETED"),
+        "FREE": (None, False, "PROCESSED", "CANCELLED"),
+    }
+    with pg_session_factory() as db:
+        for name in ("alice", "bob", "carol", "dave", "erin"):
+            add_user(db, name)
+        db.flush()
+        for sn, (_, done, before, _) in plan.items():
+            add_order(db, sn, status=before, done=done)
+        db.flush()
+        for sn, (owner, *_) in plan.items():
+            db.get(ShopeeOrder, sn).owner_user = owner
+        db.commit()
+    details = [_detail(sn, status=now) for sn, (_, _, _, now) in plan.items()]
+    details.append(_detail("NEW", status="CANCELLED"))
+    assert queries.sync_shopee_orders_to_db([(details, {}, set())]) == ["alice", "bob"]
+    # A second sync finds nothing new to tell.
+    assert queries.sync_shopee_orders_to_db([(details, {}, set())]) == []

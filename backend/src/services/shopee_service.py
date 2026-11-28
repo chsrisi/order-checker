@@ -24,6 +24,7 @@ from ..models import (
     ShopeeOrderResponse,
     WSMessageType,
 )
+from ..timezone import SHOPEE_AUTO_SYNC_PAUSE, in_daily_window
 from . import queries
 from .order_payload import build_order_responses
 
@@ -36,6 +37,8 @@ SHOPEE_PAGE_SIZE = get_config_int("SHOPEE_PAGE_SIZE", 100)
 SHOPEE_ORDER_CHUNK_SIZE = get_config_int("SHOPEE_ORDER_CHUNK_SIZE", 50)
 SHOPEE_PACKAGE_CHUNK_SIZE = get_config_int("SHOPEE_PACKAGE_CHUNK_SIZE", 50)
 SHOPEE_SYNC_WINDOW_DAYS = get_config_int("SHOPEE_SYNC_WINDOW_DAYS", 2)
+# V2_ORDERS_DELTA Q48: background sync interval in seconds; 0 turns it off.
+SHOPEE_AUTO_SYNC_SECONDS = get_config_int("SHOPEE_AUTO_SYNC_SECONDS", 300)
 MOCK_ORDER_BYPASS = get_config_bool("MOCK_ORDER_BYPASS", False)
 
 
@@ -465,8 +468,12 @@ def _orders_visible_to(username: str, scope: str) -> list[ShopeeOrderResponse]:
 
 
 async def sync_shopee_orders(
-    refresh: bool, username: str, scope: str = "client"
+    refresh: bool, username: Optional[str], scope: str = "client"
 ) -> list[ShopeeOrderResponse]:
+    """Sync from Shopee unless the cache is fresh, then return the caller's orders.
+
+    ``username`` is None for the background auto-sync: admins get the frame, nobody else.
+    """
     start_time = time.perf_counter()
 
     if refresh:
@@ -532,7 +539,13 @@ async def sync_shopee_orders(
                 failures = [o for o in outcomes if isinstance(o, BaseException)]
 
                 if chunk_results:
-                    await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                    stale = await asyncio.to_thread(queries.sync_shopee_orders_to_db, chunk_results)
+                    # C1: also after a partial sync, for what it did store.
+                    closed = await asyncio.to_thread(queries.close_shipped_outbound)
+                    if closed["outbound"]:
+                        await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
+                    for owner in sorted({*stale, *closed["owners"]}):  # V2_PICKING_DELTA Q81, Q83
+                        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=owner)
                 if failures:  # partial sync: keep what arrived, never mark it complete
                     logger.warning(
                         "shopee_sync_partial",
@@ -564,9 +577,42 @@ async def sync_shopee_orders(
 
         # Messaging systems
         await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
-        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
+        if username is not None:
+            await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=username)
 
-        return await asyncio.to_thread(_orders_visible_to, username, scope)
+        return await asyncio.to_thread(_orders_visible_to, username or "", scope)
+
+
+async def auto_sync_task(interval: Optional[float] = None) -> None:
+    """Background Shopee sync every ``SHOPEE_AUTO_SYNC_SECONDS`` (V2_ORDERS_DELTA Q48).
+
+    Same path as *Sync Shopee*, so it shares the sync lock and the cache: a sync that just ran
+    is not repeated. It skips while the token circuit is open, until *Reset sync state* or a
+    token save clears it, and in the nightly ``SHOPEE_AUTO_SYNC_PAUSE`` (C3); requested syncs
+    still run then. A failed run is logged and the loop goes on.
+    """
+    seconds = SHOPEE_AUTO_SYNC_SECONDS if interval is None else interval
+    if seconds <= 0:
+        logger.info("shopee_auto_sync_disabled", extra={"event": "shopee.auto_sync.disabled"})
+        return
+    try:
+        while True:
+            await asyncio.sleep(seconds)
+            if cache_mgr.is_token_fatal() or in_daily_window(SHOPEE_AUTO_SYNC_PAUSE):
+                continue
+            try:
+                await sync_shopee_orders(refresh=False, username=None, scope="admin")
+            except Exception as exc:
+                logger.warning(
+                    "shopee_auto_sync_failed",
+                    extra={
+                        "event": "shopee.auto_sync.failed",
+                        "error": f"{type(exc).__name__}: {redact(exc)}",
+                    },
+                )
+    except asyncio.CancelledError:
+        logger.info("Shopee auto-sync task cancelled")
+        raise
 
 
 async def acquire_order(order_sn: str, username: str) -> None:

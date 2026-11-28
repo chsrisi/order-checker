@@ -135,6 +135,36 @@ def test_config_database_url_docker_custom_db_host(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("redis://localhost:6379/0", "redis://redis:6379/0"),
+        ("redis://127.0.0.1/0", "redis://redis/0"),
+        ("redis://:secret@localhost:6379/0", "redis://:secret@redis:6379/0"),
+        ("rediss://user:pw@localhost", "rediss://user:pw@redis"),
+        ("redis://redis:6379/0", "redis://redis:6379/0"),
+        ("redis://localhost.example.com:6379/0", "redis://localhost.example.com:6379/0"),
+        ("redis://:localhost@cache:6379/0", "redis://:localhost@cache:6379/0"),
+    ],
+)
+def test_config_redis_url_localhost_resolves_inside_docker(monkeypatch, given, expected):
+    monkeypatch.setattr(config.os.path, "isfile", lambda _: False)
+    monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/.dockerenv")
+    monkeypatch.delenv("REDIS_HOST", raising=False)
+    monkeypatch.setenv("REDIS_URL", given)
+    assert config.get_config_value("REDIS_URL") == expected
+
+
+def test_config_redis_url_custom_host_and_untouched_outside_docker(monkeypatch):
+    monkeypatch.setattr(config.os.path, "isfile", lambda _: False)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(config.os.path, "exists", lambda _: False)
+    assert config.get_config_value("REDIS_URL") == "redis://localhost:6379/0"
+    monkeypatch.setattr(config.os.path, "exists", lambda path: path == "/run/secrets")
+    monkeypatch.setenv("REDIS_HOST", "cache")
+    assert config.get_config_value("REDIS_URL") == "redis://cache:6379/0"
+
+
 def test_config_int_conversions(monkeypatch):
     monkeypatch.setattr(config.os.path, "exists", lambda _: False)
     monkeypatch.setenv("VALID_INT", "42")

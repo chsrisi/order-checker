@@ -12,7 +12,9 @@ from ...models import (
     BOMHeader,
 )
 from ... import config
+from ...timezone import as_utc
 from .engine import get_db
+from .history import NO_FILTER, HistoryFilter, order_conditions
 from .bom import get_marketplace_bom_node, get_standard_bom_node_internal
 
 logger = logging.getLogger("backend.services.queries.orders")
@@ -20,19 +22,19 @@ logger = logging.getLogger("backend.services.queries.orders")
 ACTIVE_ORDER_STATUSES = ("READY_TO_SHIP", "PROCESSED", "RETRY_SHIP")
 
 
-def active_orders_query(now: Optional[datetime] = None):
-    """Orders operators can still work on.
+def active_orders_query():
+    """Orders operators can still work on: not done here and still open on Shopee.
 
-    Built per call: the ship-by cutoff must be evaluated at query time, not at import time
-    (it used to be a module-level query, which froze "now" at server start).
+    Late orders (ship-by passed) stay in (V2_ORDERS_DELTA F4): the sync refreshes every open
+    order whatever its age (``local_active_order_sns``), so one that shipped or was cancelled
+    upstream leaves ``ACTIVE_ORDER_STATUSES`` on the next sync. The old ship-by cutoff only
+    hid late work.
     """
-    cutoff = now or datetime.now(UTC)
     return (
         select(ShopeeOrder)
         .filter(
             ShopeeOrder.done == False,  # noqa: E712
             ShopeeOrder.status.in_(ACTIVE_ORDER_STATUSES),
-            ShopeeOrder.ship_by >= cutoff,
         )
         .order_by(ShopeeOrder.ship_by.desc())
     )
@@ -78,15 +80,20 @@ def get_all_shopee_order_data() -> List[ShopeeOrder]:
 
 
 def get_shopee_orders_history(
-    limit: Optional[int] = None, offset: int = 0
+    limit: Optional[int] = None, offset: int = 0, f: HistoryFilter = NO_FILTER
 ) -> tuple[List[ShopeeOrder], int]:
-    """Completed orders, most recently completed first, one page at a time (T5.2)."""
-    done = ShopeeOrder.done == True  # noqa: E712
+    """Completed orders, most recently completed first, one page at a time (T5.2).
+
+    ``f`` narrows by completion (close) time and search on the server (Delta 9, Q40).
+    """
+    conditions = order_conditions(f)
     with get_db() as db:
-        total = db.execute(select(func.count()).select_from(ShopeeOrder).filter(done)).scalar_one()
+        total = db.execute(
+            select(func.count()).select_from(ShopeeOrder).filter(*conditions)
+        ).scalar_one()
         query = (
             select(ShopeeOrder)
-            .filter(done)
+            .filter(*conditions)
             .order_by(
                 ShopeeOrder.done_at.desc().nulls_last(),
                 ShopeeOrder.ship_by.desc(),
@@ -158,20 +165,14 @@ def _item_rows(order_detail) -> list[ShopeeOrderItemList]:
     return rows
 
 
-def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
 def _past_retention(order: ShopeeOrder, cutoff: datetime) -> bool:
     """Same rule as purge_recipient_data: never re-store buyer data the purge removed."""
     if order.done_at is not None:
-        return _naive_utc(order.done_at) < cutoff
-    return not order.done and order.ship_by is not None and _naive_utc(order.ship_by) < cutoff
+        return as_utc(order.done_at) < cutoff
+    return not order.done and order.ship_by is not None and as_utc(order.ship_by) < cutoff
 
 
-def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> None:
+def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> list[str]:
     """Upsert order details from Shopee (T4.8 / F-M3).
 
     New orders are inserted with items, recipient and packages. Existing orders get their
@@ -179,10 +180,12 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
     note are updated only while the order is inside the retention window (A-10b), and a
     purged recipient row is never recreated. Packages whose tracking lookup failed are
     skipped and keep their previous values.
+
+    Returns who claimed an order that left the active list here, for example one cancelled or
+    shipped on Shopee: their lists are stale (V2_PICKING_DELTA Q83).
     """
-    cutoff = (now or datetime.now(UTC)).replace(tzinfo=None) - timedelta(
-        days=config.RECIPIENT_RETENTION_DAYS
-    )
+    left_active: set[str] = set()
+    cutoff = as_utc(now or datetime.now(UTC)) - timedelta(days=config.RECIPIENT_RETENTION_DAYS)
     details = [d for chunk, _, _ in chunk_results for d in chunk]
     order_sns = [d.order_sn for d in details]
     all_package_nums = [
@@ -238,6 +241,12 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
                         recipient.name = order_detail.recipient_address.name
                         recipient.city = order_detail.recipient_address.city
 
+                if (
+                    not db_order.done
+                    and db_order.status in ACTIVE_ORDER_STATUSES
+                    and order_detail.order_status not in ACTIVE_ORDER_STATUSES
+                ):
+                    left_active.add(db_order.order_sn)
                 db_order.split_up = order_detail.split_up
                 db_order.status = order_detail.order_status
                 db_order.ship_by = order_detail.ship_by_date
@@ -274,7 +283,16 @@ def sync_shopee_orders_to_db(chunk_results, now: Optional[datetime] = None) -> N
                             info.pickup_code = pickup_code
                         info.note = note
 
+        # Read after the updates hold the rows, so a claim made meanwhile counts too.
+        db.flush()
+        owners = db.execute(
+            select(ShopeeOrder.owner_user)
+            .where(ShopeeOrder.order_sn.in_(left_active), ShopeeOrder.owner_user.isnot(None))
+            .distinct()
+        ).scalars()
+        stale = sorted(owner for owner in owners if owner)
         db.commit()
+        return stale
 
 
 def local_active_order_sns(exclude: Iterable[str] = ()) -> list[str]:

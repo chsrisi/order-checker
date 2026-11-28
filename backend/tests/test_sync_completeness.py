@@ -10,7 +10,7 @@ from src.models import ShopeeResponse
 from src.services import shopee_service
 
 
-def _wire_sync(monkeypatch, chunk_outcomes, local_active=()):
+def _wire_sync(monkeypatch, chunk_outcomes, local_active=(), auto_closed=0, owners=(), stale=()):
     monkeypatch.setenv("MOCK_ORDER_BYPASS", "0")
     monkeypatch.setattr(shopee_service, "MOCK_ORDER_BYPASS", False)
     monkeypatch.setattr(shopee_service.cache_mgr, "is_valid", lambda: False)
@@ -46,8 +46,16 @@ def _wire_sync(monkeypatch, chunk_outcomes, local_active=()):
 
     monkeypatch.setattr(shopee_service, "fetch_chunk_details", fake_chunk)
     stored = []
+
+    def fake_store(chunks):
+        stored.append(chunks)
+        return list(stale)
+
+    monkeypatch.setattr(shopee_service.queries, "sync_shopee_orders_to_db", fake_store)
     monkeypatch.setattr(
-        shopee_service.queries, "sync_shopee_orders_to_db", lambda chunks: stored.append(chunks)
+        shopee_service.queries,
+        "close_shipped_outbound",
+        lambda: {"outbound": auto_closed, "orders_done": 0, "owners": list(owners)},
     )
     monkeypatch.setattr(shopee_service, "_orders_visible_to", lambda *_: [])
     return mark, stored, fetched, asked_local
@@ -134,3 +142,27 @@ async def test_failed_tracking_lookup_keeps_packages_out_of_the_update(monkeypat
     monkeypatch.setattr(shopee_service, "shopee_request", fake_request)
     _, tracking, failed = await shopee_service.fetch_chunk_details(["SN1"])
     assert tracking == {} and failed == {"P1"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auto_closed", [0, 2])
+async def test_a_sync_sends_admins_the_scans_only_when_it_closed_some(monkeypatch, auto_closed):
+    """V2_ORDERS_DELTA C1."""
+    _wire_sync(monkeypatch, [([], {}, set())], auto_closed=auto_closed)
+    await shopee_service.sync_shopee_orders(refresh=True, username=None, scope="admin")
+    sent = [c.args[0].value for c in shopee_service.conn_mgr.broadcast.await_args_list]
+    assert sent.count("outbound_update") == (1 if auto_closed else 0)
+
+
+@pytest.mark.asyncio
+async def test_a_partial_sync_still_closes_what_it_stored(monkeypatch):
+    failure = HTTPException(status_code=502, detail="x")
+    _wire_sync(monkeypatch, [([], {}, set()), failure], auto_closed=1, owners=["alice"], stale=["alice", "bob"])
+    with pytest.raises(HTTPException):
+        await shopee_service.sync_shopee_orders(refresh=True, username=None, scope="admin")
+    sent = [c.args[0].value for c in shopee_service.conn_mgr.broadcast.await_args_list]
+    assert sent == ["outbound_update"]
+    # Q81, Q83: owners of completed and of departed orders are told once each, although the
+    # sync failed.
+    told = [c.kwargs["username"] for c in shopee_service.conn_mgr.send_to_user.await_args_list]
+    assert told == ["alice", "bob"]

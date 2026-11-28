@@ -33,11 +33,14 @@ async def close_outbound_items(contents: List[str], admin_username: str) -> dict
     result = await asyncio.to_thread(
         queries.close_outbound_items, contents=contents, admin_username=admin_username
     )
+    owners = result.pop("owners")
     cache_mgr.invalidate()
 
     # Broadcast updates
     await conn_mgr.broadcast(WSMessageType.OUTBOUNDS, scope="admin")
     await conn_mgr.broadcast(WSMessageType.SHOPEE_ORDERS, scope="admin")
+    for owner in owners:  # their closed orders leave their lists (V2_PICKING_DELTA Q81)
+        await conn_mgr.send_to_user(WSMessageType.SHOPEE_ORDERS, username=owner)
 
     return result
 

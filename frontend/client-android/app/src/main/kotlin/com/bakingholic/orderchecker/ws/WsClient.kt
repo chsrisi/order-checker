@@ -64,6 +64,9 @@ class WsClient(
         _state.value = State.DISCONNECTED
     }
 
+    /** Sends a command frame (`{"command": ...}`) on the open socket; false when not connected. */
+    fun send(command: String): Boolean = socket?.send("""{"command":"$command"}""") ?: false
+
     /** Network came back: skip the remaining backoff delay. */
     fun kick() {
         wake.trySend(Unit)

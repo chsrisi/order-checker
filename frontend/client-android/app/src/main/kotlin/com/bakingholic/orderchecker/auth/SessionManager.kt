@@ -49,18 +49,32 @@ class SessionManager(
 
     /** Ends the session on the server (best effort) and always locally. */
     suspend fun logout() {
-        store.load()?.let { tokens ->
-            runCatching {
-                api.send(
-                    ApiRequest(
-                        "POST",
-                        "/v2/auth/logout",
-                        jsonBody = json.encodeToString(RefreshTokenRequest.serializer(), RefreshTokenRequest(tokens.refresh)),
-                    ),
-                )
-            }
-        }
+        store.load()?.let { endOnServer(it.refresh) }
         clearLocal(report = false)
+    }
+
+    /**
+     * The device was revoked (T8.1): the server already ended this session, so only clear it
+     * locally and report [AppEvent.DeviceRevoked] instead of [AppEvent.LoggedOut].
+     */
+    suspend fun endBecauseDeviceRevoked() {
+        clearLocal(report = false)
+        onEvent(AppEvent.DeviceRevoked)
+    }
+
+    /** Ends a session that was issued but is not wanted any more (best effort). */
+    suspend fun giveBack(token: Token) = endOnServer(token.refreshToken)
+
+    private suspend fun endOnServer(refresh: String) {
+        runCatching {
+            api.send(
+                ApiRequest(
+                    "POST",
+                    "/v2/auth/logout",
+                    jsonBody = json.encodeToString(RefreshTokenRequest.serializer(), RefreshTokenRequest(refresh)),
+                ),
+            )
+        }
     }
 
     /** Current access token, refreshed first when it expires within a minute. */
@@ -113,8 +127,11 @@ class SessionManager(
             saveTokens(response).access
         }
 
-    private suspend fun saveTokens(response: ApiResponse): Tokens {
-        val token = json.decodeFromString(Token.serializer(), response.body)
+    private suspend fun saveTokens(response: ApiResponse): Tokens =
+        accept(json.decodeFromString(Token.serializer(), response.body))
+
+    /** Starts (or continues) the local session with this token pair. */
+    suspend fun accept(token: Token): Tokens {
         val tokens = Tokens(token.accessToken, token.refreshToken)
         store.save(tokens)
         _user.value = AccessClaims.parse(tokens.access).subject

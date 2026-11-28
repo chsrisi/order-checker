@@ -2,6 +2,7 @@ import csv
 import io
 from sqlalchemy import select
 from ...models import OutboundItem, Stock, WarehouseItem
+from ...timezone import business_time
 from .engine import get_db
 
 
@@ -31,9 +32,9 @@ def get_export_scans_csv() -> str:
                     item.id,
                     item.content,
                     item.owner_user,
-                    item.created_at.isoformat() if item.created_at else "",
+                    business_time(item.created_at).isoformat() if item.created_at else "",
                     item.closed,
-                    item.closed_at.isoformat() if item.closed_at else "",
+                    business_time(item.closed_at).isoformat() if item.closed_at else "",
                     ",".join(item.tags or []),
                 ]
             )

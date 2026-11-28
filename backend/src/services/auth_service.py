@@ -18,6 +18,7 @@ from . import queries
 from .. import config
 from ..exceptions import DomainException
 from ..models import User, WSMessageType
+from ..timezone import as_utc
 from ..config import (
     JWT_ALGORITHM,
     JWT_AUDIENCE,
@@ -128,6 +129,13 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_operator(current_user: User = Depends(get_current_user)) -> User:
+    """Contract v2: admins administer, they do not work on orders (V2_PICKING_DELTA Q69, Q75)."""
+    if current_user.scope == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot work on orders")
+    return current_user
+
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -194,12 +202,14 @@ def get_tokens(
     sid: str | None = None,
     ip_address: str | None = None,
     agent: str | None = None,
+    new_sid: str | None = None,
 ):
     """Issue a token pair. Without ``sid`` a new session starts (login, registration); with
-    ``sid`` the pair belongs to that existing, live session (refresh rotation)."""
+    ``sid`` the pair belongs to that existing, live session (refresh rotation). ``new_sid``
+    names the new session when the caller has to know its id."""
     logger.info(f"Generating tokens for user: {user.username} (scope: {user.scope})")
     new_session = sid is None
-    session_id = new_session_id() if new_session else sid
+    session_id = (new_sid or new_session_id()) if new_session else sid
     access_token = create_access_token(user.username, session_id)
     refresh_token, jti, expire = create_refresh_token(user.username, session_id)
 
@@ -413,7 +423,7 @@ def refresh_tokens(refresh_token: str) -> dict:
         logger.error("Token revoked")
         raise credentials_exception
 
-    if db_token.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
+    if as_utc(db_token.expires_at) < datetime.now(UTC):
         logger.error("Token expired in DB")
         raise credentials_exception
 

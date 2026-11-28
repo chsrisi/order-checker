@@ -2,7 +2,7 @@
 
 State as of **2026-11-22**, branch `feat/v2-step6` (on top of `v0.5.0`): backend `0.6.0`
 (`backend/pyproject.toml`), operator client contracts **v1** (root, frozen) and **v2** (`/v2`,
-§10A), Alembic head `e5b8f3a1c2d4`.
+§10A), Alembic head `a7d1c3e5f2b4` (tasks, T9.1, 2026-11-27).
 
 This file describes what the code does now, precisely enough to reason about behaviour
 without reading the source. It complements the other guides and does not repeat them:
@@ -28,13 +28,13 @@ and the implementation plan.
 
 | Term | Meaning in this codebase |
 |---|---|
-| **Operator / client** | A user with `scope = "client"`, using the Flutter operator app (`frontend/client`) on Android or Windows. |
+| **Operator / client** | A user with `scope = "client"`, using the operator app on Android: v1 Flutter (`frontend/client`) or v2 Kotlin (`frontend/client-android`). |
 | **Admin** | A user with `scope = "admin"`, using the Flutter admin web app (`frontend/admin`). Exactly the users created by the startup seed (`ADMIN_USERNAME`); the API never creates other admins. |
 | **Order** | A Shopee order, key `order_sn` (string, starts with `YYMMDD`). Table `shopee.orders`. |
 | **Package / info** | One Shopee package of an order (`shopee.order_info`). A split order (`split_up = true`) has several. Carries tracking number, pickup code, logistics status and buyer note. |
-| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` AND `ship_by >= now()` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. |
+| **Active order** | `done = false` AND `status IN (READY_TO_SHIP, PROCESSED, RETRY_SHIP)` (`queries/orders.py: active_orders_query`). Only active orders appear in order lists. There is no ship-by cutoff (V2_ORDERS_DELTA F4): a late order stays active until the sync sees it leave those statuses. |
 | **Claim / acquire** | Setting `shopee.orders.owner_user` to an operator. Atomic; see §7.2. |
-| **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick. |
+| **Pick entry (PIE)** | Row in `orders.pick_item_entries`: "user U picked `qty` of resolved SKU S, optionally for order O". One row per `(sku, order_sn, owner_user)` by construction (not by constraint). `order_sn = NULL` means a *general* (unassigned) pick, unless `task_line_id` is set: then it is a **task pick** (§7.10), which no order or unassigned path ever sees. |
 | **Allocation** | Row in `orders.pick_stock_allocations`: which bin a pick's deducted stock came from. Sum of allocations ≤ entry qty; the difference is a *shortfall*. |
 | **Bin / location** | `warehouse.stocks.location` (free text, may be `NULL` = "unlocated"). At most one row per `(sku, coalesce(location, ''))`. |
 | **Outbound scan** | Row in `orders.outbound_items`: a scanned shipping label (`content`), with tags. *Open* until closed by period closure. |
@@ -132,8 +132,11 @@ returns. Functions in `queries/stocks.py` that take `db` never commit.
 
 ## 4. Data model
 
-PostgreSQL, five schemas. All `DateTime` columns are naive UTC; the API serializes them as
-`...Z` (`models.UTCDateTime`). Column types: `str` = `VARCHAR`, `float` = double precision.
+PostgreSQL, five schemas. Timestamps are `timestamptz` and every connection runs in
+UTC (`queries/engine.py`); the API serializes them as `...Z` (`models.UTCDateTime`). Exception:
+the imported dates on `warehouse.items`, the marketplace BOM tables and `shopee_items` are naive,
+zone unknown, and unused. `src/timezone.py` holds the business clock: one fixed
+`BUSINESS_UTC_OFFSET` (default +07:00) for History days, the auto-sync pause and exports. Column types: `str` = `VARCHAR`, `float` = double precision.
 
 ### 4.1 Tables
 
@@ -149,7 +152,7 @@ the refresh-cleanup task once `expires_at` passed, and with the user.
 
 **`auth.devices`** (T6.6): `id` PK (uuid hex); `public_key` UNIQUE (base64 DER SPKI, P-256);
 `status` `pending`|`active`|`revoked` (CHECK); `label`, `model`, `android_version`,
-`app_version_code`; `token_hash` (unused until step 8); `current_username` FK → users
+`app_version_code`; `token_hash` (unused until T8.2); `current_username` FK → users
 `ON DELETE SET NULL` (the SQL word `current_user` is reserved); `enrolled_at`, `last_seen_at`.
 `auth.sessions.device_id` FK → devices `ON DELETE SET NULL` (indexed, NULL for v1 and admin).
 
@@ -182,7 +185,19 @@ Exposed as `OutboundItem.tags: list[str]` (association proxy, eager-joined).
 
 **`orders.pick_item_entries`**: `id` PK; `sku` (indexed; always a resolved warehouse SKU);
 `qty`; `order_sn` FK → shopee.orders, nullable; `timestamp` (bumped on every change);
-`owner_user` FK.
+`owner_user` FK, nullable since T9.1 for task picks only (CHECK `ck_pick_item_entries_owner`:
+`owner_user IS NOT NULL OR task_line_id IS NOT NULL`); `task_line_id` FK → task_lines, nullable
+(indexed): set on a task pick.
+
+**`orders.tasks`** (T9.1): `id` PK; `type` `count` | `pick`; `status` `open` | `blocked` |
+`done` | `cancelled` (CHECKs; indexed); `assigned_to` FK → auth.users `ON DELETE SET NULL`
+(indexed); `assigned_name` (the worker's name as text, kept after deletion); `created_by`,
+`created_at`; `note`; `reference` (pick tasks); `blocked_reason`; `closed_at`, `closed_by`.
+
+**`orders.task_lines`**: `id` PK; `task_id` FK → tasks `ON DELETE CASCADE` (indexed); `kind`
+`count` | `entered` | `leaf`; `sku`; `qty` (NULL on a count); `location` (a count's bin, `multi`
+mode only); `counted_qty` (a done count). A pick task has its lines as entered plus one `leaf`
+per SKU after BOM expansion, stored at creation.
 
 **`orders.pick_stock_allocations`**: `id` PK; `pick_entry_id` FK → pick_item_entries
 `ON DELETE CASCADE` (indexed); `sku`; `location` nullable; `qty`; `created_at`.
@@ -200,7 +215,9 @@ reaching 0 is deleted.
 structured since T4.3: `sku` (indexed), `location`, `delta`, `before`, `after`, `reason`,
 `actor`, `ref_type`, `ref_id`. Reasons: `adjust_set`, `adjust_add`, `transfer_out`,
 `transfer_in`, `pick`, `pick_shortfall`, `pick_restore`, `mode_merge`, `cutover_clear`,
-`migration_merge` (meanings: OPERATIONS "Stock audit log").
+`migration_merge`, `task_cancel_keep` (meanings: OPERATIONS "Stock audit log"). `ref_type`:
+`pick_entry` (order and v1 picks), `task` (every stock change a task causes), `transfer`,
+`pick_entries` (cutover).
 
 **`warehouse.bom_headers`**: `id` PK; `sku` FK → items, unique; `quantity_standard`,
 `factor_f5` (not used by expansion).
@@ -237,6 +254,8 @@ BOM, item and ERP tables are populated outside this application (no API writes t
 | `c3f8a2d5e6b1` | drops the never-used `orders.pick_item_entries_log` (downgrade recreates it empty) |
 | `d4a7e2c9b1f0` | `auth.sessions`, `refresh_tokens.session_id`; deletes pre-session refresh tokens (one relogin) |
 | `e5b8f3a1c2d4` | `auth.devices`, `sessions.device_id` (additive) |
+| `f6c9a4b2d3e5` | app-written timestamps become `timestamptz` (values kept as UTC) |
+| `a7d1c3e5f2b4` | `orders.tasks`, `orders.task_lines`, `pick_item_entries.task_line_id`; `owner_user` nullable for task picks only (CHECK). Downgrade deletes task picks without returning stock |
 
 Integration tests build the schema from empty with `alembic upgrade head`, check the full
 down/up round trip and assert no autogenerate drift. CI's migration gate upgrades from the
@@ -251,6 +270,14 @@ previous release tag.
 | `ws_token:<urlsafe32>` | JSON `{username, sid}` | `WS_TICKET_TTL_SECONDS` (30) | `POST /auth/ws-token`; consumed with `GETDEL` |
 | `cfg_token:<hex64>` | admin username | `SHOPEE_CONFIG_UNLOCK_TTL_SECONDS` (120) | `POST /admin/shopee-config/unlock` |
 | `login_fail:<lowercased username>` | failure count | `LOGIN_LOCKOUT_SECONDS` (900), reset to a full window at the locking failure | failed logins |
+| `login_req:<id>` | login request (JSON, no tokens) | `LOGIN_REQUEST_TTL_SECONDS` (120); on a decision `LOGIN_REQUEST_COLLECT_SECONDS` (30) | asking device |
+| `login_req_decision:<id>` | `approved:<admin>` / `denied:<admin>`, set once (NX) | both of the above | admins |
+| `login_req_device:<device>`, `login_req_rate:<device>`, `login_req_nonce:<scope>:<nonce>`, `login_req_index` | current request, rate counter, seen nonces, open requests by expiry | request TTL; 600 s; 600 s (create: 30 days); none (pruned) | asking device |
+| `device_assign:<device>` | worker switch (JSON: id, username, mode, admin, credential fingerprint, times; no tokens) | `DEVICE_ASSIGNMENT_TTL_SECONDS` (600) | admins (assign); taken with `GETDEL` by the device's poll or a cancel |
+| `device_assign_index` | sorted set of the assignments' JSON by expiry | none (members removed on collect, cancel, replace, expiry) | admins; the expiry sweeper |
+| `device_assign_last:<device>` | last assignment's outcome (JSON) | 3600 s | admin actions, polls, sweeper |
+| `device_logout_reason:<device>` | `{kind: logout\|switch, admin, username}` | 24 h; read once (`GETDEL`) | admin logout or switch that ended a session |
+| `device_state_rate:<device>`, `device_state_nonce:<device>:<nonce>`, `device_seen:<device>` | poll limit, seen nonces, "reachable" | 2 s; 600 s; 30 s | device state polls |
 
 Redis needs ≥ 6.2 (`GETDEL`). Compose ships `redis:8.8-alpine`.
 
@@ -274,7 +301,8 @@ session applies to the very next HTTP request (401). Endpoints that need the ses
 in it (a refresh token whose session is gone, revoked or different fails with 401). Ending a
 session revokes it and deletes its refresh tokens in one transaction, then closes its sockets
 (1008): logout ends that session only (`ConnectionManager.disconnect_session`); password reset,
-`POST /admin/users/{username}/logout` and user deletion end all of the user's sessions.
+`POST /admin/users/{username}/logout` and user deletion end all of the user's sessions;
+revoking a device (T8.1) ends every session bound to it, and only those.
 `scripts.set_admin_password` revokes the admin's sessions. v1 clients see a 401, fail their one
 refresh and return to the login screen.
 
@@ -283,6 +311,64 @@ refresh and return to the login screen.
 unknown user and wrong password all return 401 "Incorrect username or password". Throttle:
 `LOGIN_MAX_FAILURES` (10) failed attempts per lowercased username within the window → 429
 with `Retry-After`; success resets; Redis down → throttle fails open.
+
+**Login requests** (T6.21, `login_request_service`): a registered, not revoked device asks for a
+worker; an admin approves in the console; the device collects one session. Every device call is
+signed with the device key over `oc-login-request:<create|poll|cancel>:<username or id>:<nonce>`
+and each nonce works once. One request per device (a new one replaces it), 5 per device in 10
+minutes, 20 pending. Unknown usernames and admin accounts get a request no admin sees. At
+collection the account must still exist with the same password, and the device must not be
+revoked. Deciding is one NX, collecting one GETDEL, so at most one session results. A password
+lockout does not block requests. Redis down → 503 (password login still works).
+
+**Device approval and revocation** (T8.1, `device_service.set_status`,
+`queries.set_device_status`). `POST /admin/devices/{id}/approve`: `pending` → `active`.
+`/revoke`: `pending` or `active` → `revoked`, final (V2_WORKER_SWITCH_DELTA W7). Both are
+idempotent (200 with the device); approving a revoked device is 409 "Device is revoked"; 404
+for an unknown id. Revoking marks the device and revokes its live sessions and their refresh
+tokens in one transaction (row lock), then closes their sockets (1008); the same workers stay
+logged in on other devices, and v1 sessions (no `device_id`) are untouched. A revoked device
+can't register (`/v2/device/register` answers 403 **and revokes the calling session**, W9, so a
+password login on it ends within one request), ask for a login, or collect one. `pending`
+devices work as before (password login, login requests). Each action is logged
+(`device.approved` / `device.revoked` with `admin`, `device_id`, `username`, `changed`,
+`sessions_revoked`); no audit table. The Android app logs out locally on that 403 and shows
+"This device was revoked by the admin."
+
+**Per-device logout and worker switch** (T8.4a, `device_assignment_service`,
+`managers/device_assignment_manager.py`; V2_WORKER_SWITCH_DELTA). Admin side:
+- `POST /admin/devices/{id}/logout` ends every session on the device (sockets closed), drops a
+  waiting assignment (`cancelled`) and leaves the reason `logout` for the device. Works without
+  Redis (then without the reason). 409 on a revoked device.
+- `POST /admin/devices/{id}/assign` `{username, mode}`: `direct` (default) needs an `active`
+  device (409 "Device is not approved", W2); `preselect` also works on `pending`. Client accounts
+  only (404 for unknown and admin accounts); 409 on a revoked device. The assignment is stored
+  **first** (Redis down → 503 and nothing changes), then the device's sessions end and the reason
+  `switch` (with the new worker) is left. One per device: a new one replaces the old (`replaced`,
+  last admin wins). The new worker's sessions on other devices are untouched.
+- `DELETE /admin/devices/{id}/assign` cancels; idempotent.
+- Revoking a device (T8.1) drops its assignment (`invalid`).
+- `PATCH /admin/devices/{id}` `{label}` names the device for the console (T8.6; at most 40,
+  trimmed, empty clears it; log event `device.renamed`).
+
+Device side: `POST /v2/device/state` `{device_id, nonce, signature}`, ECDSA over
+`oc-device:state:<device_id>:<nonce>` with the registered key (P-25). The nonce is
+`<unix seconds>-<random>`: more than 300 s off the server's clock → 400 "Nonce out of time";
+each nonce works once (kept 600 s), so a captured poll can't be replayed. Unknown device → 403
+"Device not registered"; after the signature, revoked → 403 "Device revoked"; more than one poll
+per 2 s → 429. A poll marks the device reachable for 30 s and writes `last_seen_at` at most once
+per 60 s (P-27). It returns the logout reason once and the assignment once (`GETDEL`, so racing
+polls yield at most one session). At hand-over the worker must still exist as a client account
+with the same password fingerprint (as login requests), and a `direct` assignment needs the
+device still `active`; otherwise the outcome is `invalid` and nothing is handed over. `direct`
+issues a session (agent `device-assignment`) bound to the device, like an approved login request
+(`device_service.start_bound_session`); `preselect` hands over only the name.
+
+Outcomes (`last_assignment.outcome`): `collected`, `expired` (the background sweeper,
+every 5 s, from `device_assign_index`), `replaced`, `cancelled`, `invalid`. Each change sends
+admins `devices_update`. Log events `device.logout`, `device.assignment.{created, replaced,
+cancelled, collected, expired, invalid}` with `admin`, `device_id`, `old_worker`, `new_worker`,
+`mode`; tokens are never logged or stored.
 
 **Refresh.** `consume_refresh_token` deletes the row by `jti` with `RETURNING` (single use even
 under races), then checks expiry, the session (same `sid`, still live) and user existence, and
@@ -323,16 +409,19 @@ cache.
 | Capability | Operator | Admin |
 |---|---|---|
 | List active orders (HTTP and WS) | **only orders it claimed** | all active orders |
-| Claim an order | yes | yes (same rules) |
+| Claim an order | yes | v1 routes: yes (same rules); `/v2`: no (403) |
 | Pick entries: list | own | all |
 | Pick entries: create/assign/unassign | own, only for orders it claimed | same rule (admin must own the order too) |
 | Pick entries: delete | own | any |
+| `/v2` order picks and unassign | own orders | no (403) |
+| `/v2/tasks`: list, count, pick, unassign, can't finish | own (assigned) tasks; others' are 404 | no (403) |
+| `/admin/tasks`, `/admin/order-tasks`: create, list, detail, cancel, reassign, close | – | yes |
 | Outbound scans: list (open) | own | all open |
-| Outbound: create scan | yes | yes |
+| Outbound: create scan | yes | v1 route: yes; `/v2`: no (403) |
 | Outbound: close period, clear all, history, exports | – | yes |
 | Stocks: read, adjust, transfer | yes | yes |
 | Item search | yes | yes |
-| Users, BOM, Shopee config, sync reset | – | yes |
+| Users, devices (approve, revoke), BOM, Shopee config, sync reset | – | yes |
 | WS `get_users` | error frame "Forbidden" | yes |
 
 `require_admin` returns 403 "Not authorized" for operators.
@@ -343,8 +432,12 @@ cache.
 
 ### 7.1 Shopee synchronization (`shopee_service.sync_shopee_orders`)
 
-Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin). Not triggered by the
-WebSocket `get_shopee_orders` command, which only reads the database.
+Triggered by `GET /shopee/orders[?refresh=true]` (operator and admin), and by the background
+`auto_sync_task` every `SHOPEE_AUTO_SYNC_SECONDS` (default 300, 0 = off; V2_ORDERS_DELTA Q48),
+which runs as admin with no requesting user, skips while the token circuit is open and in the nightly
+`SHOPEE_AUTO_SYNC_PAUSE` (default 21:00-06:00 business time, start included, end excluded; other
+syncs still run then), and logs a failed run without stopping. Not triggered by the WebSocket `get_shopee_orders` command, which
+only reads the database.
 
 1. `refresh=true` invalidates the cache. If the cache is still valid (last full sync < 120 s
    ago) the database is read and returned; no WS broadcast.
@@ -366,6 +459,13 @@ WebSocket `get_shopee_orders` command, which only reads the database.
    - package rows keyed by `package_number`: failed-tracking packages are skipped (keep old
      values); for non-`READY_TO_SHIP` orders tracking/pickup code are overwritten.
    - Orders are never deleted.
+   Then, also after a partial sync, `close_shipped_outbound` (V2_ORDERS_DELTA C1): every open
+   scan whose label is exactly the SN or a tracking number of an order in `SHIPPED`,
+   `TO_CONFIRM_RECEIVE` or `COMPLETED` is closed and the order marked done. It matches the
+   database, not this sync's batch; cancelled and returned orders and unscanned ones are left
+   alone. If it closed any, admins get `outbound_update`, and the
+   claimers of the orders it completed get `shopee_orders_update` (Q81), as do
+   the claimers of orders this sync took off the active list (cancelled, shipped; Q83). Logged as `outbound.auto_closed`.
 7. If any detail chunk failed: the rest is stored, the cache is **not** marked synced, 502.
    Otherwise `mark_synced()` (also clears the circuit flag).
 8. Broadcast `shopee_orders_update` to admins and to the caller, then return the caller's view.
@@ -387,8 +487,10 @@ sync is not marked complete.
 
 ### 7.2 Order visibility and claiming
 
-- Lists use `active_orders_query()` ordered by `ship_by DESC`. An order disappears from every
-  list once its `ship_by` passes, even if never completed.
+- Lists use `active_orders_query()` ordered by `ship_by DESC`. A **late** order (ship-by passed)
+  stays listed until Shopee reports it shipped or cancelled, or a close completes it: the sync
+  re-fetches every locally open order whatever its age (`local_active_order_sns`, §7.1), so
+  statuses stay current without a ship-by cutoff (removed in V2_ORDERS_DELTA F4).
 - `POST /shopee/orders/acquire?order_sn=` (query parameter) runs one conditional `UPDATE ...
   WHERE owner_user IS NULL OR owner_user = caller AND done = false RETURNING`. Results: 200
   (claimed, or already the caller's); 404 order unknown; 409 "Order already completed" or
@@ -438,7 +540,10 @@ name contains the query (`ILIKE`, with `\ % _` escaped).
 
 ### 7.5 Pick lifecycle (`queries/pick_items.py`, one transaction each)
 
-Lock order everywhere: pick entry → allocations → stock rows.
+Lock order everywhere: order (v2 picks and worker deletion) → pick entry → allocations → stock
+rows. v1 operations do not lock the order. The table covers the v1 operations; v2 is below it.
+Every query in this module filters out task picks (`task_line_id IS NULL`, `NOT_TASK`): they are
+never listed, assigned, deleted, released or cleared here (§7.10).
 
 | Operation | Rules | Stock effect | Errors |
 |---|---|---|---|
@@ -450,6 +555,15 @@ Lock order everywhere: pick entry → allocations → stock rows.
 Create, assign and unassign set the receiving entry's `timestamp` to now. Events after commit: caller +
 admins get `pick_item_entries_update`; create and delete also broadcast `stocks_update` to
 everyone.
+
+**Contract v2** (`pick_for_order`, `unassign_from_order`; V2_PICKING_DELTA): the order is locked
+`FOR NO KEY UPDATE`, so picks, unassigns and closes of one order run one at a time. Entries never
+have `order_sn = NULL`; a duplicate row left by v1 is merged.
+
+| Operation | Rules | Stock effect | Errors |
+|---|---|---|---|
+| `POST /v2/shopee/orders/{order_sn}/picks {sku, qty>0}` | order claimed by the caller, not done, and active on Shopee; `sku` resolved via §7.4 | deduct (§7.6) | 404; 409 done, not active, or strict stock |
+| `POST /v2/shopee/orders/{order_sn}/picks/unassign {sku, qty>0}` | order claimed by the caller and not done (a cancelled one is allowed); `sku` is the stored SKU | `restore_pick_quantity` (§7.6) | 404; 409 done, or more than is picked |
 
 ### 7.6 Inventory engine
 
@@ -479,8 +593,10 @@ pre-migration duplicate rows are folded on load.
 
 **Picks:** deduction takes bin by bin in deduction order, writing one allocation and one
 `pick` log row per bin. Unmet quantity is logged `pick_shortfall` (log row with `delta = 0`
-and a warning) and is never restored. A pick never fails for lack of stock and stock never
-goes negative. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
+and a warning) and is never restored. A pick never fails for lack of stock unless
+`STOCK_STRICT=1` (then 409 and nothing changes: `InsufficientStockError`, checked on the locked
+rows). Stock never goes negative. `restore_pick_quantity` is the exact reverse of a pick: the
+shortfall first, then the newest allocations. Stock is *deducted* at pick time; there is no reservation (KNOWN_LIMITATIONS
 #5).
 
 ### 7.7 Outbound scans and period closure
@@ -493,7 +609,8 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
 
 `POST /outbound/close [values…]` (admin, ≤ 10,000 × 1024 chars):
 
-1. Trim, drop empties, de-duplicate preserving order.
+1. Trim, drop empties, de-duplicate preserving order. Matching is **exact**
+   everywhere below (V2_ORDERS_DELTA Q57), like the console's pairing.
 2. Close all **open** scans (any user) whose `content` is in the list: `closed = true`,
    `closed_at = now`.
 3. `unknown` = submitted values that closed no scan.
@@ -501,8 +618,9 @@ order's `shipping_carrier` is appended to the tags. Events: admins + the scannin
    `tracking_number`. Matched orders with `done = false` get `done = true`, `done_at = now`.
    Orders are completed even when no scan matched.
 5. Returns `{outbound, unknown, orders_done}`; invalidates the sync cache; broadcasts
-   `outbound_update` and `shopee_orders_update` **to admins only** (operators' lists update on
-   their next request).
+   `outbound_update` and `shopee_orders_update` to admins, and `shopee_orders_update` to each
+   operator who claimed an order it completed (V2_PICKING_DELTA Q81; operators' scan lists
+   update on their next request).
 
 `DELETE /admin/clear/outbound-items` deletes every scan (open and closed) and their tags;
 admins get `outbound_update`. `/admin/history/outbound` lists closed scans; exports: §9.
@@ -517,7 +635,9 @@ admins get `outbound_update`. `/admin/history/outbound` lists closed scans; expo
 - `DELETE /admin/users?username=` (client accounts only, else 404), in one transaction:
   delete the user's pick entries exactly like `DELETE /pick-items/{id}` (allocated stock
   restored, `pick_restore` rows with the deleting admin as actor), its outbound scans and
-  refresh tokens; unassign its orders; delete the user. Then its sockets are closed and
+  refresh tokens; unassign its orders; delete the user. Its **tasks stay** (P-32):
+  `assigned_to` becomes NULL (`assigned_name` keeps the name), and its task picks stay with
+  their task, stock untouched, with `owner_user = NULL`. Then its sockets are closed and
   `pick_item_entries`, `outbound_items` and `shopee_orders` go to admins, `stocks_update`
   to everyone.
 - All three broadcast `users_update` (`[{username, scope}]`) to admins.
@@ -531,6 +651,30 @@ order is past retention when `done_at < cutoff`, or `done = false AND ship_by < 
 purge deletes its recipient row and clears `note` on its packages; order numbers, items and
 tracking numbers stay. Sync never writes buyer data back for such orders. Only counts are
 logged.
+
+### 7.10 Tasks (`queries/tasks.py`, T9.1; V2_TASKS_SPEC, V2_TASKS_DELTA)
+
+An admin assigns a task to a worker (a client account); it completes implicitly. Lock order:
+task → its pick entries → allocations → stock rows. Every stock change a task causes is logged
+with `ref_type = task`, `ref_id` = its id (`pick_ref` for task picks).
+
+| Operation | Rules | Effect |
+|---|---|---|
+| create count | the item by exact SKU; `multi`: the bin is required; `single`: no bin taken (P-29) | `open` task, one `count` line |
+| create pick | lines of internal SKUs, qty > 0; bundles expand through the standard BOM (`order_payload.expand_lines`, the same `_Catalog.expand_line` orders use); zero leaves dropped | `open` task; `entered` lines plus one `leaf` per SKU (snapshot, P-28) |
+| count (worker) | the assignee's open count; scanned item must be the task's SKU; `multi`: scanned bin must be the task's; `single`: a scanned location must match the item's current one (if any); locations match after trim and upper-case only (no format, `_same_location`); and `set` runs **without** a location, so stock is never merged into a scanned place | `apply_stock_update(set)`; `counted_qty`; `done` |
+| pick (worker) | the assignee's open pick task; SKU or barcode resolved (§7.4) and on the task; over-pick allowed | `deduct_for_pick` into the leaf's entry (`order_sn` NULL, `task_line_id` set); `done` when `is_picked` (every leaf exact, nothing else) |
+| unassign (worker) | as v2 order unassign (`restore_pick_quantity`); more than picked → nothing changes | stock back; `done` if now exact |
+| can't finish (worker) | `open` → `blocked` with a non-empty reason | – |
+| cancel (admin) | `open` or `blocked`; return stock (default) or keep it | return: picks restored and deleted; keep: picks stay, one `task_cancel_keep` row per SKU |
+| reassign (admin) | `open` or `blocked` → `open` for another worker; `blocked_reason` cleared | the picks' `owner_user` moves too (T12) |
+| close as picked (admin) | pick tasks, `blocked` only (T8) | `done`, picks kept |
+
+Another worker's task is "not found" (404); a wrong state is `TaskStateError`, a wrong scan
+`TaskScanError` (both 409); other `ValueError`s are 400. "In progress" is derived from the picks, never stored.
+Claimed orders show as tasks too, derived, never stored (P-30). Done and cancelled tasks keep
+their picks as history; task picks never reach `get_pie_data`, v1 pick payloads,
+`count_unassigned_picks`, `release_unassigned_picks` or `clear_open_pick_entries`.
 
 ---
 
@@ -562,14 +706,19 @@ so every event reaches v1 and v2 devices and both admins alike.
 | Trigger | Event | Recipients |
 |---|---|---|
 | user created/registered/reset/deleted | `users_update` | admins |
+| login request created, decided or cancelled | `login_requests_update` (all pending ones) | admins |
+| device approved, revoked, renamed or logged out; assignment created, replaced, cancelled, collected, expired or invalidated | `devices_update` (the whole `GET /admin/devices` list) | admins |
 | outbound scan created | `outbound_update` | admins + the scanning user |
 | period closed | `outbound_update`, `shopee_orders_update` | admins |
+| claimed order leaves the active list (period close or sync) | `shopee_orders_update` | the operator who claimed it |
 | all scans cleared | `outbound_update` | admins |
 | sync performed (cache miss) | `shopee_orders_update` | admins + the requesting user |
 | order claimed | `shopee_orders_update` | the claimer + admins |
 | pick create / delete | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
-| pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v1 pick assign / unassign | `pick_item_entries_update` | caller + admins |
+| v2 pick / unassign | `pick_item_entries_update`; `stocks_update` | caller + admins; everyone |
 | stock update / transfer | `stocks_update` | everyone |
+| task created, cancelled, reassigned, closed, counted, picked, unassigned or blocked | `tasks_update`; `stocks_update` when stock changed | the assigned worker's **v2** sockets (both workers on a reassign) + admins; everyone |
 
 Each recipient's payload is computed for its audience: one shared payload for all admins,
 one per operator, one for scope-independent events (`users_update`, `stocks_update`). Payload
@@ -588,6 +737,25 @@ user deletion/reset uses code 1008. A failed send drops that socket.
 - `GET /admin/history/outbound`, `/admin/history/shopee/orders`: `limit` 1–2000 (default
   500), `offset`; total in `X-Total-Count`; the body stays a list. Order history is sorted
   `done_at DESC NULLS LAST, ship_by DESC, order_sn`.
+  Optional server-side filters (`queries/history.py`, V2_DELTA D9): `closed_from`/`closed_to`
+  on the close time (`closed_at` / `done_at`, inclusive), `day_from`/`day_to` on business days, and
+  `q` (ILIKE with `%`/`_` escaped) over label, worker and tags, or SN, worker, tracking number,
+  pickup code, courier and buyer name (V2_ORDERS_DELTA Q49; buyer names exist only within
+  `RECIPIENT_RETENTION_DAYS`).
+- `GET /admin/history/days` and `/days/{day}` (V2_ORDERS_DELTA C2, R4.2): one row per business
+  day, and all of one day unpaged. A closed scan belongs to the day it was **made**; a done order
+  is on every day one of its closed scans was made, or on the day it was done when it has none.
+  A past day can grow when its scans close later. With `q`, only days holding a matching scan or
+  order are listed, with their full counts.
+- `GET /admin/stock-changes` (`queries/stock_changes.py`, T7.13): `stocks_log` newest first,
+  `limit` 1–500 (default 100), `offset`, total in `X-Total-Count`. Filters: `sku` and `actor`
+  (exact, case-insensitive), `reason` (repeatable), `from`/`to` (inclusive). Each row carries
+  the item name and, for a `ref_type = pick_entry` row, the entry's `order_sn` while the entry
+  exists. `task_id` names the task: from `ref_id` on a `ref_type = task` row (a count), or
+  through the pick entry's task line (a task pick, its return, `task_cancel_keep`). Legacy rows (before T4.3) have only `message`. The console's Stock & finder reads it.
+- `GET /admin/lookup?label=` (`queries/history.lookup_label`): orders whose SN or a tracking
+  number equals the label and the scans of it, open or closed; trimmed, then exact, at
+  most 10 orders and 20 scans, and the History `day` it left on. The console's History answers "did it leave?" from it.
 
 ---
 
@@ -637,7 +805,7 @@ Since v0.6.0 (T6.3). Not frozen, but guarded like v1: `tests/test_client_contrac
 committed export `backend/openapi/v2.json`.
 
 - `src/routers/v2/__init__.py` mirrors the v1 client operations at `/v2<path>` (list in API.md
-  "Operator-client contract v2"), **reusing the v1 endpoint functions**, response models,
+  "Operator-client contract v2"), except picks, **reusing the v1 endpoint functions**, response models,
   summaries and error declarations; tags are prefixed `v2 · `. No register, JWKS or admin
   operations.
 - Gate (`require_client_version`): `X-Client-Version` integer required (400 otherwise); below
@@ -645,6 +813,14 @@ committed export `backend/openapi/v2.json`.
   `{detail, min_supported_version_code}` (`exceptions.ClientUpgradeRequired`). `/v2/meta` is
   ungated. The metadata file is re-read only when its mtime changes
   (`services/client_releases.py`).
+- Order picks (T6.18, `routers/v2/order_picks.py`, rules in §7.5) are v2 only: the pool, assign and
+  delete do not exist in v2. Claim, pick, unassign and outbound require an operator
+  (`require_operator`, `OPERATOR_ONLY`).
+- Tasks (T9.2, `routers/v2/tasks.py`, `routers/admin_tasks.py`, `services/task_service.py`;
+  rules in §7.10): `/v2/tasks` for the assigned worker (`require_operator`), `/admin/tasks` and
+  `/admin/order-tasks` for admins. Order-tasks are derived per request (`task_service.order_tasks`,
+  the apps' R4.3 rule: every required SKU exact, none extra). `tasks_update` is sent with
+  `send_to_user(..., min_contract=2)`, so v1 sockets never get it; admins get the default list.
 - `config.CLIENT_CONTRACT = 2`, `/meta` reports `{min: 1, max: 2}`.
 - OTA (T6.5, `routers/client_release.py`): `GET /v2/client/latest` and
   `GET /v2/client/apk/{version_code}`, public and ungated. Files in `CLIENT_RELEASES_DIR`
@@ -653,12 +829,20 @@ committed export `backend/openapi/v2.json`.
   compose mounts `RELEASES_VOLUME` read-only.
 - Devices (T6.6, `routers/device.py`, `services/device_service.py`, `queries/devices.py`):
   `POST /v2/device/register` verifies an ECDSA P-256 signature over the caller's `sid`
-  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403, row lock + retry
-  on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
+  (`cryptography`), upserts by public key (new → `pending`, `revoked` → 403 and the calling
+  session revoked (T8.1), row lock + retry on a first-registration race) and sets `sessions.device_id`. The gate stores the version in
   `request.state.client_version`; `get_current_principal` passes it to
   `get_user_for_session`, which updates the device in the same transaction: `last_seen_at` on
   the 60 s throttle, `app_version_code` at once when it changed. Root (v1) requests never touch
-  devices. `GET /admin/devices` lists them.
+  devices. `GET /admin/devices` lists them (`AdminDeviceResponse`: the device plus `online`,
+  true when a live session of the device has an open WebSocket right now, from
+  `conn_mgr.live_session_ids()` → `queries.device_ids_for_sessions`; V2_DELTA Q35). `last_seen_at`
+  moves only on HTTP requests, so `online` is what the console shows as status. Approve and
+  revoke: §5 "Device approval and revocation". The list also carries `reachable`, `assignment`
+  and `last_assignment` (§5 "Per-device logout and worker switch").
+- Device state (T8.4a, `routers/device.py`, `services/device_assignment_service.py`):
+  `POST /v2/device/state`, gated, no user token, signed with the device key (§5). The only
+  `/v2/device/*` operation behind the version gate.
 
 ---
 
@@ -667,9 +851,10 @@ committed export `backend/openapi/v2.json`.
 | Script | Purpose |
 |---|---|
 | `set_admin_password` | apply the configured `ADMIN_PASSWORD` to the existing admin; refuses defaults; revokes its refresh tokens |
-| `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all pick entries and allocations **without** restoring stock; logs `cutover_clear` |
+| `clear_open_pick_entries --confirm` | one-time T4.4 cutover: delete all order and v1 pick entries and their allocations **without** restoring stock (task picks are kept); logs `cutover_clear` |
 | `stock_merge_single [--confirm]` | merge multi-bin SKUs onto their first bin before switching to `single` (dry run without `--confirm`) |
-| `seed_dev [--reset]` | synthetic orders/items for development; refuses under production rules |
+| `release_unassigned_picks [--confirm]` | delete pick entries without an order (v1's pool; never task picks) and **restore** their stock; counts only without `--confirm` |
+| `seed_dev [--reset] [--scenario picking]` | synthetic orders/items for development; refuses under production rules |
 | `ci_migration_gate.sh` | CI: upgrade from the previous release tag to head |
 
 ---
@@ -689,7 +874,7 @@ connect `WS_URL/ws?token=`; on close/error retry every 2 s up to 5 times, then s
 connection-failed banner with a manual retry. An error containing `403` triggers a token
 refresh and reconnect, or logout.
 
-### 12.1 Operator client (`frontend/client`, Android + Windows)
+### 12.1 Operator client (`frontend/client`, Android only)
 
 Production devices run a **debug** build: release builds lack the `INTERNET` permission
 (KNOWN_LIMITATIONS #10).
@@ -762,7 +947,8 @@ plan says so.
 4. `queries/engine.py` still falls back to SQLite when `DATABASE_URL` is missing; production
    rules refuse that at startup, development would fail on the multi-schema model.
 5. Period closure pushes updates to admins only; operators see closed scans disappear on
-   their next `get_items`.
+   their next `get_items`. Orders too: the v2 app learns of a close from the 409 of its next
+   pick or unassign, and then reloads its orders.
 6. `AppState` in both apps holds all network and view state in one class (1–1.2k lines).
 
 ---

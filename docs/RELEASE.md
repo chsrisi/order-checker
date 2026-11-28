@@ -199,3 +199,41 @@ the downgrade; `alembic downgrade b7c4e1a9d2f3` recreates the table empty.
 
 Release notes: admin CSV exports work on the web; deleting an operator restores the stock of
 its open picks; `GET /stocks` fixed; the admin web is no longer stuck on a cached build.
+
+### v0.7.0: v2 parity, tasks, worker switch, time-zone aware timestamps (no relogin, no client change)
+
+Contract v1 is unchanged (`client_v1.json` identical to v0.6.0); contract v2 only gains
+operations and fields. Token identity and sessions are unchanged, so nobody logs in again.
+
+Migrations, in order:
+
+- `f6c9a4b2d3e5` (down revision `e5b8f3a1c2d4`) turns the timestamps into `timestamptz`.
+  It rewrites each table once under a lock, so run it inside the window (§2).
+- `a7d1c3e5f2b4` (down revision `f6c9a4b2d3e5`) adds `orders.tasks`, `orders.task_lines` and a
+  nullable `pick_item_entries.task_line_id`; `owner_user` becomes nullable behind the CHECK
+  `ck_pick_item_entries_owner`. Additive for v1 and order picks.
+
+Rollback: `alembic downgrade e5b8f3a1c2d4`, then check out `v0.6.0`. Downgrading past
+`a7d1c3e5f2b4` **deletes task picks without returning their stock** (the goods left with the
+task); count afterwards if task picks existed.
+
+1. **Before deploying, export the scans CSV** (admin). The first Shopee sync closes every open scan
+   whose order already left on Shopee; it cannot be undone (V2_ORDERS_DELTA Q56).
+2. Check that the server database runs in UTC: `SHOW timezone` prints `UTC` or `Etc/UTC`. Stored
+   values are taken as UTC. If it prints anything else, stop and ask before migrating.
+3. Optional in `.env`: `BUSINESS_UTC_OFFSET` and `SHOPEE_AUTO_SYNC_PAUSE` (OPERATIONS).
+4. After the first sync, compare the log's `outbound.auto_closed` counts with History.
+5. Optional in `.env`, all with safe defaults (OPERATIONS): `SHOPEE_AUTO_SYNC_SECONDS` (300),
+   `STOCK_STRICT` (0: picks behave as in v0.6.0), `DEVICE_ASSIGNMENT_TTL_SECONDS` (600).
+6. `up -d --build` rebuilds the admin web image, which also serves the Vue console at
+   `/console/` (OPERATIONS "Vue console at `/console/`").
+7. Smoke test, in addition to §2: `curl -s http://192.168.1.50:8000/v2/meta` shows
+   `"server_version":"0.7.0"` (and the deprecated `api_version` with the same value); the console
+   opens at `/console/`, Operations → Tasks and Warehouse → Stock & finder load; v1 on one
+   device: sync, claim, pick, delete the pick (stock comes back).
+
+Release notes: Shopee sync runs in the background and closes scans of shipped orders; History
+by day in the business time zone; the Vue console at `/console/` (Workers, Devices, Settings,
+Orders, Tasks, Stock & finder; the Flutter admin stays at `/`); the backend side of the v2
+operator app (guided Stockkeeping, tasks, worker switch from the console). Nothing changes for
+the v1 app.

@@ -266,21 +266,16 @@ async def test_sync_shopee_orders_serves_db_when_bypass_enabled(monkeypatch):
     shopee_service.conn_mgr.send_to_user.assert_awaited_once()
 
 
-def test_active_orders_query_cutoff_is_built_per_call():
-    """T1.1 / F-C1: two calls at different times carry different ship-by cutoffs."""
-    from datetime import UTC, datetime, timedelta
+def test_active_orders_query_has_no_ship_by_cutoff():
+    """V2_ORDERS_DELTA F4 (replaces T1.1's per-call cutoff): late orders stay active, so the
+    query carries no time parameter at all."""
+    from datetime import datetime
 
     from src.services.queries.orders import active_orders_query
 
-    early = datetime(2026, 1, 1, tzinfo=UTC)
-    late = early + timedelta(days=1)
-
-    def cutoff(query):
-        params = query.compile().params
-        return next(v for v in params.values() if isinstance(v, datetime))
-
-    assert cutoff(active_orders_query(early)) == early
-    assert cutoff(active_orders_query(late)) == late
+    params = active_orders_query().compile().params
+    assert not any(isinstance(v, datetime) for v in params.values())
+    assert "ship_by >=" not in str(active_orders_query())
 
 
 def test_redact_strips_signed_shopee_urls():
@@ -320,3 +315,98 @@ async def test_failed_shopee_call_logs_no_credentials(monkeypatch, caplog):
     assert "Critical error during Shopee call" in caplog.text
     assert "LIVE_ACCESS_TOKEN" not in caplog.text
     assert "SECRETSIG" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_runs_survives_errors_and_pauses_on_token_error(monkeypatch):
+    """V2_ORDERS_DELTA Q48: a server task syncs on an interval, as admin, without a
+    requesting user; a failed run doesn't stop it; it skips while the token circuit is open."""
+    import asyncio
+
+    from src.services import shopee_service
+
+    calls = []
+
+    async def fake_sync(refresh, username, scope="client"):
+        calls.append((refresh, username, scope))
+        if len(calls) == 1:
+            raise RuntimeError("Shopee down")
+        return []
+
+    fatal = {"on": False}
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", fake_sync)
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_token_fatal", lambda: fatal["on"])
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", None)
+
+    task = asyncio.create_task(shopee_service.auto_sync_task(interval=0.01))
+    await asyncio.sleep(0.06)
+    fatal["on"] = True
+    await asyncio.sleep(0.02)
+    seen = len(calls)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert seen >= 2  # the first run failed, the loop went on
+    assert calls[0] == (False, None, "admin")
+    assert len(calls) == seen  # nothing while the token circuit is open
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_is_off_with_zero_interval(monkeypatch):
+    from src.services import shopee_service
+
+    async def boom(*_a, **_k):
+        raise AssertionError("must not sync")
+
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", boom)
+    await shopee_service.auto_sync_task(interval=0)  # returns at once
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_rests_in_the_nightly_pause(monkeypatch):
+    """V2_ORDERS_DELTA C3."""
+    import asyncio
+    from datetime import time
+
+    from src.services import shopee_service
+
+    calls = []
+
+    async def fake_sync(**kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(shopee_service, "sync_shopee_orders", fake_sync)
+    monkeypatch.setattr(shopee_service.cache_mgr, "is_token_fatal", lambda: False)
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", (time.min, time.max))
+    task = asyncio.create_task(shopee_service.auto_sync_task(interval=0.01))
+    await asyncio.sleep(0.05)
+    assert calls == []
+    monkeypatch.setattr(shopee_service, "SHOPEE_AUTO_SYNC_PAUSE", None)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls
+
+
+@pytest.mark.asyncio
+async def test_a_close_tells_the_owners_and_keeps_them_out_of_its_response(monkeypatch):
+    """V2_PICKING_DELTA Q81."""
+    closed = {"outbound": 1, "unknown": 0, "orders_done": 2, "owners": ["alice", "bob"]}
+    monkeypatch.setattr(outbound_service.queries, "close_outbound_items", lambda **_: dict(closed))
+    monkeypatch.setattr(outbound_service.cache_mgr, "invalidate", lambda: None)
+    monkeypatch.setattr(outbound_service.conn_mgr, "broadcast", AsyncMock())
+    monkeypatch.setattr(outbound_service.conn_mgr, "send_to_user", AsyncMock())
+    assert await outbound_service.close_outbound_items(["x"], "admin") == {
+        "outbound": 1,
+        "unknown": 0,
+        "orders_done": 2,
+    }
+    told = outbound_service.conn_mgr.send_to_user.await_args_list
+    assert [(c.args[0].value, c.kwargs["username"]) for c in told] == [
+        ("shopee_orders_update", "alice"),
+        ("shopee_orders_update", "bob"),
+    ]

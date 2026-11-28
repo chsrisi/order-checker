@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Client picking mock r2</title>
+<style>
+:root{--bg:#e9ecef;--panel:#fff;--ink:#1c2126;--mute:#5d6873;--line:#d3d9df;--app:#f8f9fc;--card:#e8ebf1;--sel:#d5e3ff;--pri:#1f5fae;--ok:#2e7d32;--warn:#9a5b00;--err:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif}
+main{display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:flex-start;padding:20px 16px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}button:disabled{cursor:default;opacity:.4}
+:focus-visible{outline:2px solid var(--pri);outline-offset:1px}
+.phone{position:sticky;top:20px;width:360px;max-width:100%;height:660px;background:var(--app);border:8px solid #23282d;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.phone header{display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.phone header span:last-child{font-weight:400;color:var(--pri)}
+.scroll{flex:1;overflow-y:auto;padding:10px 12px 60px;display:flex;flex-direction:column;gap:8px}
+.seg{display:flex;flex:none}.seg button{flex:1;padding:9px;border:1px solid var(--mute);background:none}
+.seg button:first-child{border-radius:20px 0 0 20px}.seg button:last-child{border-radius:0 20px 20px 0;border-left:0}
+.seg .on{background:var(--sel)}
+.phone input{width:100%;padding:11px;border:1px solid var(--mute);border-radius:5px;background:#fff}
+.row{display:flex;gap:8px;align-items:center}.grow{flex:1;min-width:0}
+.txt{border:0;background:none;color:var(--pri);font-weight:600;padding:10px 8px}
+.card{background:var(--card);border-radius:12px;padding:10px 12px;flex:none}
+.card.sel{background:var(--sel)}
+.tabs{display:flex;flex:none;border-bottom:1px solid var(--line)}.tabs button{flex:1;padding:12px;border:0;border-bottom:3px solid transparent;background:none}
+.tabs .on{border-color:var(--pri);color:var(--pri);font-weight:600}
+.submit{flex:none;border:0;border-radius:20px;padding:11px;background:#b45309;color:#fff;font-weight:600}
+.empty{margin:auto;color:var(--mute);font-weight:600}
+.divider{display:flex;gap:8px;align-items:center;color:var(--ok);font-size:13px;font-weight:600;flex:none;margin-top:4px}.divider::after{content:"";flex:1;border-top:1px solid var(--line)}
+.home{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;padding:24px}.home button{height:88px;border:0;border-radius:44px;background:var(--pri);color:#fff;font-size:22px;font-weight:600}
+.back{border:0;background:none;color:var(--pri);padding:0 10px 0 0}
+.card{border:2px solid transparent}.card.sel{border-color:var(--pri)}
+.head{display:block;width:100%;border:0;background:none;padding:0;text-align:left}
+.head b{font-size:16px}
+.sub{font-size:12px;color:var(--mute)}
+.ln{display:flex;width:100%;gap:8px;align-items:center;min-height:48px;padding:5px 0;border:0;border-top:1px solid #0001;background:none;text-align:left}
+button.ln:hover{background:#0000000a}
+.ln .n{font-variant-numeric:tabular-nums;font-weight:600}
+.rm{display:block;margin:0 0 6px auto;min-height:42px;padding:8px 20px;border:1px solid var(--err);border-radius:20px;background:#fff;color:var(--err);font-weight:600}
+.done{color:var(--ok)}.partial{color:var(--warn)}.over,.extra{color:var(--err)}.none{color:var(--mute)}
+.snack{position:absolute;left:12px;right:12px;bottom:12px;background:#2f343a;color:#fff;border-radius:6px;padding:11px 14px}
+.shade{position:absolute;inset:0;background:#0007;display:flex;align-items:center;padding:20px}
+.dlg{background:#fff;border-radius:20px;padding:20px;width:100%}
+.dlg h2{font-size:18px;margin:0 0 10px}.dlg p{margin:8px 0}
+.acts{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}
+.side{flex:1 1 420px;max-width:680px;display:flex;flex-direction:column;gap:16px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.box h3{margin:0 0 8px;font-size:15px}.box p{margin:4px 0 8px;color:var(--mute);font-size:13px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.opts label{font-size:13px;color:var(--mute)}.opts select{display:block;width:100%;padding:6px;margin-top:2px;color:var(--ink);border:1px solid var(--line);border-radius:5px;background:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chips button{border:1px solid var(--line);border-radius:6px;background:#f5f7f9;padding:6px 9px;font-size:13px}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid #edf0f2}th{color:var(--mute);font-weight:500}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}.hit{background:#fff4d6}
+</style>
+</head>
+<body>
+<main>
+<section class="phone" id="phone" aria-label="Handheld"></section>
+<section class="side" id="side"></section>
+</main>
+<script>
+'use strict'
+/* Mock of docs/V2_PICKING_SPEC.md + V2_PICKING_DELTA.md. All data is fake and lives in this page. */
+
+// ---------------------------------------------------------------- fake server
+const ITEMS = { Z90_001:['Flour 1 kg','SUP9001-A'], Z90_002:['Sugar 1 kg'], Z90_003:['Butter 500 g'], Z90_004:['Cocoa 250 g'], Z90_005:['Vanilla 50 ml'] }
+const ME = 'dev_op1'
+let cfg = { mode:'multi', strict:false, live:true }
+let S, seq
+
+function seed() {
+  seq = 0
+  const o = (sn, code, owner, status, bom, picks, about, done = false) => ({ sn, code, owner, status, done, bom, picks, about })
+  const p = (qty, ...allocs) => ({ qty, allocs: allocs.map(([loc, n]) => ({ loc, n })) })
+  S = {
+    stock: { Z90_001:{ 'A-01':2, 'B-02':20 }, Z90_002:{ 'A-02':10 }, Z90_003:{}, Z90_004:{ 'C-01':6 }, Z90_005:{ 'C-02':1 } },
+    orders: [
+      o('261125NEW001', 'K101', null, 'READY_TO_SHIP', { Z90_001:2, Z90_002:1 }, {}, 'Unclaimed: scan to claim'),
+      o('261125PART02', 'K102', ME, 'READY_TO_SHIP', { Z90_001:6, Z90_004:1 }, { Z90_001:p(5, ['A-01',3], ['B-02',2]) }, 'Partly picked, from two bins'),
+      o('261125FULL03', 'K103', ME, 'PROCESSED', { Z90_002:2, Z90_004:1 }, { Z90_002:p(2, ['A-02',2]), Z90_004:p(1, ['C-01',1]) }, 'Fully picked'),
+      o('261125OVER04', 'K104', ME, 'READY_TO_SHIP', { Z90_002:2 }, { Z90_002:p(5, ['A-02',5]) }, 'Over-picked'),
+      o('261125SHRT05', 'K105', ME, 'READY_TO_SHIP', { Z90_003:5 }, { Z90_003:p(5, ['D-01',3]) }, 'Shortfall: 5 picked, 3 deducted'),
+      o('261125EXTR06', 'K106', ME, 'RETRY_SHIP', { Z90_004:1 }, { Z90_004:p(1, ['C-01',1]), Z90_005:p(1, ['C-02',1]) }, 'Extra SKU'),
+      o('261125CANC07', 'K107', ME, 'CANCELLED', { Z90_004:2 }, { Z90_004:p(2, ['C-01',2]) }, 'Cancelled with picks'),
+      o('261125DONE08', 'K108', ME, 'SHIPPED', { Z90_002:1 }, { Z90_002:p(1, ['A-02',1]) }, 'Done with picks', true),
+    ],
+    pool: [{ sku:'Z90_002', qty:2, loc:'A-02' }],
+    log: [],
+  }
+  if (cfg.mode === 'single') for (const sku in S.stock) {
+    const locs = Object.keys(S.stock[sku]).sort(), n = total(sku)
+    if (locs.length) S.stock[sku] = { [locs[0]]: n }
+  }
+}
+const total = sku => Object.values(S.stock[sku]).reduce((a, b) => a + b, 0)
+const find = sn => S.orders.find(o => o.sn === sn)
+const isActive = o => !o.done && ['READY_TO_SHIP', 'PROCESSED', 'RETRY_SHIP'].includes(o.status)
+const fail = (code, detail) => ({ code, detail })
+function change(sku, loc, d, reason, sn) {
+  const before = S.stock[sku][loc] || 0, after = before + d
+  if (after) S.stock[sku][loc] = after; else delete S.stock[sku][loc]
+  S.log.unshift({ id: ++seq, reason, sku, loc, d, before, after, sn })
+}
+function resolve(raw) {
+  const q = raw.trim().toUpperCase()
+  return Object.keys(ITEMS).find(s => s === q || ITEMS[s][1] === q)
+}
+const api = {
+  acquire(sn) {
+    const o = find(sn)
+    if (!o) return fail(404, 'order not found, please have a check')
+    if (o.done) return fail(409, 'Order already completed')
+    if (o.owner && o.owner !== ME) return fail(409, 'Order is already assigned to another operator')
+    o.owner = ME
+    return { code: 200 }
+  },
+  pick(sn, raw, qty) {
+    const o = find(sn), sku = resolve(raw)
+    if (!o || o.owner !== ME) return fail(404, 'Order not found or not claimed by you')
+    if (o.done) return fail(409, 'Order already completed')
+    if (!isActive(o)) return fail(409, 'Order is ' + o.status + ' on Shopee: picks are closed')
+    if (!sku) return fail(404, "Item with SKU or barcode '" + raw + "' not found")
+    if (cfg.strict && total(sku) < qty) return fail(409, `Not enough stock for ${sku}: ${total(sku)} available, ${qty} requested`)
+    const e = o.picks[sku] || (o.picks[sku] = { qty:0, allocs:[] })
+    e.qty += qty
+    let left = qty
+    for (const loc of Object.keys(S.stock[sku]).sort()) {
+      if (!left) break
+      const n = Math.min(left, S.stock[sku][loc])
+      change(sku, loc, -n, 'pick', sn); e.allocs.push({ loc, n }); left -= n
+    }
+    if (left) S.log.unshift({ id: ++seq, reason:'pick_shortfall', sku, loc:'—', d:0, note: left + ' short', sn })
+    return { code: 200, sku }
+  },
+  unassign(sn, sku, qty) {
+    const o = find(sn)
+    if (!o || o.owner !== ME) return fail(404, 'Order not found or not claimed by you')
+    if (o.done) return fail(409, 'Order already completed')
+    const e = o.picks[sku]
+    if (!e) return fail(404, 'Nothing of ' + sku + ' is picked for this order')
+    if (qty > e.qty) return fail(409, `Only ${e.qty} × ${sku} picked: nothing changed`)
+    let left = qty - Math.min(qty, e.qty - e.allocs.reduce((a, b) => a + b.n, 0)) // Q62: shortfall first
+    while (left) { // newest allocation first
+      const a = e.allocs[e.allocs.length - 1], n = Math.min(left, a.n)
+      const loc = cfg.mode === 'single' ? Object.keys(S.stock[sku]).sort()[0] || a.loc : a.loc
+      change(sku, loc, n, 'pick_restore', sn)
+      a.n -= n; left -= n
+      if (!a.n) e.allocs.pop()
+    }
+    e.qty -= qty
+    if (!e.qty) delete o.picks[sku]
+    return { code: 200 }
+  },
+}
+
+// ---------------------------------------------------------------- client
+let V, ui
+function reset() {
+  seed()
+  ui = { page:'picking', tab:'input', mode:'order', sn:null, sku:null, qty:'1', search:'', open:null, dlg:null, alert:null, snack:null, collapsed:{} }
+  V = []
+  push()
+}
+const line = (sn, sku) => V.find(o => o.sn === sn)?.picks[sku]
+/** The live update: the client sees a snapshot of its own active orders. */
+function push() {
+  if (!cfg.live) return
+  const before = V
+  V = JSON.parse(JSON.stringify(S.orders.filter(o => o.owner === ME && isActive(o))))
+  if (ui.sn && before.some(o => o.sn === ui.sn) && !V.some(o => o.sn === ui.sn)) {
+    const was = before.find(o => o.sn === ui.sn), now = find(ui.sn)
+    Object.assign(ui, { sn:null, mode:'order', sku:null, qty:'1', open:null })
+    ui.alert = { title:'Order closed', text: `${was.code} (${was.sn}) is no longer in your list: ${now.done ? 'it was completed' : now.status}.` }
+  }
+  if (ui.dlg && !line(ui.dlg.sn, ui.dlg.sku)) ui.dlg = null
+  if (ui.open && !line(ui.open.sn, ui.open.sku)) ui.open = null
+}
+let snackTimer
+function say(text) {
+  ui.snack = text
+  clearTimeout(snackTimer)
+  snackTimer = setTimeout(() => { ui.snack = null; document.querySelector('.snack')?.remove() }, 3000)
+}
+const warn = (text, title = 'Notification') => { ui.alert = { title, text } }
+function select(sn) {
+  if (ui.sn !== sn) Object.assign(ui, { sku:null, qty:'1' })
+  Object.assign(ui, { sn, mode:'item', open:null })
+  if (!V.some(o => o.sn === sn)) push()
+}
+function scan(raw) {
+  raw = raw.trim()
+  if (!raw || ui.alert || ui.dlg) return
+  ui.open = null
+  if (ui.mode === 'order') {
+    if (!/^\d{6}/.test(raw)) return warn('Invalid Order SN. Must start with YYMMDD.', 'Error')
+    const r = api.acquire(raw)
+    push()
+    if (r.code !== 200) return warn(r.detail, 'Error / Duplicate')
+    if (!isActive(find(raw))) return warn(`Order is ${find(raw).status} on Shopee: picks are closed`, 'Error')
+    select(raw); say('Order acquired successfully.')
+  } else { ui.sku = raw; ui.focus = 'qty' }
+}
+const validQty = () => /^\d+$/.test(ui.qty) && +ui.qty > 0
+function submit() {
+  if (!ui.sku || !ui.sn || !validQty()) return
+  const r = api.pick(ui.sn, ui.sku, +ui.qty)
+  Object.assign(ui, { sku:null, qty:'1' })
+  if (r.code !== 200) { push(); return ui.alert || warn(r.detail, 'Error') }
+  push()
+  const o = find(ui.sn), need = o?.bom[r.sku], got = o?.picks[r.sku].qty
+  if (o && !need) warn(`${r.sku} is not part of this order. Tap it and Remove if this was a mistake.`)
+  else if (o && got > need) warn(`Picked quantity (${got}) exceeds requirement (${need}) for SKU: ${r.sku}`)
+  else say('Scan entry posted.')
+}
+function unassign() {
+  const d = ui.dlg, n = +d.qty
+  if (!dlgOk()) return
+  const r = api.unassign(d.sn, d.sku, n)
+  ui.dlg = ui.open = null
+  push()
+  if (r.code === 200) say(`Returned ${n} × ${d.sku} to stock.`)
+  else if (!ui.alert) warn(r.detail, 'Error')
+}
+const dlgOk = () => ui.dlg && /^\d+$/.test(ui.dlg.qty) && +ui.dlg.qty >= 1 && +ui.dlg.qty <= (line(ui.dlg.sn, ui.dlg.sku)?.qty || 0)
+
+// ---------------------------------------------------------------- rendering
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';')
+const name = sku => ITEMS[sku]?.[0] || 'Unknown item'
+function progress(o) {
+  const lines = [...new Set([...Object.keys(o.bom), ...Object.keys(o.picks)])].map(sku => {
+    const need = o.bom[sku] || 0, got = o.picks[sku]?.qty || 0
+    return { sku, need, got, st: !got ? 'none' : got < need ? 'partial' : got === need ? 'done' : 'over' }
+  })
+  const req = lines.filter(l => l.need), done = req.filter(l => l.st === 'done').length
+  const st = lines.some(l => !l.need) ? 'extra' : !Object.keys(o.picks).length ? 'none' : done === req.length ? 'done' : 'partial'
+  return { lines, st, label: `${{ none:'Not started', partial:'Picking', done:'Picked', extra:'Extra items' }[st]} · ${done}/${req.length} done` }
+}
+// Picked cards start collapsed (Q78), except in search results, so the match is visible
+const isCollapsed = o => ui.collapsed[o.sn] ?? (progress(o).st === 'done' && !ui.search.trim())
+function card(o, inList) {
+  const p = progress(o), show = !inList || !isCollapsed(o)
+  return `<div class="card ${o.sn === ui.sn ? 'sel' : ''}" data-card="${o.sn}">
+    <div class="row"><button class="head grow" data-do="select" data-sn="${o.sn}" aria-pressed="${o.sn === ui.sn}"><b>${o.code}</b>
+    <span class="sub" style="display:block">${o.sn} · ship by 2026-11-26</span>
+    <span class="${p.st}" style="font-weight:600">${p.label}</span></button>
+    ${inList ? `<button class="txt" data-do="collapse" data-sn="${o.sn}" aria-expanded="${show}" aria-label="Items of ${o.code}">${show ? '▲' : '▼'}</button>` : ''}</div>
+    ${show ? p.lines.map(l => {
+      const open = ui.open && ui.open.sn === o.sn && ui.open.sku === l.sku
+      return `<button class="ln" data-do="line" data-sn="${o.sn}" data-sku="${l.sku}" aria-expanded="${!!open}"><span class="grow">${esc(name(l.sku))}<br><span class="sub">${l.sku} (${Object.keys(S.stock[l.sku]).sort().join(', ') || 'no stock'})</span></span><span class="n ${l.st}">${l.got} / ${l.need}</span></button>`
+        + (open ? `<button class="rm" data-do="remove" data-sn="${o.sn}" data-sku="${l.sku}">Remove</button>` : '')
+    }).join('') : ''}</div>`
+}
+function listHtml() {
+  const q = ui.search.trim().toLowerCase()
+  const shown = V.filter(o => !q || [o.sn, o.code, ...[...Object.keys(o.bom), ...Object.keys(o.picks)].flatMap(s => [s, name(s)])].join(' ').toLowerCase().includes(q))
+  const picked = shown.filter(o => progress(o).st === 'done') // Q76
+  const todo = shown.filter(o => !picked.includes(o))
+  return todo.map(o => card(o, true)).join('') + (picked.length ? `<div class="divider">Picked · ${picked.length}</div>` + picked.map(o => card(o, true)).join('') : '')
+    || '<div class="empty">No matching orders found</div>'
+}
+function pickingHtml() {
+  const a = V.find(o => o.sn === ui.sn), item = ui.mode === 'item'
+  const tabs = `<div class="tabs" role="tablist">${[['input','Input'],['list','List']].map(([t, n]) => `<button role="tab" aria-selected="${ui.tab === t}" class="${ui.tab === t ? 'on' : ''}" data-do="tab" data-t="${t}">${n}</button>`).join('')}</div>`
+  if (ui.tab === 'list') return tabs + `<div class="row" style="padding:10px 12px 0"><input id="search" class="grow" autocomplete="off" placeholder="Scan or search orders, SKU, name" aria-label="Scan or search orders" value="${esc(ui.search)}"><button class="txt" data-do="clear">Clear</button></div><div class="scroll"><div id="list" style="display:contents">${listHtml()}</div></div>`
+  return tabs + `<div class="scroll">
+    <div class="seg"><button class="${item ? '' : 'on'}" data-do="mode" data-m="order">Order</button><button class="${item ? 'on' : ''}" data-do="mode" data-m="item" ${ui.sn ? '' : 'disabled'}>Item</button></div>
+    ${!item ? '<input id="scan" style="flex:none" autocomplete="off" placeholder="Scan order label" aria-label="Scan order label">'
+    : `<div class="row" style="flex:none"><input id="scan" class="grow" style="flex:2" autocomplete="off" placeholder="SKU" aria-label="Scan item SKU" value="${esc(ui.sku || '')}"><input id="qty" style="flex:1;min-width:0" inputmode="numeric" placeholder="Qty" aria-label="Quantity" value="${esc(ui.qty)}"></div>
+    <button class="submit" id="sub" data-do="submit" ${ui.sku && validQty() ? '' : 'disabled'}>Submit Scan</button>
+    ${a ? card(a, false) : '<div class="empty">No order selected</div>'}`}</div>`
+}
+let shownTab = ''
+function render() {
+  const d = ui.dlg, where = ui.page + ui.tab
+  const keep = where === shownTab ? document.querySelector('.scroll')?.scrollTop || 0 : 0
+  const jump = where !== shownTab && ui.tab === 'list'
+  shownTab = where
+  const title = { home:'Order Checker', picking:'Picking', outbound:'Outbound' }[ui.page]
+  phone.innerHTML = `<header><span>${ui.page === 'home' ? '' : '<button class="back" data-do="go" data-p="home" aria-label="Back">←</button>'}${title}</span><span>${ME}</span></header>
+  ${ui.page === 'picking' ? pickingHtml() : ui.page === 'outbound' ? '<div class="scroll"><div class="empty">Outbound: today\'s tab, unchanged (not mocked)</div></div>'
+    : '<div class="home"><button data-do="go" data-p="picking">Picking</button><button data-do="go" data-p="outbound">Outbound</button><button disabled>Stockkeeping</button><button disabled>Finder</button></div>'}
+  ${ui.snack ? `<div class="snack" role="status">${esc(ui.snack)}</div>` : ''}
+  ${d ? `<div class="shade"><div class="dlg" role="dialog" aria-modal="true"><h2>Unassign from ${esc(find(d.sn).code)}</h2><div>${d.sku} — ${esc(name(d.sku))}</div>
+    <p class="row"><input id="dq" inputmode="numeric" aria-label="Quantity" style="width:100px" value="${esc(d.qty)}"><span>of ${line(d.sn, d.sku).qty}</span></p>
+    <p class="sub">Goes back to stock.</p>
+    <div class="acts"><button class="txt" data-do="cancel">Cancel</button><button class="txt" id="dok" data-do="unassign" ${dlgOk() ? '' : 'disabled'}>Unassign</button></div></div></div>` : ''}
+  ${ui.alert ? `<div class="shade"><div class="dlg" role="alertdialog" aria-modal="true"><h2>${esc(ui.alert.title)}</h2><p>${esc(ui.alert.text)}</p><div class="acts"><button class="txt" id="aok" data-do="ok">OK</button></div></div></div>` : ''}`
+  const sc = document.querySelector('.scroll')
+  if (sc) sc.scrollTop = keep
+  if (jump && ui.sn) { const c = document.querySelector(`[data-card="${ui.sn}"]`); if (c && sc) sc.scrollTop = c.offsetTop - sc.offsetTop - 8 }
+  phone.style.position = innerWidth > 860 ? 'sticky' : 'relative'
+  renderSide()
+  const target = ui.alert ? 'aok' : d ? 'dq' : ui.focus || (document.getElementById('scan') ? 'scan' : 'search')
+  ui.focus = null
+  const el = document.getElementById(target)
+  if (el) { el.focus({ preventScroll: true }); if (target !== 'aok') el.select() }
+}
+let seen = 0
+function renderSide() {
+  const opt = (k, label, vals) => `<label>${label}<select data-cfg="${k}">${vals.map(([v, t]) => `<option value="${v}" ${String(cfg[k]) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`
+  const cur = find(ui.sn)
+  side.innerHTML = `
+  <div class="box"><h3>Settings</h3><div class="opts">
+    ${opt('strict', 'STOCK_STRICT', [['false','0: allow shortfall'],['true','1: strict']])}
+    ${opt('mode', 'Stock location mode (resets data)', [['multi','multi'],['single','single']])}
+    ${opt('live', 'Live updates', [['true','On'],['false','Paused (client goes stale)']])}
+  </div></div>
+  <div class="box"><h3>Simulate a scan</h3><p>Or type in the scan field and press Enter.</p><div class="chips">
+    ${ui.page === 'picking' && ui.tab === 'list' ? ['261125OVER04','Z90_004','SUP9001-A','NOPE'].map(v => `<button data-do="find" data-v="${v}">${v}</button>`).join('') : ui.page !== 'picking' ? '<span class="sub">Scanning works on Picking.</span>' : ui.mode === 'order' ? S.orders.map(o => `<button data-do="scan" data-v="${o.sn}" title="${esc(o.sn)}">${o.code}: ${esc(o.about)}</button>`).join('')
+      : Object.keys(ITEMS).map(s => `<button data-do="scan" data-v="${s}">${s} ${esc(name(s))}</button>`).join('') + '<button data-do="scan" data-v="SUP9001-A">Barcode of Z90_001</button><button data-do="scan" data-v="NOPE">Unknown barcode</button>'}
+  </div></div>
+  <div class="box"><h3>Meanwhile, elsewhere</h3><p>${cur ? 'Acts on ' + esc(cur.code) + '.' : 'Select an order first.'} With live updates paused, try these and then pick or unassign.</p><div class="chips">
+    <button data-do="ev" data-e="done" ${cur ? '' : 'disabled'}>Admin closes it</button><button data-do="ev" data-e="cancel" ${cur ? '' : 'disabled'}>Shopee cancels it</button>
+    <button data-do="ev" data-e="less" ${cur && Object.keys(cur.picks).length ? '' : 'disabled'}>Another device unassigns 1</button><button data-do="reset">Reset all data</button></div></div>
+  <div class="box"><h3>Stock on the server</h3><div class="tw"><table><tr><th>SKU</th><th>Bins</th><th>Total</th></tr>
+    ${Object.keys(ITEMS).map(s => `<tr><td>${s} ${esc(name(s))}</td><td class="num">${Object.entries(S.stock[s]).sort().map(([l, n]) => `${l}: ${n}`).join(' · ') || '—'}</td><td class="num">${total(s)}</td></tr>`).join('')}</table></div></div>
+  <div class="box"><h3>Picks on the server</h3><div class="tw"><table><tr><th>Order</th><th>SKU</th><th>Picked</th><th>Deducted from</th></tr>
+    ${S.orders.flatMap(o => Object.entries(o.picks).map(([s, e]) => `<tr><td>${o.code}${isActive(o) ? '' : ' (' + (o.done ? 'done' : o.status.toLowerCase()) + ', hidden)'}</td><td>${s}</td><td class="num">${e.qty}</td><td class="num">${[...e.allocs.map(x => `${x.loc}: ${x.n}`), ...(e.qty > e.allocs.reduce((t, x) => t + x.n, 0) ? ['short: ' + (e.qty - e.allocs.reduce((t, x) => t + x.n, 0))] : [])].join(' · ')}</td></tr>`)).join('')}
+    ${S.pool.map(p => `<tr><td>none (v1 pool, hidden)</td><td>${p.sku}</td><td class="num">${p.qty}</td><td class="num">${p.loc}: ${p.qty}</td></tr>`).join('')}</table></div></div>
+  <div class="box"><h3>Stock log</h3><div class="tw">${S.log.length ? `<table><tr><th>Reason</th><th>Order</th><th>SKU</th><th>Bin</th><th>Change</th></tr>${S.log.slice(0, 15).map(l => `<tr class="${l.id > seen ? 'hit' : ''}"><td>${l.reason}</td><td>${find(l.sn).code}</td><td>${l.sku}</td><td>${l.loc}</td><td class="num">${l.note || `${l.d > 0 ? '+' : ''}${l.d} (${l.before} → ${l.after})`}</td></tr>`).join('')}</table>` : '<p>Nothing yet.</p>'}</div></div>`
+  seen = seq
+}
+
+// ---------------------------------------------------------------- events
+const DO = {
+  mode: b => { if (b.m === 'order' || ui.sn) Object.assign(ui, { mode: b.m, sku:null, qty:'1', open:null }) },
+  select: b => select(b.sn),
+  find: b => { ui.search = b.v; ui.open = null },
+  clear: () => { ui.search = ''; ui.open = null },
+  go: b => { Object.assign(ui, { page:b.p, open:null }) },
+  tab: b => { Object.assign(ui, { tab:b.t, open:null, search:'' }) },
+  collapse: b => { ui.collapsed[b.sn] = !isCollapsed(V.find(o => o.sn === b.sn)); if (ui.open?.sn === b.sn) ui.open = null },
+  line: b => { // a tap always selects the line's order; Remove only when something is picked
+    const same = ui.open && ui.open.sn === b.sn && ui.open.sku === b.sku
+    select(b.sn)
+    ui.open = same || !line(b.sn, b.sku) ? null : { sn:b.sn, sku:b.sku }
+  },
+  remove: b => { const l = line(b.sn, b.sku); if (l) ui.dlg = { sn:b.sn, sku:b.sku, qty:String(l.qty) } },
+  cancel: () => { ui.dlg = null },
+  unassign, submit,
+  ok: () => { ui.alert = null },
+  scan: b => scan(b.v),
+  reset,
+  ev: b => {
+    const o = find(ui.sn)
+    if (!o) return
+    if (b.e === 'done') Object.assign(o, { done:true, status:'SHIPPED' })
+    if (b.e === 'cancel') o.status = 'CANCELLED'
+    if (b.e === 'less') api.unassign(o.sn, ui.dlg && ui.dlg.sn === o.sn && o.picks[ui.dlg.sku] ? ui.dlg.sku : Object.keys(o.picks)[0], 1)
+    push()
+  },
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-do]')
+  if (!b || b.disabled) return
+  DO[b.dataset.do](b.dataset); render()
+})
+document.addEventListener('change', e => {
+  const k = e.target.dataset.cfg
+  if (!k) return
+  cfg[k] = k === 'strict' || k === 'live' ? e.target.value === 'true' : e.target.value
+  if (k === 'mode') reset(); else { ui.open = null; push() }
+  render()
+})
+document.addEventListener('input', e => {
+  const t = e.target
+  if (t.id === 'qty') { t.value = ui.qty = t.value.replace(/\D/g, ''); document.getElementById('sub').disabled = !(ui.sku && validQty()) }
+  if (t.id === 'dq') { t.value = ui.dlg.qty = t.value.replace(/\D/g, ''); document.getElementById('dok').disabled = !dlgOk() }
+  if (t.id === 'scan' && ui.mode === 'item') { ui.sku = null; document.getElementById('sub').disabled = true }
+  if (t.id === 'search') { ui.search = t.value; document.getElementById('list').innerHTML = listHtml() }
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (ui.dlg || ui.alert)) { if (ui.alert) ui.alert = null; else ui.dlg = null; return render() }
+  if (e.key !== 'Enter') return
+  const id = e.target.id
+  if (id === 'search') ui.open = null; else if (id === 'scan') scan(e.target.value); else if (id === 'qty') submit(); else if (id === 'dq') unassign(); else return
+  e.preventDefault(); render()
+})
+const phone = document.getElementById('phone'), side = document.getElementById('side')
+reset(); render()
+</script>
+</body>
+</html>

@@ -18,10 +18,17 @@ from .exceptions import (
 )
 from .logging_config import configure_logging, request_id_context
 
-from .config import API_VERSION, EXPOSE_API_DOCS, PRODUCTION_RULES, get_config_value
+from .config import EXPOSE_API_DOCS, SERVER_VERSION, PRODUCTION_RULES, get_config_value
 from .settings_guard import enforce_startup_rules
 from .services.redis_service import redis_mgr
-from .services import auth_service, managers, queries, retention_service
+from .services import (
+    auth_service,
+    device_assignment_service,
+    managers,
+    queries,
+    retention_service,
+    shopee_service,
+)
 from .services.shopee_service import shopee_client_session
 from .routers import (
     auth,
@@ -36,7 +43,8 @@ from .routers import (
     client_release,
     device,
 )
-from .routers.v2 import include_v2
+from .routers.v2 import include_v2, login_requests, order_picks
+from .routers.v2 import tasks as v2_tasks
 
 load_dotenv(find_dotenv())
 configure_logging()
@@ -72,6 +80,8 @@ async def lifespan(_app: FastAPI):
     bg_tasks.append(asyncio.create_task(managers.key_mgr.rotate_keys_task()))
     bg_tasks.append(asyncio.create_task(auth_service.remove_outdated_refresh_task()))
     bg_tasks.append(asyncio.create_task(retention_service.recipient_retention_task()))
+    bg_tasks.append(asyncio.create_task(shopee_service.auto_sync_task()))
+    bg_tasks.append(asyncio.create_task(device_assignment_service.assignment_expiry_task()))
 
     # Initialize Persistent aiohttp Session
     session = aiohttp.ClientSession()
@@ -117,7 +127,7 @@ app = FastAPI(
         "a one-use ticket from `POST /auth/ws-token`; the WebSocket protocol is "
         "documented in the project API guide because OpenAPI does not describe it."
     ),
-    version=API_VERSION,
+    version=SERVER_VERSION,
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
     license_info={"name": "Proprietary"},
@@ -242,13 +252,15 @@ app.include_router(websocket.v2_router)
 app.include_router(client_release.router)
 app.include_router(device.router)
 app.include_router(meta.router)
+app.include_router(order_picks.router)
+app.include_router(login_requests.router)
+app.include_router(v2_tasks.router)
 # Contract v2 mirrors the client operations registered above (T6.3).
 include_v2(
     app,
     [
         auth.router,
         outbound.router,
-        pick_items.router,
         shopee.router,
         items.router,
         stocks.router,

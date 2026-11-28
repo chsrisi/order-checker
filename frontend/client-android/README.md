@@ -67,8 +67,10 @@ shows and the primary is probed every 3 minutes.
 **Hidden settings:** hold the version label at the bottom for 5 seconds, then enter the PIN.
 The PIN is build configuration and never committed: put `oc.settingsPin=<digits>` in
 `~/.gradle/gradle.properties`, pass `-Poc.settingsPin=...`, or set `OC_SETTINGS_PIN`. A build
-without a PIN cannot open the settings. There you can edit the profile (no relogin needed), and
-see the app version and the device registration.
+without a PIN cannot open the settings. There you can edit the profile (no relogin needed),
+see the app version and the device registration, and remove names from the login picker's
+list of the 20 most recent workers (one by one, or all after a confirmation). The list is
+device-local; a removed name comes back on that worker's next login.
 
 ## Sessions and live updates
 
@@ -114,8 +116,18 @@ What an operator sees on Android 11 (checked on the API 30 emulator):
 On first use the app creates an EC P-256 key pair in the Android Keystore (`oc_device`,
 non-exportable, signing only). After every login it calls `POST /v2/device/register` with the
 public key, model, Android version and versionCode, signing the access token's `sid`. New
-devices are `pending` in `GET /admin/devices`; approval and revocation screens come with step
-8. Registration retries with backoff when offline (it is idempotent on the server), and the
+devices are `pending` in `GET /admin/devices`; the console approves or revokes them (T8.1).
+When the server answers 403 "Device revoked" (it also ends the session), the app stops retrying,
+logs out locally and shows "This device was revoked by the admin." on the login screen. Revoked
+is final: a recovered scanner is reinstalled.
+
+The login screen polls `POST /v2/device/state` every 5 s while it is idle and the app is in the
+foreground (`DeviceStatePoller`, T8.7), signed with the device key over
+`oc-device:state:<device_id>:<nonce>`; the nonce starts with the device's Unix time, so the
+device clock must be within 5 minutes of the server's. A direct switch by the admin stores the
+handed-over session and goes home; a preselection opens that worker's password step; the reason
+for an admin logout shows under "Session ended". Tokens that arrive after the poll was
+cancelled are given back. Registration retries with backoff when offline (it is idempotent on the server), and the
 hidden settings show the device id and status. Uninstalling the app (or clearing its data)
 deletes the key: the device then registers as a new `pending` device.
 
@@ -130,3 +142,37 @@ deletes the key: the device then registers as a new `pending` device.
   Regenerated on every build; never edit or commit them.
 - `updater/`: update policy, APK verification, download, PackageInstaller, periodic worker.
 - `device/`: Keystore device key, registration with retry.
+- `scan/` + `ui/scan/`: the wedge scan input (T6.15a): `ScanField`, suffix setting, scanner test.
+- `ops/` + `ui/ops/`: the logged-in app (V2_UX §2.2): `OpsRepository` (orders, picks, outbound
+  history and stock from `/v2/ws` snapshots, requested on every connect; actions over `/v2`),
+  `OrderLogic` (progress, search, over-quantity), `OpsController` (actions with v1's messages;
+  holds the selected order), `MainShell` (home with Orders / Stockkeeping / Finder, username →
+  Device info with Log out) and the scaffold screens copied from v1.
+- Stockkeeping (T6.15e, V2_UX §2.10): `ops/StockFlow.kt` is the guided flow as a pure state
+  machine (location → item → quantity → destination → confirm; the single-mode "recorded at
+  another location" choice; before → after; the large-change rule), unit-tested in both stock
+  location modes. `ui/ops/StockScreen.kt` renders it. `GuidedStockFlow` takes a `StockLock` and
+  a `submit` override, for the count task (T9.4). The screen waits for `/v2/meta`'s
+  `stock_location_mode` before it starts: in `single` mode a location that differs from the
+  record would merge the item's stock into it.
+- Tasks (T9.4, V2_UX §2.9): Home's first button, "Tasks (n)". `OpsRepository.tasks` loads
+  `GET /v2/tasks` on every connect (there is no WS command for tasks) and then follows
+  `tasks_update`. `ops/TaskLogic.kt` merges manual tasks (oldest first) with claimed orders not
+  yet *Picked* (by ship-by, derived with `OrderLogic.progress`) and counts the open ones (blocked
+  tasks wait for the admin). `ui/ops/TasksScreen.kt`: the list; an order-task opens Picking with
+  that order; a count task is `GuidedStockFlow` with a blind `StockLock` (no location in `single`
+  mode, P-29) and `submit` → `POST /v2/tasks/{id}/count`; a pick task is the Picking pattern
+  (SKU, Qty, Submit Scan, lines with Remove). *Can't finish* sits in each task's ⋯ menu.
+
+## Scanning (keyboard wedge)
+
+Every scanning screen uses `ui/scan/ScanField`. While scanning, the field is **read-only**: it
+opens no input session, so the soft keyboard stays closed, and the characters are taken from the
+key events. The configured suffix (Enter by default, or Tab) submits; the field clears itself and
+keeps focus (a screen can move on instead, e.g. SKU → quantity, with `refocusAfterScan`; it
+comes back after a pop-up closes). The same value twice within 300 ms (a double fire) is dropped. To type by hand, tap
+the field or press **Type**; the keyboard opens and closes again after the submit.
+
+The suffix is set per device in the hidden settings → **Scanner**. The scanner test there
+accepts both suffixes and shows each value, its length and the key that ended it, and warns
+when the scanner sends a different suffix from the setting.

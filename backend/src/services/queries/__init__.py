@@ -1,9 +1,18 @@
 from .engine import get_db, SessionLocal
 from .devices import (
+    DeviceNotFound,
     DeviceRevoked,
+    DeviceStatusConflict,
     register_device,
+    set_device_status,
+    set_device_label,
+    revoke_device_sessions,
+    touch_device,
+    device_ids_for_sessions,
     list_devices,
     get_device,
+    get_device_by_public_key,
+    bind_session_to_device,
 )
 from .users import (
     get_user_data,
@@ -21,12 +30,15 @@ from .users import (
     revoke_session,
     revoke_user_sessions,
 )
+from .history import HistoryFilter, get_day, get_day_history, lookup_label
+from .stock_changes import StockChangeFilter, get_stock_changes
 from .outbound import (
     get_outbounds_data,
     get_all_outbound_data,
     get_outbound_history,
     create_outbound_item,
     close_outbound_items,
+    close_shipped_outbound,
     clear_all_outbound_items,
 )
 from .orders import (
@@ -45,6 +57,7 @@ from .stocks import (
     get_stocks_data,
     location_policy,
     merge_all_to_single,
+    InsufficientStockError,
 )
 from .pick_items import (
     create_pick_item_entry,
@@ -52,7 +65,12 @@ from .pick_items import (
     unassign_pick_item_entry,
     get_pie_data,
     clear_open_pick_entries,
+    pick_for_order,
+    unassign_from_order,
+    count_unassigned_picks,
+    release_unassigned_picks,
     OrderClosedError,
+    PickQuantityError,
     delete_pie,
 )
 from .warehouse import (
@@ -73,10 +91,21 @@ from .csv_export import (
 )
 
 __all__ = [
+    "StockChangeFilter",
+    "get_stock_changes",
+    "DeviceNotFound",
     "DeviceRevoked",
+    "DeviceStatusConflict",
+    "set_device_status",
+    "set_device_label",
+    "revoke_device_sessions",
+    "touch_device",
     "register_device",
+    "device_ids_for_sessions",
     "list_devices",
     "get_device",
+    "get_device_by_public_key",
+    "bind_session_to_device",
     "get_db",
     "SessionLocal",
     "get_user_data",
@@ -96,8 +125,13 @@ __all__ = [
     "get_outbounds_data",
     "get_all_outbound_data",
     "get_outbound_history",
+    "get_day",
+    "get_day_history",
+    "lookup_label",
+    "HistoryFilter",
     "create_outbound_item",
     "close_outbound_items",
+    "close_shipped_outbound",
     "clear_all_outbound_items",
     "resolve_shopee_order_bom_tree",
     "get_shopee_order_data",
@@ -115,6 +149,12 @@ __all__ = [
     "create_pick_item_entry",
     "assign_pick_item_entry",
     "unassign_pick_item_entry",
+    "pick_for_order",
+    "unassign_from_order",
+    "count_unassigned_picks",
+    "release_unassigned_picks",
+    "PickQuantityError",
+    "InsufficientStockError",
     "get_pie_data",
     "clear_open_pick_entries",
     "OrderClosedError",

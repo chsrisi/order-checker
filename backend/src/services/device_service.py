@@ -8,6 +8,7 @@ request from being replayed in another session.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import logging
@@ -18,8 +19,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from ..exceptions import DomainException
-from ..models import Device, DeviceRegisterRequest
-from . import queries
+from ..models import Device, DeviceRegisterRequest, User
+from . import auth_service, queries
+from .managers import conn_mgr
 
 logger = logging.getLogger("backend.services.device_service")
 
@@ -31,8 +33,8 @@ def _b64(value: str) -> bytes:
         raise DomainException(status_code=400, detail="Invalid base64")
 
 
-def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str) -> None:
-    """400 unless ``signature`` is a valid ECDSA/SHA-256 signature over ``sid`` by the P-256
+def verify_signature(public_key_b64: str, signature_b64: str, message: str) -> None:
+    """400 unless ``signature`` is a valid ECDSA/SHA-256 signature over ``message`` by the P-256
     key in ``public_key`` (DER SubjectPublicKeyInfo)."""
     try:
         key = load_der_public_key(_b64(public_key_b64))
@@ -41,15 +43,21 @@ def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str)
     if not isinstance(key, ec.EllipticCurvePublicKey) or not isinstance(key.curve, ec.SECP256R1):
         raise DomainException(status_code=400, detail="Public key must be EC P-256")
     try:
-        key.verify(_b64(signature_b64), sid.encode(), ec.ECDSA(hashes.SHA256()))
+        key.verify(_b64(signature_b64), message.encode(), ec.ECDSA(hashes.SHA256()))
     except InvalidSignature:
         raise DomainException(status_code=400, detail="Invalid device signature")
 
 
-def register(body: DeviceRegisterRequest, username: str, sid: str) -> Device:
-    verify_registration_proof(body.public_key, body.signature, sid)
+def verify_registration_proof(public_key_b64: str, signature_b64: str, sid: str) -> None:
+    """The registration signature covers the session id."""
+    verify_signature(public_key_b64, signature_b64, sid)
+
+
+async def register(body: DeviceRegisterRequest, username: str, sid: str) -> Device:
+    await asyncio.to_thread(verify_registration_proof, body.public_key, body.signature, sid)
     try:
-        device = queries.register_device(
+        device = await asyncio.to_thread(
+            queries.register_device,
             public_key=body.public_key,
             model=body.model,
             android_version=body.android_version,
@@ -58,6 +66,10 @@ def register(body: DeviceRegisterRequest, username: str, sid: str) -> Device:
             sid=sid,
         )
     except queries.DeviceRevoked:
+        # W9: a password login on a revoked device must not stay valid. A v2 app always
+        # registers after logging in, so its session ends within one request.
+        await asyncio.to_thread(queries.revoke_session, sid)
+        await conn_mgr.disconnect_session(sid)
         logger.warning(
             "device_register_revoked",
             extra={"event": "device.register.revoked", "username": username},
@@ -73,3 +85,43 @@ def register(body: DeviceRegisterRequest, username: str, sid: str) -> Device:
         },
     )
     return device
+
+
+async def set_status(device_id: str, status: str, admin: str) -> Device:
+    """Approve or revoke a device for an admin (T8.1). Revoking ends every session bound to
+    the device and closes their sockets; the workers' sessions on other devices stay."""
+    try:
+        device, changed, sids = await asyncio.to_thread(
+            queries.set_device_status, device_id, status
+        )
+    except queries.DeviceNotFound:
+        raise DomainException(status_code=404, detail="Device not found")
+    except queries.DeviceStatusConflict as exc:
+        raise DomainException(status_code=409, detail=f"Device is {exc.status}")
+    for sid in sids:
+        await conn_mgr.disconnect_session(sid)
+    action = "approved" if status == "active" else "revoked"
+    logger.info(
+        f"device_{action}",
+        extra={
+            "event": f"device.{action}",
+            "admin": admin,
+            "device_id": device.id,
+            "username": device.current_username,
+            "changed": changed,
+            "sessions_revoked": len(sids),
+        },
+    )
+    return device
+
+
+def start_bound_session(user: User, device_id: str, ip_address: str | None, agent: str) -> dict | None:
+    """Issue a session for ``user`` without a password, bound to the device (an approved login
+    request, a direct worker switch). None, with the session revoked again, when the device was
+    revoked meanwhile."""
+    sid = auth_service.new_session_id()
+    tokens = auth_service.get_tokens(user, ip_address=ip_address, agent=agent, new_sid=sid)
+    if queries.bind_session_to_device(sid, device_id, user.username or ""):
+        return tokens
+    queries.revoke_session(sid)
+    return None

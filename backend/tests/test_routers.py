@@ -118,6 +118,85 @@ def test_admin_history_and_exports(monkeypatch):
     assert admin.export_stocks(admin_user).media_type == "text/csv"
 
 
+def test_admin_history_filters_reach_the_queries(monkeypatch):
+    from datetime import UTC, date, datetime
+
+    from fastapi import Response
+
+    seen = {}
+
+    def fake(name, result):
+        def call(**kwargs):
+            seen[name] = kwargs["f"]
+            return result
+
+        return call
+
+    monkeypatch.setattr(admin.queries, "get_outbound_history", fake("outbound", ([], 0)))
+    monkeypatch.setattr(admin.queries, "get_day_history", fake("days", ([], 3)))
+    when = datetime(2026, 11, 24, tzinfo=UTC)
+    day = date(2026, 11, 24)
+    who = actor("admin", "admin")
+    admin.get_outbound_history(Response(), 500, 0, who, when, None, day, None, "x")
+    assert seen["outbound"] == admin.queries.HistoryFilter(closed_from=when, day_from=day, q="x")
+    response = Response()
+    admin.get_day_history(response, 50, 0, who, None, day, "jx")
+    assert seen["days"] == admin.queries.HistoryFilter(day_to=day, q="jx")
+    assert response.headers["X-Total-Count"] == "3"
+
+
+def test_admin_stock_changes_passes_filters_and_total(monkeypatch):
+    from fastapi import Response
+
+    seen = {}
+
+    def fake(limit, offset, f):
+        seen.update(limit=limit, offset=offset, f=f)
+        return (["row"], 42)
+
+    monkeypatch.setattr(admin.queries, "get_stock_changes", fake)
+    response = Response()
+    since = datetime(2026, 11, 20, tzinfo=UTC)
+    rows = admin.get_stock_changes(
+        response,
+        25,
+        50,
+        actor("admin", "admin"),
+        sku="SKU-A",
+        actor="eko",
+        reason=["pick", "adjust_set"],
+        since=since,
+        until=None,
+    )
+    assert rows == ["row"] and response.headers["X-Total-Count"] == "42"
+    assert (seen["limit"], seen["offset"]) == (25, 50)
+    f = seen["f"]
+    assert (f.sku, f.actor, f.reasons, f.since, f.until) == (
+        "SKU-A",
+        "eko",
+        ("pick", "adjust_set"),
+        since,
+        None,
+    )
+
+
+def test_admin_lookup_returns_orders_and_scans(monkeypatch):
+    monkeypatch.setattr(
+        admin.queries, "lookup_label", lambda label: {"orders": ["o"], "scans": ["s"], "day": None}
+    )
+    monkeypatch.setattr(
+        admin.shopee_service,
+        "build_shopee_order_responses",
+        lambda values: [f"built-{v}" for v in values],
+    )
+    assert admin.lookup_label("JX-1", actor("admin", "admin")) == {
+        "label": "JX-1",
+        "orders": ["built-o"],
+        "scans": ["s"],
+        "day": None,
+    }
+
+
 def test_item_and_stock_reads(monkeypatch):
     monkeypatch.setattr(items.queries, "find_warehouse_items", lambda query: [query])
     assert items.find_warehouse_items("cake", actor()) == ["cake"]

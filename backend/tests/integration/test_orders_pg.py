@@ -5,17 +5,20 @@ from src.services import queries
 from .factories import add_order, add_user
 
 
-def test_active_orders_exclude_orders_past_ship_by(pg_session_factory):
-    """T1.1 / F-C1: the cutoff is evaluated per query, not frozen at import time."""
+def test_active_orders_keep_late_orders(pg_session_factory):
+    """V2_ORDERS_DELTA F4: a late order (ship-by passed) stays active until its Shopee status
+    leaves READY_TO_SHIP / PROCESSED / RETRY_SHIP or it is closed; the sync refreshes open
+    orders of any age (F-M2), so the old ship-by cutoff only hid late work."""
     now = datetime.now(UTC)
     with pg_session_factory() as db:
-        add_order(db, "260101PAST", ship_by=now - timedelta(minutes=1))
+        add_order(db, "260101LATE", ship_by=now - timedelta(days=3))
         add_order(db, "260101FUTURE", ship_by=now + timedelta(hours=1))
         add_order(db, "260101DONE", ship_by=now + timedelta(hours=1), done=True)
+        add_order(db, "260101SHIPPED", ship_by=now - timedelta(days=3), status="SHIPPED")
         db.commit()
 
     sns = {o.order_sn for o in queries.get_all_shopee_order_data()}
-    assert sns == {"260101FUTURE"}
+    assert sns == {"260101LATE", "260101FUTURE"}
 
 
 def _owner(factory, order_sn):

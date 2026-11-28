@@ -14,6 +14,7 @@ enum class WsEventType(val wire: String) {
     SHOPEE_ORDERS("shopee_orders_update"),
     PICK_ITEM_ENTRIES("pick_item_entries_update"),
     STOCKS("stocks_update"),
+    TASKS("tasks_update"), // v2 only: the worker's open and blocked tasks (T9.2)
     ;
 
     companion object {

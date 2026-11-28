@@ -37,8 +37,15 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...config import stock_location_mode
-from ...models import PickItemEntry, PickStockAllocation, Stock, StocksLog, WarehouseItem
+from ...config import stock_location_mode, strict_stock
+from ...models import (
+    PickItemEntry,
+    PickStockAllocation,
+    Stock,
+    StocksLog,
+    TaskLine,
+    WarehouseItem,
+)
 from .engine import get_db
 from .warehouse import resolve_barcode_to_item
 
@@ -55,7 +62,12 @@ REASONS = (
     "mode_merge",
     "cutover_clear",
     "migration_merge",
+    "task_cancel_keep",
 )
+
+
+class InsufficientStockError(ValueError):
+    """``STOCK_STRICT`` is on and the pick is larger than the recorded stock (HTTP 409)."""
 
 
 # ---------------------------------------------------------------------------- policies
@@ -203,11 +215,11 @@ class _Bins:
         self.db.flush()
         return row
 
-    def merge_into(self, target: Optional[str], actor: str) -> None:
+    def merge_into(self, target: Optional[str], actor: str, **ref) -> None:
         """``single`` invariant: move every other row into ``target`` (logged mode_merge)."""
         for location in [loc for loc in self.rows if loc != target]:
             qty = self.rows[location].stock
-            why = StockChange(actor=actor, reason="mode_merge")
+            why = StockChange(actor=actor, reason="mode_merge", **ref)
             self.change(location, -qty, why)
             self.change(target, qty, why)
 
@@ -225,7 +237,11 @@ def apply_stock_update(
     mode: str = "set",
     location: Optional[str] = None,
     move_to: Optional[str] = None,
+    ref_type: Optional[str] = None,
+    ref_id: Optional[str] = None,
 ) -> Stock:
+    """Set, add or transfer stock. ``ref_type``/``ref_id`` name the cause of a set or add in
+    the stock log (a task count: ``task``, its id); transfers keep their own reference."""
     if stock_qty < 0:
         raise ValueError("Stock quantity cannot be negative")
     if mode not in ("set", "add"):
@@ -256,12 +272,13 @@ def apply_stock_update(
             )
         return result
 
+    ref = {"ref_type": ref_type, "ref_id": ref_id}
     target = policy.resolve_target(bins.list(), requested)
     if policy.merge_into_target:
-        bins.merge_into(target, username)
+        bins.merge_into(target, username, **ref)
     current = bins.qty(target)
     delta = stock_qty if mode == "add" else stock_qty - current
-    return bins.change(target, delta, StockChange(username, f"adjust_{mode}"))
+    return bins.change(target, delta, StockChange(username, f"adjust_{mode}", **ref))
 
 
 def update_or_move_stock(
@@ -291,18 +308,35 @@ def update_or_move_stock(
 
 
 # ------------------------------------------------------------------------------ picks
+def pick_ref(db: Session, entry: PickItemEntry) -> dict[str, str]:
+    """The stock log reference of a pick: its task for a task pick (V2_TASKS_SPEC §8), so a
+    task's stock changes stay traceable after its entries are gone; else the entry."""
+    if entry.task_line_id is not None:
+        task_id = db.execute(
+            select(TaskLine.task_id).where(TaskLine.id == entry.task_line_id)
+        ).scalar_one()
+        return {"ref_type": "task", "ref_id": str(task_id)}
+    return {"ref_type": "pick_entry", "ref_id": str(entry.id)}
+
+
 def deduct_for_pick(db: Session, entry: PickItemEntry, qty: int, actor: str) -> int:
     """Deduct ``qty`` of ``entry.sku`` bin by bin, writing one allocation per bin.
 
-    Never blocks the pick: unmet quantity is logged as ``pick_shortfall`` and stays
-    unallocated (it is never restored). Returns the quantity actually deducted."""
+    By default never blocks the pick: unmet quantity is logged as ``pick_shortfall`` and stays
+    unallocated (it is never restored). With ``STOCK_STRICT`` a pick larger than the SKU's total
+    raises ``InsufficientStockError`` before anything is deducted; the caller must not commit.
+    Returns the quantity actually deducted."""
     if qty <= 0:
         return 0
     if entry.id is None:
         db.flush()
     bins = _Bins(db, entry.sku)
+    if strict_stock() and bins.total() < qty:  # rows are locked: no race past this check
+        raise InsufficientStockError(
+            f"Not enough stock for {entry.sku}: {bins.total()} available, {qty} requested"
+        )
     remaining = qty
-    ref = {"ref_type": "pick_entry", "ref_id": str(entry.id)}
+    ref = pick_ref(db, entry)
     for row in location_policy().deduction_order(bins.list()):
         if remaining <= 0:
             break
@@ -372,15 +406,44 @@ def restore_for_pick(db: Session, entry: PickItemEntry, actor: str) -> int:
         return 0
     bins = _Bins(db, entry.sku)
     policy = location_policy()
+    why = StockChange(actor, "pick_restore", **pick_ref(db, entry))
     restored = 0
     for alloc in allocations:
         target = policy.restore_target(bins.list(), alloc.location)
-        bins.change(
-            target,
-            alloc.qty,
-            StockChange(actor, "pick_restore", "pick_entry", str(entry.id)),
-        )
+        bins.change(target, alloc.qty, why)
         restored += alloc.qty
+    return restored
+
+
+def restore_pick_quantity(db: Session, entry: PickItemEntry, qty: int, actor: str) -> int:
+    """Take ``qty`` off ``entry`` and return it to stock; the entry is deleted at 0. Returns the
+    quantity put back.
+
+    The exact reverse of picking: the shortfall goes first (it was never deducted, Q62), then
+    the newest allocations. Never returns more than was deducted. The caller holds the entry's
+    row lock, which every writer of its allocations takes first."""
+    if not 0 < qty <= entry.qty:
+        raise ValueError("Invalid quantity")
+    allocations = sorted(entry.allocations, key=lambda a: a.id, reverse=True)
+    shortfall = max(entry.qty - sum(a.qty for a in allocations), 0)
+    remaining = restored = max(qty - shortfall, 0)
+    if remaining:
+        bins = _Bins(db, entry.sku)
+        policy = location_policy()
+        why = StockChange(actor, "pick_restore", **pick_ref(db, entry))
+        for alloc in allocations:
+            if remaining <= 0:
+                break
+            take = min(alloc.qty, remaining)
+            bins.change(policy.restore_target(bins.list(), alloc.location), take, why)
+            alloc.qty -= take
+            remaining -= take
+            if alloc.qty == 0:
+                entry.allocations.remove(alloc)
+    entry.qty -= qty
+    if entry.qty == 0:
+        db.delete(entry)
+    db.flush()
     return restored
 
 

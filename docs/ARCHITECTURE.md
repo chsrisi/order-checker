@@ -52,9 +52,10 @@ A new `async def` that touches the database must follow the same rule. This is g
 Both Flutter apps use `Provider` and a central `AppState` for authentication,
 HTTP calls, cached view state, and WebSocket reconnection.
 
-Supported platforms: the operator client runs on **Android and Windows** (no web build).
+Supported platforms: the operator clients (v1 Flutter, v2 Kotlin) run on **Android only**.
 The admin app runs on the **web**, served by nginx (`frontend/admin/nginx.conf.template`).
-The admin Windows build was dropped, as was the client web build (delta D2.1).
+The admin Windows build and the client web build were dropped (delta D2.1), and the client
+Windows build too (TH.3, V2_DELTA D1).
 
 - The client app handles order claiming, picking, scanning, item lookup, and stock
   adjustment/transfer.
@@ -128,8 +129,9 @@ negative.
 
 A pick locks the item's stock rows (`ORDER BY sku, location FOR UPDATE`) and deducts bin by
 bin. It writes one allocation per bin and a structured `stocks_log` row per change. A
-shortfall never blocks the pick. Assign and unassign move allocations, oldest first, without
-touching stock. A delete returns the allocations to stock. Each operation is one transaction,
+shortfall never blocks the pick, unless `STOCK_STRICT=1`. In contract v1, assign and unassign move
+allocations, oldest first, without touching stock, and a delete returns them. In contract v2 a pick
+belongs to an order and unassign returns stock directly. Each operation is one transaction,
 and `stocks_update` / `pick_item_entries_update` are broadcast after the commit. Rules and log
 reasons: OPERATIONS "Inventory".
 

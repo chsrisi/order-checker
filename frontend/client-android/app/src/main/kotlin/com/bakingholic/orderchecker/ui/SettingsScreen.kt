@@ -24,7 +24,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.bakingholic.orderchecker.net.ServerProfile
+import com.bakingholic.orderchecker.scan.ScanSuffix
 import com.bakingholic.orderchecker.settings.PinGate
+import com.bakingholic.orderchecker.ui.scan.ScannerTest
 
 /** Hidden settings: PIN first, then the server profile and device information. */
 @Composable
@@ -36,6 +38,11 @@ fun SettingsScreen(
     onSave: (ServerProfile, (String?) -> Unit) -> Unit,
     onCheckUpdate: () -> Unit,
     onClose: () -> Unit,
+    scanSuffix: ScanSuffix = ScanSuffix.ENTER,
+    onScanSuffixChange: (ScanSuffix) -> Unit = {},
+    knownWorkers: List<String> = emptyList(),
+    onForgetWorker: (String) -> Unit = {},
+    onForgetAllWorkers: () -> Unit = {},
 ) {
     var unlocked by remember { mutableStateOf(false) }
     Column(
@@ -99,6 +106,8 @@ fun SettingsScreen(
             ) { Text("Save") }
             OutlinedButton(onClick = onCheckUpdate) { Text("Check for update now") }
         }
+        ScannerTest(scanSuffix, onScanSuffixChange)
+        KnownWorkersSection(knownWorkers, onForgetWorker, onForgetAllWorkers)
         OutlinedButton(onClick = onClose, modifier = Modifier.testTag("close_settings")) { Text("Close") }
     }
 }

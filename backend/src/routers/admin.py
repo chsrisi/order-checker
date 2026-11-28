@@ -1,30 +1,48 @@
 import logging
-from datetime import datetime
-from typing import List
+from datetime import date, datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.responses import StreamingResponse
 
 from .bom import bom_router
 from .admin_shopee import shopee_config_router
+from .admin_tasks import tasks_router
 from ..models import (
-    DeviceResponse,
+    AdminDayDetailResponse,
+    AdminDayResponse,
+    AdminLookupResponse,
+    AdminLoginRequest,
+    AdminDeviceAssign,
+    AdminDeviceUpdate,
+    AdminDeviceResponse,
     AdminPasswordReset,
     AdminUserCreate,
     DeleteCountResponse,
     MessageResponse,
     OutboundResponse,
+    StockChangeResponse,
     ShopeeOrderResponse,
     User,
     UserResponse,
 )
 from ..dependencies import require_admin
-from ..services import queries, auth_service, outbound_service, shopee_service
+from ..timezone import business_time
+from ..services import (
+    auth_service,
+    device_assignment_service,
+    device_service,
+    login_request_service,
+    outbound_service,
+    queries,
+    shopee_service,
+)
 
 logger = logging.getLogger("backend.routers.admin")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(bom_router)
 router.include_router(shopee_config_router)
+router.include_router(tasks_router)
 
 
 @router.get(
@@ -85,16 +103,192 @@ async def reset_user_password(
 
 @router.get(
     "/devices",
-    response_model=List[DeviceResponse],
+    response_model=List[AdminDeviceResponse],
     summary="List v2 devices",
     description=(
         "Registered v2 operator devices, most recently seen first: status, current operator, "
-        "model, Android version, app versionCode and last contact. Read-only until step 8."
+        "model, Android version, app versionCode, last contact, `online` (a session of the "
+        "device has an open live-update socket right now), `reachable` (it polled from its "
+        "login screen within 30 s), a waiting worker switch (`assignment`) and what happened "
+        "to the last one. Live updates: the admin WebSocket frame `devices_update` carries "
+        "this same list."
     ),
     responses={403: {"description": "Admin scope required"}},
 )
-def list_devices(_admin: User = Depends(require_admin)):
-    return queries.list_devices()
+async def list_devices(_admin: User = Depends(require_admin)):
+    return await device_assignment_service.admin_devices()
+
+
+DEVICE_ACTION_RESPONSES = {
+    403: {"description": "Admin scope required"},
+    404: {"description": "Device not found"},
+    409: {"description": "Not allowed from the device's current status"},
+}
+DeviceId = Path(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+async def _device_action(device_id: str, status: str, admin: User) -> AdminDeviceResponse:
+    await device_service.set_status(device_id, status, admin.username or "")
+    if status == "revoked":
+        await device_assignment_service.drop_for_revoked(device_id, admin.username or "")
+    else:
+        await device_assignment_service.announce()
+    return await device_assignment_service.admin_device(device_id)
+
+
+@router.post(
+    "/devices/{device_id}/approve",
+    response_model=AdminDeviceResponse,
+    summary="Approve a device",
+    description=(
+        "`pending` → `active`: the scanner is trusted (a direct worker switch needs it). "
+        "Idempotent on an `active` device; a `revoked` device answers 409."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def approve_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "active", current_user)
+
+
+@router.post(
+    "/devices/{device_id}/revoke",
+    response_model=AdminDeviceResponse,
+    summary="Revoke a device",
+    description=(
+        "`pending` or `active` → `revoked`, final: every session on the device ends at once "
+        "(its sockets close) and it can no longer log in, register or ask for a login. The "
+        "workers stay logged in on their other devices. Idempotent on a `revoked` device."
+    ),
+    responses=DEVICE_ACTION_RESPONSES,
+)
+async def revoke_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    return await _device_action(device_id, "revoked", current_user)
+
+
+@router.patch(
+    "/devices/{device_id}",
+    response_model=AdminDeviceResponse,
+    summary="Rename a device",
+    description="Sets the name the console shows (`label`, at most 40 characters; empty clears it).",
+    responses={403: {"description": "Admin scope required"}, 404: {"description": "Device not found"}},
+)
+async def update_device(
+    body: AdminDeviceUpdate,
+    device_id: str = DeviceId,
+    current_user: User = Depends(require_admin),
+):
+    return await device_assignment_service.rename(device_id, body, current_user.username or "")
+
+
+@router.post(
+    "/devices/{device_id}/logout",
+    response_model=MessageResponse,
+    summary="Log out this device",
+    description=(
+        "Ends every session on the device at once (its sockets close) and drops a waiting "
+        "worker switch. The workers stay logged in on their other devices. The device's login "
+        "screen is told why on its next state poll."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device not found"},
+        409: {"description": "Device is revoked"},
+    },
+)
+async def logout_device(device_id: str = DeviceId, current_user: User = Depends(require_admin)):
+    count = await device_assignment_service.logout(device_id, current_user.username or "")
+    return {"message": f"{count} session(s) revoked"}
+
+
+@router.post(
+    "/devices/{device_id}/assign",
+    response_model=AdminDeviceResponse,
+    summary="Switch the worker on a device",
+    description=(
+        "Ends the device's sessions and leaves an assignment that the device collects on its "
+        "next state poll, within `DEVICE_ASSIGNMENT_TTL_SECONDS` (600). `direct` logs the "
+        "worker in without a password and needs an `active` device; `preselect` selects the "
+        "worker on the login screen. A new assignment replaces the previous one. The worker's "
+        "sessions on other devices are untouched."
+    ),
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device or client account not found"},
+        409: {"description": "Device is revoked, or not approved (direct mode)"},
+        503: {"description": "Redis unavailable (nothing was changed)"},
+    },
+)
+async def assign_device(
+    body: AdminDeviceAssign,
+    device_id: str = DeviceId,
+    current_user: User = Depends(require_admin),
+):
+    return await device_assignment_service.assign(device_id, body, current_user.username or "")
+
+
+@router.delete(
+    "/devices/{device_id}/assign",
+    response_model=AdminDeviceResponse,
+    summary="Cancel a worker switch",
+    description="Drops the waiting assignment; idempotent. The device stays logged out.",
+    responses={
+        403: {"description": "Admin scope required"},
+        404: {"description": "Device not found"},
+        503: {"description": "Redis unavailable"},
+    },
+)
+async def cancel_device_assignment(
+    device_id: str = DeviceId, current_user: User = Depends(require_admin)
+):
+    return await device_assignment_service.cancel(device_id, current_user.username or "")
+
+
+@router.get(
+    "/login-requests",
+    response_model=List[AdminLoginRequest],
+    summary="List pending login requests",
+    description="Operators waiting on their login screen for an admin's approval, oldest first.",
+    responses={403: {"description": "Admin scope required"}, 503: {"description": "Redis unavailable"}},
+)
+async def list_login_requests(_admin: User = Depends(require_admin)):
+    return await login_request_service.pending()
+
+
+DECIDE_RESPONSES = {
+    403: {"description": "Admin scope required"},
+    404: {"description": "Request expired, cancelled or unknown"},
+    409: {"description": "Already decided"},
+    503: {"description": "Redis unavailable"},
+}
+LoginRequestId = Path(..., pattern=r"^[0-9a-f]{32}$")
+
+
+@router.post(
+    "/login-requests/{request_id}/approve",
+    response_model=MessageResponse,
+    summary="Approve a login request",
+    description="The device that asked can collect one session within a short window.",
+    responses=DECIDE_RESPONSES,
+)
+async def approve_login_request(
+    request_id: str = LoginRequestId, current_user: User = Depends(require_admin)
+):
+    await login_request_service.decide(request_id, "approved", current_user.username or "")
+    return {"message": "Login approved"}
+
+
+@router.post(
+    "/login-requests/{request_id}/deny",
+    response_model=MessageResponse,
+    summary="Deny a login request",
+    description="The waiting device is told and returns to its login screen.",
+    responses=DECIDE_RESPONSES,
+)
+async def deny_login_request(
+    request_id: str = LoginRequestId, current_user: User = Depends(require_admin)
+):
+    await login_request_service.decide(request_id, "denied", current_user.username or "")
+    return {"message": "Login denied"}
 
 
 @router.post(
@@ -145,13 +339,29 @@ async def delete_user(
 # T5.2: history pages, newest first; X-Total-Count carries the full size.
 HISTORY_LIMIT = Query(500, ge=1, le=2000, description="Page size (newest first).")
 HISTORY_OFFSET = Query(0, ge=0, description="Rows to skip.")
+# Delta 9 (Q40): server-side filters. Times are ISO 8601; without an offset they are UTC.
+CLOSED_FROM = Query(None, description="Closed at or after this time (inclusive).")
+CLOSED_TO = Query(None, description="Closed at or before this time (inclusive).")
+# V2_ORDERS_DELTA Q53: business days, by scan time.
+DAY_FROM = Query(None, description="On or after this business day (YYYY-MM-DD).")
+DAY_TO = Query(None, description="On or before this business day (YYYY-MM-DD).")
+SEARCH = Query(None, max_length=100, description="Case-insensitive substring search.")
+
+
+def _history_filter(closed_from, closed_to, day_from, day_to, q) -> queries.HistoryFilter:
+    return queries.HistoryFilter(
+        closed_from=closed_from, closed_to=closed_to, day_from=day_from, day_to=day_to, q=q
+    )
 
 
 @router.get(
     "/history/outbound",
     response_model=List[OutboundResponse],
     summary="Get closed outbound history",
-    description="Returns only scans that have been closed by an administrator.",
+    description=(
+        "Returns only scans that have been closed by an administrator. Optional filters: close "
+        "time range, day range (scan time), and `q` over label, worker and tags."
+    ),
     responses={403: {"description": "Admin scope required"}},
 )
 def get_outbound_history(
@@ -159,17 +369,64 @@ def get_outbound_history(
     limit: int = HISTORY_LIMIT,
     offset: int = HISTORY_OFFSET,
     current_user: User = Depends(require_admin),
+    closed_from: Optional[datetime] = CLOSED_FROM,
+    closed_to: Optional[datetime] = CLOSED_TO,
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
+    q: Optional[str] = SEARCH,
 ):
-    items, total = queries.get_outbound_history(limit=limit, offset=offset)
+    items, total = queries.get_outbound_history(
+        limit=limit,
+        offset=offset,
+        f=_history_filter(closed_from, closed_to, day_from, day_to, q),
+    )
     response.headers["X-Total-Count"] = str(total)
     return items
+
+
+@router.get(
+    "/stock-changes",
+    response_model=List[StockChangeResponse],
+    summary="Stock change history",
+    description=(
+        "Every stock change from the stock log, newest first, paged (`X-Total-Count`). "
+        "Filters: `sku` and `actor` (exact, case-insensitive), `reason` (repeatable), and a "
+        "`from` / `to` time range (inclusive). Rows from before the structured log have only "
+        "`message`."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_stock_changes(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500, description="Page size (newest first)."),
+    offset: int = HISTORY_OFFSET,
+    current_user: User = Depends(require_admin),
+    sku: Optional[str] = Query(None, max_length=200),
+    actor: Optional[str] = Query(None, max_length=64),
+    reason: Optional[List[str]] = Query(None, max_length=20, description="Any of these reasons."),
+    since: Optional[datetime] = Query(None, alias="from", description="At or after this time."),
+    until: Optional[datetime] = Query(None, alias="to", description="At or before this time."),
+):
+    rows, total = queries.get_stock_changes(
+        limit=limit,
+        offset=offset,
+        f=queries.StockChangeFilter(
+            sku=sku, actor=actor, reasons=tuple(reason or ()), since=since, until=until
+        ),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 @router.get(
     "/history/shopee/orders",
     response_model=List[ShopeeOrderResponse],
     summary="Get completed Shopee order history",
-    description="Returns only orders marked complete by outbound period closure.",
+    description=(
+        "Returns only orders marked complete by outbound period closure. Optional filters: "
+        "completion (close) time range, day range, and `q` over order SN, worker, "
+        "tracking number and pickup code."
+    ),
     responses={403: {"description": "Admin scope required"}},
 )
 def get_shopee_orders_history(
@@ -177,10 +434,89 @@ def get_shopee_orders_history(
     limit: int = HISTORY_LIMIT,
     offset: int = HISTORY_OFFSET,
     current_user: User = Depends(require_admin),
+    closed_from: Optional[datetime] = CLOSED_FROM,
+    closed_to: Optional[datetime] = CLOSED_TO,
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
+    q: Optional[str] = SEARCH,
 ):
-    orders, total = queries.get_shopee_orders_history(limit=limit, offset=offset)
+    orders, total = queries.get_shopee_orders_history(
+        limit=limit,
+        offset=offset,
+        f=_history_filter(closed_from, closed_to, day_from, day_to, q),
+    )
     response.headers["X-Total-Count"] = str(total)
     return shopee_service.build_shopee_order_responses(orders)
+
+
+@router.get(
+    "/history/days",
+    response_model=List[AdminDayResponse],
+    summary="List history days",
+    description=(
+        "One row per business day (`BUSINESS_UTC_OFFSET`), newest first: the closed scans made "
+        "that day, the completed orders they belong to, and the scans' tags. Optional day range, "
+        "and `q`: only days holding a scan or an order that matches (same fields as the two "
+        "history lists)."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_day_history(
+    response: Response,
+    limit: int = Query(50, ge=1, le=500, description="Page size (newest first)."),
+    offset: int = HISTORY_OFFSET,
+    _admin: User = Depends(require_admin),
+    day_from: Optional[date] = DAY_FROM,
+    day_to: Optional[date] = DAY_TO,
+    q: Optional[str] = SEARCH,
+):
+    days, total = queries.get_day_history(
+        limit=limit,
+        offset=offset,
+        f=queries.HistoryFilter(day_from=day_from, day_to=day_to, q=q),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return days
+
+
+@router.get(
+    "/history/days/{day}",
+    response_model=AdminDayDetailResponse,
+    summary="Get one history day",
+    description="All closed scans made on one business day and the completed orders of that day.",
+    responses={403: {"description": "Admin scope required"}},
+)
+def get_day(day: date, _admin: User = Depends(require_admin)):
+    found = queries.get_day(day)
+    return {
+        "day": day,
+        "orders": shopee_service.build_shopee_order_responses(found["orders"]),
+        "scans": found["scans"],
+    }
+
+
+@router.get(
+    "/lookup",
+    response_model=AdminLookupResponse,
+    summary="Find an exact label",
+    description=(
+        'Answers "did it leave?" for an order SN, a tracking number or a scanned label: the '
+        "orders it names (ongoing or done, with `done_at` = its close) and its scans, open or "
+        "closed. Exact match after trimming."
+    ),
+    responses={403: {"description": "Admin scope required"}},
+)
+def lookup_label(
+    label: str = Query(..., min_length=1, max_length=1024, description="The exact label."),
+    _admin: User = Depends(require_admin),
+):
+    found = queries.lookup_label(label)
+    return {
+        "label": label,
+        "orders": shopee_service.build_shopee_order_responses(found["orders"]),
+        "scans": found["scans"],
+        "day": found["day"],
+    }
 
 
 @router.get(
@@ -196,7 +532,7 @@ def export_scanned_items(current_user: User = Depends(require_admin)):
         iter([csv_data]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=scanned_items_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            "Content-Disposition": f"attachment; filename=scanned_items_{business_time().strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 
@@ -214,7 +550,7 @@ def export_stocks(current_user: User = Depends(require_admin)):
         iter([csv_data]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=inventory_stocks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            "Content-Disposition": f"attachment; filename=inventory_stocks_{business_time().strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 

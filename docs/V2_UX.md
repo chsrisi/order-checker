@@ -1,0 +1,783 @@
+# v2 UX: problem list and screen briefs
+
+Side discussion for V2_DELTA Delta 5–6 (Q26, Q28–Q30). The v2 operator client
+(`frontend/client-android`) and the Vue admin (`frontend/admin-web`) are **rebuilt, not ported**.
+This file holds:
+
+1. the list of v1 UX problems (Q30), drafted from the code: **you correct it**;
+2. one brief per screen (Q28), each approved by you before it is built;
+3. later revision rounds, appended under the screen they change.
+
+Checked against `dev` at `18a9a01` (v0.6.0). The Flutter apps are the reference for **business
+rules and edge cases** only. The functional inventory per screen is in IMPLEMENTATION_PLAN
+T6.15 and spec §5.
+
+Status legend: **draft** (mine, not confirmed), **confirmed** (you agreed), **dropped** (not a
+problem), **+** (added by you).
+
+---
+
+## 1. Problem list (Q30)
+
+### 1.1 Operator client (v1 Flutter, `frontend/client/lib`)
+
+| # | Where | Problem | Status |
+|---|---|---|---|
+| C1 | Navigation (`main.dart`) | Two navigation levels: a drawer with Inbound/Outbound folded inside "Orders", then Input/History tabs at the bottom. Switching screens takes 3 taps, and the tab resets to Input on every switch. | draft |
+| C2 | Inbound input (`orders_view.dart:226`) | An **Order / Item** toggle decides what a scan means. Scanning a SKU in Order mode gives the modal "Invalid Order SN". The mode does not switch to Item after an order is acquired, so the operator taps the toggle for every order. | draft |
+| C3 | Inbound input (`:80`) | Each item takes two submits. The SKU scan only moves focus to Qty (preset to 1), and a second Enter posts. With a wedge scanner that is scan + Enter for every item. | draft |
+| C4 | Inbound (`_OrdersViewState`) | The selected order lives in widget state. Opening another screen and coming back drops it, and the operator has to scan the order again. | draft |
+| C5 | All screens (`onShowMessage`) | Every success shows a toast ("Scan entry posted.", "Order acquired successfully."). Errors, duplicates and the over-quantity warning open a **modal that must be dismissed** before the next scan. The warning appears *after* the entry is posted, with no undo. One global message slot is overwritten by whichever screen mounted last, so messages can land on the wrong screen. | draft |
+| C6 | Inbound SKU rows (`:501`) | Unassigning is a **hidden long-press**. The dialog says "Move to Unknown?", and the default quantity is not obvious. | draft |
+| C7 | Inbound history (`:773`) | A radio button *and* an expanding card both select the active order. The terminology is mixed: "Labels", orders and pickup codes. Cards show the pickup code when there is one, but scanning needs the order SN. | draft |
+| C8 | Unknown / split scans (`:1013`) | Assigning uses a dropdown of every open order by SN only: no pickup code, no hint which orders need this SKU. **Delete has no confirmation and no undo.** | draft |
+| C9 | Progress (`:368`) | Progress counts completed SKUs, not items. The colour turns red when any extra SKU was scanned. Status is shown by colour alone. | draft |
+| C10 | Outbound (`scanner_view.dart`) | The page is mostly a "Scan Item" header and a Submit button. Duplicates open a modal "Error / Duplicate" alert. History times are formatted `9:05 - 3/7` (unpadded, no year). The tag filter only knows tags from loaded items. | draft |
+| C11 | Stocks input (`stocks_view.dart`) | Four fields, a Move checkbox, and Add/Set buttons. **Enter in Location runs "Set"**, which overwrites the stock, not Add. Ticking Move moves the location into the destination field. Location suggestions come only from the cached stock list. | draft |
+| C12 | Stocks "History" tab | It is the stock list, not a history. | draft |
+| C13 | Item finder | Search runs on submit only. The result shows location but not quantity. "No items found" shows both before and after a search. | draft |
+| C14 | Login | Register button (already gone in v2), no show-password toggle. | draft (v2: partly done) |
+| C15 | Connection banner | "WebSocket Connection Lost" is jargon and covers the top of the content. Retry stops after 5 attempts (v2: endless backoff, done). | draft (v2: partly done) |
+| C16 | Account | Only Logout. No version or server shown (v2 settings has them). | draft |
+
+### 1.2 Flutter admin (`frontend/admin/lib`)
+
+| # | Where | Problem | Status |
+|---|---|---|---|
+| A1 | Layout (`main.dart`) | Desktop-first: a navigation rail and a 50/50 split on Orders. | **confirmed:** the console must work on **mobile and desktop** (D7) |
+| A2 | Orders · Ongoing (`orders_view.dart:86`) | **"Reset State"** (`POST /shopee/reset-cache-state`) sits next to Sync, styled like a normal action, with no confirmation and no explanation of what it resets. | draft |
+| A3 | Orders · Ongoing filter | "Hide checked" mixes outbound matches with orders ticked by hand, and the hand-ticked set is lost on reload. The filters live in a dialog, so the active ones are not visible at a glance. | draft |
+| A4 | Scan history / close period (`:869`) | The red button reads **"Close Period (All)"** when nothing is selected, so the default closes everything. It sits next to Export CSV. | draft |
+| A5 | Orders · History (`:1086`) | The "From" date filters orders by `ship_by` but "To" filters by `done_at` (inconsistent). Filters run in the browser over loaded pages only ("Load older history"), so results depend on how far you scrolled. The default range is "since yesterday". | draft (A5 date mismatch looks like a bug) |
+| A6 | Orders · History | "Show previous close" guesses the period from the first tag of the newest item. | draft |
+| A7 | Users | No "log out everywhere" (backend since v0.6.0). The role is shown raw ("Role: client"). | draft |
+| A8 | Stocks | Read-only table with search and CSV export. Stock changes need an operator device. | **confirmed as intended:** admins do **not** change stock (D7). Stock info and the finder merge into one area |
+| A9 | Config | Shopee tokens are pasted by hand behind a second password (`X-Config-Token`); a lock expiry shows a "Session Expired" dialog. | draft |
+| A10 | Global | A refresh button in the app bar *and* per-view refresh/sync buttons, and different loading indicators per view. | draft |
+| A11 | Devices | No view yet (T7.10, read-only list). | known |
+
+**Your additions** (what operators and you complain about):
+
+- …
+
+---
+
+## 2. Screen briefs (Q28)
+
+Each brief, in order: **goal** · **v1 functional checklist** (must stay possible) ·
+**v1 problems addressed** (refs above) · **proposed flow** (wireframe) · **backend change**
+(none / additive `/v2` or admin) · **open points**. You approve or comment; then it is built,
+you try it, and revisions follow as rounds under the same heading.
+
+Order (Q29): foundations first (T6.15a scan input, T7.1–T7.2), then client Inbound, Outbound,
+Stocks, Item finder, Account, with admin Orders + scan history, Users, Inventory, then the rest
+in between.
+
+### 2.1 T6.15a Scan input component (foundation, no UX debate)
+
+- **Goal:** one reusable input for every screen that takes wedge scans.
+- **Behaviour:**
+  - a focused field;
+  - submits on the configured suffix (Enter by default; Tab as an option once the MT67 suffix
+    is known);
+  - clears itself and takes focus back after every submit and after every dialog or toast;
+  - no soft keyboard pops up while scanning; a keyboard button opens it for typing by hand;
+  - blank and whitespace-only input is ignored;
+  - a fast duplicate (the same value within 300 ms, a wedge double-fire) is dropped.
+- **Feedback:** a short inline status line under the field (ok / warning / error) instead of
+  modal dialogs (C5). Optional vibration on error.
+- **Screens using it:** Inbound, Outbound, Stocks, Item finder (from T6.15b on).
+- **Operations note (D7):** the scanners are configured with the **Enter** suffix, because v1's
+  text fields used Enter to jump to the next field. v2 keeps Enter as the default, and a screen
+  may reuse it the same way (scan → next field); changing the suffix is possible per device.
+
+**Round 1: built (2026-11-23).** `ui/scan/ScanField`, plus a scanner test in the hidden
+settings (Scanner: suffix setting and a live log of what the scanner sends).
+
+- **Change from the brief:** while scanning, the field is **read-only** and takes characters from
+  the key events. An editable field asked Android for the soft keyboard on every hardware key
+  (emulator). Hiding it per key reordered characters (`SKU-0001` → `SK-U0001`). Read-only means
+  no input session, so no keyboard. A tap or **Type** switches to normal typing.
+- **Consequence:** the MT67 scanner must be in keystroke ("simulate keyboard") mode, which is
+  today's setting (Q1). A "fill text into the edit box" mode needs typing mode. The device day
+  confirms it with the scanner test.
+- **Your check:** open the hidden settings → Scanner on the emulator (or a device) and type or
+  scan a few values.
+
+### 2.2 Client app shell: home and device info (D7)
+
+- **Goal:** one obvious start screen instead of v1's drawer + bottom tabs (C1), and a place
+  that says who is logged in on which device (C16).
+- **Home:** three large buttons, **Orders**, **Stockkeeping**, **Finder**. Big enough to hit
+  with a glove; nothing else on the screen.
+- **Top bar:** the screen title on the left, the **current username** on the right. Tapping the
+  username opens **Device info**: the username, the server facts from `/v2/meta` (API version,
+  environment, stock location mode, contracts), the app version, the device id and
+  registration status, live-update state, and a **Log out** button. The PIN-protected settings
+  stay hidden behind the 5 s press as today.
+- **Screens behind the buttons (scaffold):** copied from v1 for now so the app is usable
+  end to end, then rebuilt one by one through the loop (Q28). Orders = v1 Inbound + Outbound;
+  Stockkeeping = v1 Stocks; Finder = v1 Item finder. See Q31.
+- **Later (not near):** the Finder gets an optional interactive warehouse map (D7).
+- **Backend change:** none.
+
+```text
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│ Order Checker        op_ana ▸│      │ ← Device info                │
+├──────────────────────────────┤      ├──────────────────────────────┤
+│  ┌────────────────────────┐  │      │ Logged in as   op_ana        │
+│  │        Orders          │  │      │ Device         3f2a91c0 · pending
+│  └────────────────────────┘  │      │ App            v2.0.0 (1)    │
+│  ┌────────────────────────┐  │      │ Server         0.6.0 · production
+│  │      Stockkeeping      │  │      │ Stock mode     multi         │
+│  └────────────────────────┘  │      │ Live updates   connected     │
+│  ┌────────────────────────┐  │      │                              │
+│  │         Finder         │  │      │ [         Log out          ] │
+│  └────────────────────────┘  │      └──────────────────────────────┘
+│ v2.0.0 (1)                   │
+└──────────────────────────────┘
+```
+
+### 2.3 Admin console shell and dashboard (D7)
+
+- **Goal:** a console that works on desktop and mobile (A1), grouped by what the admin manages.
+- **Navigation groups** (categorised bars; names per D8 / Q37):
+  1. **Administration:** Workers (operator accounts; v1 "Users"), Devices, Settings (Shopee
+     configuration).
+  2. **Operations** (was *Orders*, renamed in V2_DELTA Delta 14): Orders (ongoing orders, scan
+     history, period close) and Tasks (§2.12).
+  3. **Warehouse:** stock info and the item finder together (A8: read-only); later the optional
+     interactive map (D7). No BOM page (Delta 14: removed from the v2 console).
+- **Desktop:** a left sidebar with the three groups as section headers and their pages under
+  them; Dashboard on top.
+- **Mobile (my choice for round 1):** the same menu in a slide-in drawer from a ☰ button in
+  the header, so both layouts share one menu definition. A bottom tab bar can come in a later
+  round if the drawer feels slow.
+- **Dashboard (home):**
+  - **Device status cards**, one per device: label or model, status (`pending` / `active` /
+    `revoked`), the logged-in worker, app version, and "last seen" in words (see Q35).
+  - **Shortcut buttons** to the groups: Workers, Devices, Orders, Stock info & finder.
+- **Backend change:** none for round 1 (`GET /admin/devices` exists). An "online now" flag
+  would be an additive admin field (Q35).
+
+```text
+Desktop                                         Mobile
+┌────────────┬───────────────────────────────┐  ┌──────────────────────────┐
+│ Dashboard  │ Devices                       │  │ ☰  Dashboard     admin ▸ │
+│            │ ┌───────────┐ ┌───────────┐   │  ├──────────────────────────┤
+│ PEOPLE &   │ │ MT67 #1   │ │ MT67 #2   │   │  │ ┌──────────────────────┐ │
+│ DEVICES    │ │ ● active  │ │ ○ pending │   │  │ │ MT67 #1  ● active    │ │
+│  Workers   │ │ op_ana    │ │ —         │   │  │ │ op_ana · v2.0.1 (2)  │ │
+│  Devices   │ │ v2.0.1(2) │ │ v2.0.0(1) │   │  │ │ seen 1 min ago       │ │
+│ ORDERS     │ │ 1 min ago │ │ 2 h ago   │   │  │ └──────────────────────┘ │
+│  Ongoing   │ └───────────┘ └───────────┘   │  │ [Workers ] [Devices  ]   │
+│  History   │                               │  │ [Orders  ] [Stock    ]   │
+│ STOCK      │ [Workers] [Devices] [Orders]  │  └──────────────────────────┘
+│  Stock &   │ [Stock info & finder]         │
+│  finder    │                               │
+└────────────┴───────────────────────────────┘
+```
+
+**Round 1: built (2026-11-23).** Client (§2.2): home, Device info, and the scaffold screens.
+Orders has **Picking** (main) and **Outbound** tabs (D8 / Q32); Picking keeps v1's Order/Item
+modes, the selected order card with progress and Unassign, unassigned picks with Assign and
+Delete (now confirmed), and the order search. v1's pop-ups stay (Q31). Console (§2.3): the
+shell, the dashboard and the Devices page; the other pages are placeholders linking to the
+classic admin. Notes for you to try:
+
+- The over-quantity warning now comes **after** the pick, on the SKU the server stored, so a
+  scan that resolves to another SKU is checked correctly (v1 checked the raw scan before).
+- Order labels must still start with YYMMDD (v1 rule); orders can also be selected by tapping
+  them in the list.
+- Typing a quantity or location opens the soft keyboard; the scan fields do not.
+
+**Picking round 2: built (2026-11-25, T6.20).** Picking and Outbound are separate Home entries.
+Picking has **Input** (Order: the scan box; Item: SKU, quantity, Submit Scan, the order's card)
+and **List** (scan or search; expanded cards; *Picked · n* collapsed at the bottom). A tap on a
+line selects its order and shows Remove → Unassign, which returns stock at once. Replaces the
+unassigned-picks part of round 1 (C6, C8). Rules and mock: [V2_PICKING_DELTA.md](V2_PICKING_DELTA.md).
+
+### 2.4 Admin Workers (D9)
+
+- **Goal:** manage operator accounts in the console; see who is on which device.
+- **v1 checklist** (`users_view.dart`): list, create (username + password, confirmed), reset
+  password, delete with a confirmation. **Added:** log out everywhere (A7, backend since
+  v0.6.0).
+- **v1 problems addressed:** A7 (no log-out-everywhere; raw "Role: client").
+- **Flow:** search plus **New worker**. Desktop: a table (worker, *devices now*, actions).
+  Mobile: cards with a ⋯ menu. *Devices now* comes from `GET /admin/devices`
+  (`current_username`, `online`).
+  - **Reset password:** signs the worker out everywhere (backend behaviour), and the dialog says
+    so.
+  - **Delete:** the dialog lists everything it removes (picks with their stock restored, *all*
+    outbound scans including closed history, claimed orders released, sessions) and suggests a
+    reset instead (Q43).
+  - Username rule as the backend (letters, digits, `_`, ≤ 64), checked inline.
+- **Backend change:** none.
+
+**Round 1: built (2026-11-24).**
+
+### 2.5 Admin Orders (D9)
+
+- **Goal:** follow the ongoing orders next to the outbound scans, close a period safely, and
+  look up what was closed.
+- **v1 checklist** (`orders_view.dart`):
+  - Ongoing: Sync Shopee, Reset State, filter (category, courier, hide checked), orders grouped
+    by status and collapsible, each order with its SKU lines; hand-ticks.
+  - Outbound: scans with tag filter and selection, Export CSV, Close period, last close counts.
+  - History: inbound and outbound, date range, search, load more, previous close.
+- **v1 problems addressed:**
+  - A2: Reset moves to a ⋯ menu with a confirmation that explains it.
+  - A3: filters are inline and always visible; Packed and hand-ticked are shown apart; ticks
+    persist (Q39).
+  - A4: an explicit, reviewed close (Q41).
+  - A5: server-side filters on close time (Q40).
+  - A6: history grouped by close (Q42).
+  - C9 for the admin: status in words ("Picking · 1/3 SKUs") as well as colour.
+  - C10: padded times with month names.
+- **Flow:**
+  - **Desktop:** tabs *Ongoing* · *History*. Ongoing is v1's split: orders on the left,
+    outbound scans on the right, each scrolling on its own (Q32).
+  - **Mobile:** tabs *Orders* · *Outbound (n)* · *History*.
+  - **Order card:**
+    - SN, pickup code, state and SKU progress, Packed or Ticked, worker, ship-by, courier,
+      recipient;
+    - tap to expand the SKU lines (picked/required, location);
+    - the checkbox is a hand-tick; a packed order's box is ticked and locked.
+    - Within a status group, the soonest ship-by comes first.
+  - **Scans:**
+    - each scan shows which ongoing order it packs, or "no ongoing order";
+    - the whole row toggles selection;
+    - the close button reads *Close all N scans…*, *Close all N "tag"…* or *Close N selected…*;
+    - the review lists scans per tag and how many orders become done.
+  - **History:**
+    - views *By close* · *Orders done* · *Closed scans*;
+    - a date range on close time, with a *Last 7 days* shortcut;
+    - search (orders: SN, worker, tracking, pickup code; scans: label, worker, tag);
+    - *Load more* with the remaining count.
+- **Backend change:** additive admin filters and `GET /admin/history/closes` (D9).
+
+**Round 1: built (2026-11-24).** Notes for you to try:
+
+- Hand-ticks live in this browser only. Another admin or browser does not see them.
+- A close closes every open scan with the same label, also one hidden by the tag filter (v1
+  behaviour; the server closes by label).
+- The close review's "orders become done" is a preview from the ongoing list; the server's
+  count is shown afterwards.
+- Scans and orders closed before v0.4 have no close time and do not appear in *By close*.
+
+**Round 2: Ongoing rebuilt from the round 4 prototype (2026-11-24).** Spec and edge cases:
+[V2_ORDERS_SPEC.md](V2_ORDERS_SPEC.md) §9–§13; decisions: [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md).
+
+- **Desktop paired rows** (Q47): each ongoing order beside the open scans that pack it, one
+  shared scroll. Scans that match no ongoing order come first, under *⚠ Scans with no ongoing
+  order*. An empty slot says *Picked · waiting for its outbound scan* (highlighted), *Ticked by
+  hand · no outbound scan* or *Not scanned yet*. The footer counts strays and orders waiting for
+  a scan, and says how many scans in the close are off screen.
+- **Two lists** (round 1) stay behind a switch, marked **deprecated**, to be removed later.
+- **Mobile** keeps the three tabs; an open card lists its outbound scans.
+- Cards start **open**; packed and hand-ticked cards start collapsed (a manual choice holds
+  until that changes). Packed orders sink to the bottom of their group under *Packed · n*.
+- **Picking states** (R4.3): *Not started* only without any pick; *Picking n/m* counts SKUs
+  touched; *Picked* = every SKU exact. BOM lines sharing a SKU are one requirement (F2).
+- **Split orders** (R4.1) are *partly packed · 1/2 packages* until every package's tracking
+  number is scanned; the close review warns that they still get marked done.
+- **Late** tag once ship-by passes; late orders stay listed (F4).
+- A scan with no tags borrows its order's courier for the chips, *Close all "courier"* and the
+  review's tag table, shown as "(from order)" (Q45).
+- **History:** one search above the views (server-side, Q49; from 2 characters), highlighted
+  matches; *By close* opens matching closes by themselves, each order paired with its scans
+  and only the matching pairs shown (*Show all rows*); an exact SN, tracking number or label
+  gets a "did it leave?" answer from `GET /admin/lookup`; *n more outside them* when the date
+  range hides matches; `/` focuses the search, Esc clears it.
+- **Auto-sync:** the server syncs Shopee every `SHOPEE_AUTO_SYNC_SECONDS` (Q48).
+
+**Round 3 (2026-11-24, V2_ORDERS_DELTA rounds 3–4).** Replaces the matching parts above.
+
+- A sync closes the scans of orders that left on Shopee and marks those orders done (C1).
+- History's first view is *By day* (by scan time, Q53) instead of *By close*; its date range picks
+  those days in all three views. A past day can still grow when its scans close later.
+- Auto-sync rests from 21:00 to 06:00 (C3).
+- Labels match exactly after trimming (Q57).
+- Hovering a paired row highlights its card, scans or empty slot (C4).
+- The close review is frozen when it opens (F7).
+
+### 2.6 Admin Settings: Shopee connection (D10)
+
+- **Goal:** fix the Shopee tokens after a token error without losing work to an expiry.
+- **v1 checklist** (`config_view.dart`):
+  - unlock with the admin password (a short server window, `X-Config-Token`);
+  - show the last refused IP;
+  - edit and save the access and refresh tokens;
+  - lock now.
+- **v1 problems addressed:** A9. When the window ended, v1 opened a "Session Expired" dialog,
+  and the edits were lost on re-unlock.
+- **Flow:**
+  - One card with the status (*Locked* / *Unlocked · 42 s*).
+  - Locked: the admin password, inline. Unlocked: the IP with a copy button, both tokens
+    (masked, with a show toggle), *Undo changes*, *Lock now*, *Save tokens* (enabled only when
+    something changed).
+  - When the window ends, the form stays with its edits, and the password is asked in place.
+  - Leaving the page locks the window and drops the values from memory.
+  - The IP is the one in Shopee's last "source IP undeclared" error ("unknown" before one).
+- **Backend change:** none.
+
+**Round 1: built (2026-11-24).**
+
+### 2.7 Client login (2026-11-25)
+
+- **Goal:** log in on a shared scanner without typing a username each time.
+- **Flow:**
+  - Start: **Worker** dropdown, *Log in* (primary), *Manual input* (secondary). The last worker
+    of this device is preselected.
+  - *Log in* → the picker stays, a password field (focused) and *Log in* appear, *Manual input*
+    is gone, and *Ask admin to approve* appears. Changing the worker clears the password.
+  - *Manual input* → username and password, as before.
+  - The system Back key returns to the start from both.
+- **Worker names:** the 20 most recent usernames that logged in **on this device**, kept locally
+  across logout (maintainer, 2026-11-25). No server list, so F-M17 holds. A new scanner starts
+  empty and needs manual input once per worker. A deleted worker's name stays until it drops
+  out of the 20. Entries can be removed in the hidden settings, one by one or all (built
+  2026-11-27); a removed name comes back on that worker's next login.
+- **Ask admin to approve** (T6.23): a waiting view with the 2-digit code, countdown and Cancel
+  (Back cancels too). Denied, expired, unregistered or revoked device: a message on the login
+  screen. The console (T7.12) shows a header button and cards on the Dashboard.
+- **Backend change:** login requests (T6.21, T6.22).
+
+**Round 1: built (2026-11-25), not yet accepted.**
+
+**Worker switch from the console (T8.7, V2_WORKER_SWITCH_DELTA W1, W5, W8; built 2026-11-27).**
+- The login screen asks the server every 5 s whether the admin switched this scanner, only
+  while it is idle and the app is in the foreground. It stops in the background, during a
+  password login or a login request, and once logged in.
+- **Direct:** the scanner logs in by itself and goes home; a snackbar says "Logged in by the
+  admin as *eko*."
+- **Preselect:** that worker is selected and the password step opens (also for a worker who
+  never logged in on this scanner); the line under the form says "The admin chose *eko*. Enter
+  the password." The red "Session ended" line goes away.
+- **Why logged out:** under "Session ended. Please log in again." a plain line says "Logged out
+  by the admin." or "Switched by the admin to *eko*.", from the first poll after the logout.
+- **Revoked:** red "This device was revoked by the admin.", and the poll stops. **Clock more
+  than 5 minutes off:** a line says the admin can't switch workers on this scanner.
+- Checked on the API 30 emulator against a local backend: switch while logged in, admin logout
+  then preselect while logged out, switch while in the background, switch while the app was
+  closed then opened, revoke.
+
+### 2.8 Admin device actions and worker switch (T8.6, 2026-11-27)
+
+Refs: V2_WORKER_SWITCH_SPEC §4.4, V2_WORKER_SWITCH_DELTA W1, W2, W4, W7, plan P-26, P-27. The
+backend is done (T8.1, T8.4a) and the scanner side is built (T8.7, §2.7).
+
+- **Goal:** from the console, approve and revoke scanners, log one out, and choose which worker
+  is logged in on it, then see the switch land.
+- **v1 checklist:** none. v1 has no device list, and the console's Devices page is read-only
+  today.
+- **Problems addressed:**
+  - Revoking a scanner or logging one worker out on one scanner needs SQL today.
+  - "Log out everywhere" (§2.4) also logs the worker out on every other scanner.
+  - A shift change at a scanner needs the worker to type a password.
+- **Where:** the Devices page (a table on desktop, cards on mobile) and the device cards on the
+  Dashboard. Every device has the same ⋯ menu as the worker rows in §2.4. On desktop, the most
+  likely action is also a button in the row.
+
+- **Actions per status:**
+
+  | Status | Button | ⋯ menu |
+  |---|---|---|
+  | `pending` | **Approve** | Switch worker… (preselect only, see open point 1), Revoke… |
+  | `active` | **Switch worker…** | Log out this device, Revoke… |
+  | `revoked` | none | none. Grey "Revoked: reinstall the app to use this scanner again" |
+
+  - **Approve** and **Log out this device** act at once (P-26), with a toast: "MT67-2 approved",
+    "dina logged out on MT67-2". Logging out also cancels a waiting switch.
+  - **Revoke…** asks first (P-26) with a red button: "Revoke MT67-2? Every session on it ends
+    now, and it can't log in or ask for approval again. This is final: to use the scanner again,
+    reinstall the app."
+
+- **Status line** (replaces today's Online/Offline tag; P-27):
+  - **● Online · dina:** a live socket.
+  - **◐ Logged out, reachable:** its login screen polled within 30 s, so a switch lands within
+    5 s.
+  - **○ Offline:** off, asleep or out of range. A switch waits up to 10 minutes.
+
+- **Switch worker… dialog:**
+  - **Search box** (focused) over the list of client workers, sorted by name.
+    - The worker on this device now is marked "on this device".
+    - A worker logged in on another scanner shows "also on MT67-1". That session stays: a
+      worker can use two scanners.
+  - **Mode:** two choices, the first preselected:
+    - "Log in directly (no password)": direct, W1. Disabled on a `pending` device, with the hint
+      "Approve the device first."
+    - "Select on the scanner (the worker types the password)": preselect.
+  - **Summary line** that says exactly what happens:
+    - Direct: "*dina* is logged out on *MT67-2*; *eko* is logged in without a password."
+    - Preselect: "… *eko* is selected on its login screen."
+    - Offline device: "MT67-2 is offline: it switches when it checks in within 10 min."
+  - **Switch** button. The dialog closes, and the device shows the waiting state below.
+
+- **Waiting and outcome on the device**, live from the admin frame `devices_update`. On a socket
+  reconnect the list is loaded again over HTTP, because the frame has no request type. The
+  30 s poll stays as a fallback.
+  - **Waiting:** "⟳ Switching to *eko* · waiting for the scanner · 9:41 left" with **Cancel**.
+  - **Collected:** "✓ *eko* logged in by *boss* (direct)" or "✓ *eko* selected on the scanner"
+    (preselect), shown for 1 minute.
+  - **Expired:** a warning, "Switch to *eko* expired: the scanner didn't check in within
+    10 min", with **Try again** (the dialog reopens with the same choice).
+  - **Replaced:** "Replaced by *ana*'s switch to *rudi*", when another admin switched it.
+  - **Invalid:** "Switch to *eko* dropped: the worker was deleted, had the password reset, or
+    the device was revoked."
+
+```text
+Desktop (Devices page)
+┌──────────┬──────────────────────────┬─────────┬───────┬──────────┬─────────────────────┐
+│ Device   │ Status                   │ Trust   │ App   │ Seen     │                     │
+├──────────┼──────────────────────────┼─────────┼───────┼──────────┼─────────────────────┤
+│ MT67-1   │ ● Online · dina          │ active  │ 2.0.1 │ just now │ [Switch worker…] ⋯  │
+│ MT67-2   │ ⟳ Switching to eko · 9:41│ active  │ 2.0.1 │ 1 min    │ [Cancel]         ⋯  │
+│ MT67-3   │ ◐ Logged out, reachable  │ pending │ 2.0.1 │ 10 s     │ [Approve]        ⋯  │
+│ MT67-4   │ ○ Offline                │ active  │ 2.0.0 │ 2 h      │ [Switch worker…] ⋯  │
+└──────────┴──────────────────────────┴─────────┴───────┴──────────┴─────────────────────┘
+Show revoked (1)
+
+Mobile card                          Switch worker… (MT67-1)
+┌──────────────────────────────┐     ┌──────────────────────────────────┐
+│ MT67-1             active  ⋯ │     │ [ Search workers…            ]   │
+│ ● Online · dina              │     │  ○ ana                           │
+│ app 2.0.1 · seen just now    │     │  ○ dina      on this device      │
+│ [ Switch worker…           ] │     │  ● eko       also on MT67-4      │
+└──────────────────────────────┘     │ (●) Log in directly (no password)│
+                                     │ ( ) Select on the scanner        │
+                                     │ dina is logged out on MT67-1;    │
+                                     │ eko is logged in without a       │
+                                     │ password.                        │
+                                     │          [Cancel]  [Switch]      │
+                                     └──────────────────────────────────┘
+```
+
+- **Backend change:** none (T8.1, T8.4a). Open point 2 would add one small admin route.
+- **Open points** (each with my recommendation; answer before building):
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | 1 | Offer **Switch worker…** on a `pending` device (preselect only)? The backend allows it; SPEC §4.4 listed only Approve and Revoke there. | **Yes**, with direct disabled and "Approve the device first". It helps on a new scanner before anyone approved it. |
+  | 2 | **Device names.** Every scanner shows its model ("Newland MT67"), so picking the right one is guesswork. `label` exists in the table, but nothing sets it. | **Add "Rename…"** to the ⋯ menu, with an additive `PATCH /admin/devices/{id}` `{label}` in this task. Without it the switch is hard to use with several scanners. |
+  | 3 | Hide revoked devices by default? | **Yes**, behind "Show revoked (n)": they never come back (W7). |
+  | 4 | How long to show "✓ *eko* logged in"? | **1 minute**, then the normal status line. The outcome stays readable in the device's details for an hour (`last_assignment`). |
+  | 5 | Switch from the Workers page too ("Put on a scanner…")? | **Not now.** One place first; add it if you look for it there. |
+
+**Brief and all five recommendations accepted (maintainer, 2026-11-27).**
+
+**Round 1: built and accepted (2026-11-27).** As the brief, plus:
+- An expired or dropped switch stays on the card for 10 minutes (a collected one for 1 minute),
+  with **Try again** in place of the button after an expiry.
+- Another admin's waiting switch names them ("⟳ ana is switching to rudi…"), so a replaced
+  switch shows on the card without a separate message.
+- The Dashboard hides revoked devices; the Devices page has "Show revoked (n)".
+- Rename… is also on `pending` devices; a revoked device has no actions.
+
+### 2.9 Client Tasks (T9.4, 2026-11-27)
+
+- **Goal:** the worker sees what to do next (tasks from the admin and their claimed orders) and
+  does it on a screen made for it.
+- **v1 checklist:** none (new). Spec: V2_TASKS_SPEC §6, V2_TASKS_DELTA (T6, T7, T11, R1.3, R1.5).
+- **Home:** today it has four buttons (Picking, Outbound, Stockkeeping, Finder). **Tasks**
+  becomes a fifth, at the top, with the open count: **"Tasks (3)"**. The buttons get a little
+  lower so five fit on the scanner screen without scrolling.
+- **List** (oldest first, nothing locked, T11): manual tasks and order-tasks together. Each row
+  shows the type, what it is, the progress, and *Blocked* when it is. Live from `tasks_update`;
+  order-tasks are derived in the app with the Picking progress rule (`OrderLogic.progress`), so
+  they follow the order and pick events the app already has.
+  - **Order-task** → Picking with that order selected. It leaves the list once *Picked*.
+  - **Count task** → the count screen. **Pick task** → the pick-task screen.
+- **Count screen:** the guided Stockkeeping **Count** (T6.15e, V2_STOCK_DELTA R1.2, decided
+  after R1.5) in **task mode**, built once by whichever of T6.15e and T9.4 comes first:
+  1. *Scan location*: locked to the task's place ("Scan A1"; in `single` mode it confirms the
+     item's known location, "Scan 203 to confirm"). Matched after trim and upper-case only, no
+     location format. A wrong scan is refused with an alert. If the item has no location, this
+     step is skipped.
+  2. *Scan item*: locked to the task's item; a wrong item is refused.
+  3. *Counted quantity* and **Save**. **Blind** in task mode: no "before → after" confirm, the
+     recorded quantity is never shown (T6).
+  Save → "Count saved", back to the list.
+- **Pick-task screen:** the Picking layout (Input / List) with the task's lines in place of an
+  order's: required and picked per SKU, the same over-quantity alert, unassign from the List.
+  The reference is in the header. Done when every line is exact: "Task done", back to the list.
+- **Can't finish** (both task screens, in the ⋯ menu): a reason (required, a few quick choices
+  plus free text: *Not enough stock*, *Item not found*, *Damaged*), then the task shows
+  *Blocked* and waits for the admin.
+- **Backend change:** none (T9.2 done).
+- **Open points:**
+
+| Ref | Question | Recommendation |
+|---|---|---|
+| UX-T4 | Tasks first on Home, or after Finder? | **First**: it is the worker's to-do list. |
+| UX-T5 | Does the open count on Home include claimed orders? | **Yes**, manual tasks plus order-tasks not *Picked*; blocked tasks are not counted. |
+| UX-T6 | Count screen: may the worker skip the location scan when the item has one? | **No** in round 1: the scan is the check that they are at the right shelf (SPEC §4). Revisit after use (T7 ⚠️). |
+| UX-T7 | Quick reasons for *Can't finish*? | **Yes**, three plus free text; the admin sees the text. |
+
+**Round 1: brief and recommendations UX-T4–T7 accepted (2026-11-27); built (2026-11-27), not yet
+accepted.** As built:
+- the list shows manual tasks first (oldest first), then claimed orders by ship-by: an order has
+  no "assigned at" time to merge on;
+- the pick-task screen has no List tab: a task has one list of lines, shown under the scan
+  fields, with Remove on a tapped line;
+- the count reuses T6.15e's guided Count with a blind task lock (built first, on
+  `feat/v2-stockkeeping`); a `single`-mode item without a recorded location starts at the item
+  scan.
+
+### 2.10 Client Stockkeeping, guided actions (T6.15e, V2_STOCK_DELTA R1.2)
+
+- **Goal:** a Stockkeeping that is quick to use right and hard to use wrong. Operations say v1's
+  is almost never used, and its model is unintuitive (S1).
+- **v1 checklist** (`stocks_view.dart`): add, set, transfer, with location suggestions; a stock
+  list. **Kept:** add, set, transfer. **Moved:** the stock list goes to Finder (T6.15d, C12).
+- **v1 problems addressed:** C11 (four fields and a Move checkbox that moves the location into
+  the destination; Enter runs Set), C12 (the "History" tab is the stock list).
+- **Start:** three large buttons, with one line each saying what it does:
+  - **Receive**: "put new stock on a shelf" (add);
+  - **Count**: "say how many are on a shelf" (set);
+  - **Move**: "take stock from one shelf to another" (transfer).
+- **Every action is the same sequence**, one step per screen, with a step bar on top
+  (*Location › Item › Quantity › Confirm*). Back goes one step back; the action's title stays
+  visible.
+
+  ```
+  ┌ Count ───────────────────────┐   ┌ Count ───────────────────────┐
+  │ ● Location ○ Item ○ Qty ○ OK │   │ ● ● ● ● 203 › SKU-0012       │
+  │                              │   │                              │
+  │  Scan the shelf label        │   │  Ceramic mug white 350 ml    │
+  │  [ ▒▒▒▒ scan ▒▒▒▒ ]  Type    │   │  Recorded: 40                │
+  │                              │   │  Counted:  36                │
+  │                              │   │  Change:   −4                │
+  │                              │   │                              │
+  │                              │   │  [ Count 36 ]     Back       │
+  └──────────────────────────────┘   └──────────────────────────────┘
+  ```
+  1. **Location:** scan the shelf (ScanField; *Type* to type it).
+  2. **Item:** scan the item. An SKU, a supplier barcode and any barcode the server recognises
+     all work (`/v2/items/find`, exact hit). The screen shows the name and **the recorded
+     quantity at this location** (S2).
+  3. **Quantity:** a number pad field.
+     - Receive: "how many arrived";
+     - Count: "how many are there" (0 allowed: the row is then removed, as the API does);
+     - Move: "how many to move", followed by a **Destination** scan step.
+  4. **Confirm:** before → after for each affected location, and one button that names the
+     action ("Count 36", "Receive 12 into 203", "Move 5 from 201 to 203"). A change of more than
+     half the recorded quantity is shown in a warning colour **with** the word "large change"
+     (C9: never colour alone).
+- **After confirming:** a result line ("203 · SKU-0012: 40 → 36"), then **back to step 2 at the
+  same location**, so a shelf is counted or filled item after item without scanning the shelf
+  again. *Done* returns to the three actions. No undo (S11).
+- **`single` mode** (production): each item has one location.
+  - **Location matches:** carry on as above.
+  - **Receive or Count, item recorded at another location:** the item step says "SKU-0012 is
+    recorded at **201**". Choices: *Use 201* (the action applies there), or *Move it to 203
+    first* (opens Move, prefilled). Never a silent move.
+  - **Move:** step 1 is the item's location (scanned to confirm), and the quantity step is
+    replaced by "moves all N" (single mode moves everything).
+  - **An item with no location yet:** the scanned location becomes its location.
+- **`multi` mode:** the location is the bin; Move moves the entered quantity from the scanned
+  source bin.
+- **Task mode** (shared with T9.4, V2_TASKS_DELTA): the count task opens Count locked to the
+  task's location and item. Each scan must match (trim, upper-case), the recorded quantity is
+  hidden (blind, T6), and the confirm step shows only "Count 36". Confirming completes the task.
+- **Errors** appear in the status line under the scan field, never as a blocking pop-up:
+  - an unknown item;
+  - "Not enough at 201" (the API's 400);
+  - offline: the step stays, with *Retry*.
+- **Built (2026-11-27):**
+  - The large-change warning applies to **Count** only; receiving a lot is normal.
+  - The item step takes an SKU on record without a call. Otherwise it uses the server's lookup:
+    one result counts as found, and its name is shown on the next step.
+  - Locations are compared case-insensitively but sent with the spelling on record, so a scan
+    never makes a second bin that differs only in case.
+- **Later (T6.26):** when the map layout is loaded, a location that is on no room gets a warning
+  ("203A isn't on the map: use it anyway?").
+- **Backend change:** none (`/v2/stocks/update`, `/v2/items/find`, the stock snapshot).
+- **Questions for this brief:**
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | K1 | Location first, then item, in every action (one sequence to learn)? | **Yes.** It matches walking to a shelf, and makes "next item here" possible. |
+  | K2 | "Next item at the same location" after each confirm? | **Yes**, with *Done* to leave. |
+  | K3 | Single mode, an item recorded elsewhere: *Use 201* / *Move it first*? | **Yes**, as above. Never move silently. |
+  | K4 | The "large change" warning at 50 %? | **Yes**, a fixed rule for round 1; a setting if it's wrong. |
+
+**Round 1: built (2026-11-27), checked on the emulator in `single` mode; waiting for your UX acceptance.**
+
+### 2.11 Admin Stock & finder (T7.13, V2_STOCK_SPEC §3.3)
+
+- **Goal:** answer "what do we have, where, and what happened to it" from the console. Admins
+  look; they don't change stock (A8, D7).
+- **v1 checklist** (Flutter admin): Stocks, a read-only table with search and CSV export; Finder
+  (`GET /items/find`). **Added:** the item card, and the stock **change history** (S8).
+- **v1 problems addressed:** A8 (stock info and finder in one area), A10 (one way to refresh: live
+  data).
+- **Two tabs:**
+  - **Stock:** the table, from the live `stocks_update` snapshot.
+    - Columns: SKU, name, location, quantity.
+    - Search over SKU, name and location. A scanned or typed **barcode** also finds its item
+      (`/items/find` exact hit).
+    - Filters as chips: *Zero or less*, *No location*, a location picker.
+    - **CSV export** (`/admin/export/stocks`, kept).
+  - **Changes:** every stock change, newest first, from `stocks_log`, server-side paged
+    (`X-Total-Count`).
+    - Each row: when, worker, item, location, before → after (delta), and the reason in words:
+      received, counted, moved in/out, picked for order *2611…*, returned from order *…*,
+      shortfall, task *…*.
+    - Filters: date range, worker, reason, item.
+    - The question it answers is "where did the stock go".
+- **Item card:** opens from either tab. A side panel on desktop, a full page on mobile.
+  - Name, SKU, supplier barcode.
+  - **Each location with its quantity**, and the total.
+  - **Open orders needing it**, from the console's ongoing orders.
+  - **The item's last changes** (the Changes tab filtered to it), with *See all*.
+  - The same content as the scanner's Finder card (T6.15d), so both read the same.
+
+  ```
+  ┌ Stock & finder ──────────────────────────────────────────────────────────────┐
+  │ [Stock] Changes          🔍 sku, name, location, barcode   [Zero] [No loc] ⤓ │
+  │ SKU       Name                       Location   Qty  │ SKU-0012              │
+  │ SKU-0012  Ceramic mug white 350 ml   203         36  │ Ceramic mug white 350 │
+  │ SKU-0031  Cork coaster set           201         12  │ 203 · 36   Total 36   │
+  │ SKU-0040  Teapot 1 l                 —            0  │ Needed by 2 orders    │
+  │                                                      │ 14:02 eko  count 40→36│
+  │                                                      │ 09:15 dina pick −2 …  │
+  └──────────────────────────────────────────────────────────────────────────────┘
+  ```
+- **Backend change:** one additive admin endpoint, `GET /admin/stock-changes` (filters: `sku`,
+  `actor`, `reason`, `from`, `to`; `limit` / `offset`; `X-Total-Count`), reading `stocks_log`.
+  The reason codes are mapped to words in the console. Rows from before T4.3 have only the
+  legacy `message`, so they show that text.
+- **Questions for this brief:**
+
+  | # | Question | Recommendation |
+  |---|---|---|
+  | F5 | Two tabs, Stock and Changes, with the item card shared? | **Yes.** |
+  | F6 | How far back does Changes go by default? | **The last 7 days**, with a date range to go further. The log is never cut (it is the audit trail). |
+  | F7 | Show legacy log rows (before T4.3, free text only)? | **Yes**, as their message, marked "older entry". |
+  | F8 | A link from an order or task in Changes to that order or task? | **Yes**: orders open the Orders lookup, tasks the task detail (after step 9). |
+
+**Round 1: built (2026-11-27), checked in the browser (desktop and phone width) against a local
+`single`-mode backend; waiting for your UX acceptance.** What was built:
+- Warehouse → *Stock & finder* is now a real page.
+- Stock tab: the table on desktop and cards on mobile. The search and chips work as briefed.
+  A barcode is looked up through `/items/find` only when the text matches nothing in the table.
+- The item card is a side panel on desktop and a full-width drawer on mobile. *Needed by*
+  counts the component lines of ongoing orders.
+- Changes tab: shows the last 7 days (F6), and legacy rows are tagged *older entry* (F7).
+- Moves read "moved from 201 to 203" and are shown on both rows. A pick names its order:
+  the endpoint returns `order_sn` through the pick entry, which is null once the entry is gone.
+  The order links open Orders → History with that order searched (`/orders?find=…`).
+- Task links (added after step 9): a task count, a task pick and its return read "counted for
+  task #N", "picked for task #N" and "returned from task #N". Each has *open task*, which opens
+  `/tasks?task=N` with that task's detail.
+
+### 2.12 Admin Tasks (T9.3, 2026-11-27)
+
+- **Goal:** hand a count or a manual pick to a worker, and see in one place what everyone is
+  doing: manual tasks and claimed orders.
+- **v1 checklist:** none (new). Spec: V2_TASKS_SPEC §6, V2_TASKS_DELTA (T6, T8, T9, R1.3, R1.5).
+- **Place:** Operations → **Tasks** (`/tasks`), next to Orders (moved from Warehouse in V2_DELTA
+  Delta 14; `/warehouse/tasks` redirects).
+- **Flow:**
+  - **Header:** filters for worker, type (Count, Pick) and status (Open, Blocked, Done,
+    Cancelled; default *Open + Blocked*, with done and cancelled from the last 7 days shown
+    under a "Recently closed" fold), and **New task** (a menu: *Count* · *Pick*).
+  - **List, grouped by worker** (unassigned first, highlighted: a deleted worker's tasks wait
+    there for reassignment). Each row shows the type, what it is ("Count A01_001 Flour · bin A1",
+    "Pick · Toko Sinar, inv. 123 · 3/5 SKUs"), the age, and the status in words and colour
+    (*Open*, *In progress*, *Blocked: "only 3 on the shelf"*, *Done*, *Cancelled*). Under each
+    worker, their **claimed orders** follow as read-only rows ("260101ABC · Picking 2/5"), from
+    `GET /admin/order-tasks`, linking to Orders. Desktop: a table. Mobile: cards.
+  - **New count:** item search (SKU, name or barcode, `/items/find`); in `multi` mode a bin
+    picker from the item's bins (or typed); in `single` mode the item's location is shown,
+    read-only (P-29). Worker, optional note. The form says the count is blind.
+  - **New pick:** lines of item + quantity (add, remove; a bundle shows its components as it
+    will be picked, from the BOM tree endpoint), reference, worker, optional note.
+  - **Detail** (side panel on desktop, a page on mobile): lines with required and picked, the
+    stock log rows, and for a done count **"Counted 17 · recorded 20 · −3"**. Actions by state:
+    - *Open / Blocked:* **Reassign** (worker picker; acts at once), **Cancel**: a dialog that,
+      when something is picked, asks *Return the picked stock* (default) or *Keep it deducted
+      (the goods already left)*, and says it is logged either way (T9, P-26 style).
+    - *Blocked pick task:* **Close as picked** with a confirmation listing what was picked (T8).
+  - **Live:** `tasks_update` replaces the list; order rows reload on `shopee_orders_update` and
+    `pick_item_entries_update`.
+- **Backend change:** none (T9.2 done).
+- **Open points:**
+
+| Ref | Question | Recommendation |
+|---|---|---|
+| UX-T1 | Group the list by worker, or one flat list with a worker column? | **By worker**: it answers "what is everyone doing"; the worker filter narrows it to one. |
+| UX-T2 | A Dashboard card for blocked tasks? | **Yes**: "Blocked tasks (n)", linking to the filtered list; blocked tasks wait for an admin. |
+| UX-T3 | Show bundle components while entering a pick line? | **Yes**, collapsed under the line, so the admin sees what the worker will pick (the task stores exactly that). |
+
+**Round 1: brief and recommendations UX-T1–T3 accepted (2026-11-27); built (2026-11-27), not yet
+accepted.** Bundle components show as one small line under the entry ("Bundle, picked as: …").
+
+## 3. Later (not scheduled)
+
+- **Interactive warehouse map** as an optional view in the client Finder and the admin "Stock
+  info & finder" (D7). Not near; it is why stock info and the finder share one admin area.
+
+### 3.1 Finder: proposal for later (V2_DELTA Delta 12, Q84)
+
+**Status (2026-11-27):** round 1 planned as T6.15d (V2_STOCK_SPEC §3.2, V2_STOCK_DELTA). This
+proposal is the starting point for its brief.
+
+**What it does today** (`GET /items/find`, `queries/warehouse.py find_warehouse_items`): an exact
+SKU or supplier-barcode hit returns that item; otherwise a substring search over SKU and name,
+at most 50. Each result has `sku`, `item_name` and `location`: the item's bins joined into one
+string, **without quantities**. v1 searches on submit only and caches each query for 5 minutes
+(C13). The v2 Finder is a copy of it.
+
+**Likely situations** (to confirm, F1):
+
+1. A picker can't find an item for an order: *where is it, and is there enough?*
+2. A stockkeeper puts stock away: *where does this item already live?*
+3. Someone scans an unknown barcode or label: *what is this?*
+4. A count or tidy-up at a shelf: *what should be in this bin?*
+
+**Proposed flow:**
+
+- One `ScanField`. A scan, or Enter, runs the exact lookup. An exact hit opens the **item card**
+  directly. Typing shows results live (from 2 characters, debounced), replacing search on submit.
+- **Item card:** name, SKU and barcodes; **each bin with its quantity** and the total; open
+  orders that still need it (from the claimed or active list the app already holds); the last
+  stock change (`stocks_log`). Actions: *Stockkeeping for this item* (prefilled), and *back to
+  the order* when you came from Picking.
+- **Bin lookup** (F2): scanning a location shows what should be in it, with quantities. This
+  covers situation 4 and helps counts.
+- A label or order SN that matches no item says what it is ("an order label: open in Orders")
+  instead of "No items found" (F3).
+- Recent searches on the device, so finding the same item again takes a tap.
+
+**Data:** per-bin quantities are in `warehouse.stocks` and already reach the app in the stock
+snapshot that Stockkeeping uses, so the card may need no backend change. A bin lookup and a
+"last change" would need additive `/v2` reads.
+
+**Console** (Stock & finder, D7): the same item card, beside the read-only stock table with search
+and CSV export (A8: admins don't change stock).
+
+**Questions for the brief:**
+
+| # | Question | Recommendation |
+|---|---|---|
+| F1 | Which of situations 1–4 actually happen, and how often? | Ask operators on the device day. |
+| F2 | Is a bin lookup wanted? | Yes, if counts or shelf checks are done on the scanner. |
+| F3 | Should Finder recognise order labels and SNs? | Yes, as a pointer only. It never claims or picks. |
+| F4 | Prices (`sell_price`) on the scanner? | No: operators don't need them. |
+
+## 4. Questions for this round (D7)
+
+| Ref | Question | Working default |
+|---|---|---|
+| Q31 | "Copy the screens as a scaffold": a working copy of v1's behaviour, or empty placeholders? | **Working copy**: v1's operations and rules in Compose, using `ScanField`, with a plain layout. Fixed while copying, because they are bugs or cheap: modal pop-ups become the status line (C5), Enter in Stocks no longer runs "Set" (C11), deletes ask for confirmation (C8), the selected order survives leaving the screen (C4). Everything else waits for the per-screen rebuild. |
+| Q32 | Client **Orders**: how do Inbound (picking) and Outbound (label scan) sit inside it? | Two tabs at the top, **Picking** and **Outbound**. v1's Input/History sub-tabs become sections of each tab. |
+| Q33 | **Device info** contents | As in §2.2: username, server facts, app version, device id and status, live state, Log out. Read-only; no settings. |
+| Q34 | Admin naming: "Workers" for operator accounts | Yes, in the console. Admin accounts are not listed there (as in v1). |
+| Q35 | What "status" means on the dashboard | Round 1 shows the registration status plus "last seen" (updated at most once a minute, **only when the app makes an HTTP request**, so an idle but connected device looks stale). Better: an additive `online` flag on `GET /admin/devices` from the open live connections. Recommended as a small backend task. |
+| Q36 | Dashboard "buttons" | Shortcuts to the four areas. No actions (like Sync Shopee) on the dashboard yet. |
+| Q37 | Where Shopee configuration and BOM inspection go | A fourth, smaller group **Settings** (Shopee config) at the bottom of the sidebar; BOM under **Stock info & finder**. **Decided (D8):** Settings under Administration; BOM under Warehouse. |
+| Q38 | Mobile navigation | Drawer (§2.3) for round 1. |
+

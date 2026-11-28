@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -32,7 +32,7 @@ def _kids(tmp_path):
 def _age_initial_pair(mgr, tmp_path, days=2):
     """Rename the generated pair to an older kid so a new rotation gets a distinct kid."""
     current = mgr.get_active_signer().kid
-    old_kid = _kid(datetime.now() - timedelta(days=days))
+    old_kid = _kid(datetime.now(UTC) - timedelta(days=days))
     for ext in (".pub", ".key"):
         os.rename(os.path.join(tmp_path, current + ext), os.path.join(tmp_path, old_kid + ext))
     mgr._refresh_keys_from_disk(force=True)
@@ -51,7 +51,7 @@ def test_rotation_keeps_previous_key_published(tmp_path):
 
 def test_retired_key_pruned_only_after_retention(tmp_path):
     mgr = _manager(tmp_path)
-    base = datetime(2026, 1, 1, 0, 0, 0)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
     old, new = _kid(base), _kid(base + timedelta(days=1))
     for f in os.listdir(tmp_path):
         os.remove(os.path.join(tmp_path, f))
@@ -70,7 +70,7 @@ def test_retired_key_pruned_only_after_retention(tmp_path):
 
 def test_prune_never_touches_newest_pair_or_pending_rotation(tmp_path):
     mgr = _manager(tmp_path)
-    base = datetime(2026, 1, 1)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
     for f in os.listdir(tmp_path):
         os.remove(os.path.join(tmp_path, f))
     signer, pending = _kid(base), _kid(base + timedelta(days=1))

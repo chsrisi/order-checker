@@ -3,7 +3,7 @@
 The v2 surface mirrors the operations the v1 operator client calls, minus registration and
 JWKS (P-11, Q11), plus ``/v2/meta``. Each operation is registered here one by one, **reusing
 the v1 endpoint function and its OpenAPI metadata**, so the two contracts share handlers and
-services (routers stay thin) and cannot drift apart by accident. Whole routers are not
+services (routers stay thin) and cannot drift apart by accident. Picks differ (``order_picks``). Whole routers are not
 re-included because they also hold admin operations.
 
 Every gated operation requires ``X-Client-Version`` (the app's integer ``versionCode``):
@@ -17,6 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.routing import APIRoute
 
+from ...dependencies import require_operator
 from ...services import client_releases
 
 V2_PREFIX = "/v2"
@@ -28,15 +29,18 @@ MIRRORED_OPERATIONS: list[tuple[str, str]] = [
     ("POST", "/auth/logout"),
     ("POST", "/auth/ws-token"),
     ("POST", "/outbound"),
-    ("POST", "/pick-items"),
-    ("POST", "/pick-items/{entry_id}/assign"),
-    ("POST", "/pick-items/unassign"),
-    ("DELETE", "/pick-items/{entry_id}"),
     ("GET", "/shopee/orders"),
     ("POST", "/shopee/orders/acquire"),
     ("GET", "/items/find"),
     ("POST", "/stocks/update"),
 ]
+
+# Mirrored, but closed to admin accounts: order work (V2_PICKING_DELTA Q69, Q75). Picks are not
+# mirrored at all, see order_picks.py.
+OPERATOR_ONLY: set[tuple[str, str]] = {
+    ("POST", "/outbound"),
+    ("POST", "/shopee/orders/acquire"),
+}
 
 # Mirrored without the version gate.
 UNGATED_OPERATIONS: list[tuple[str, str]] = [("GET", "/meta")]
@@ -86,6 +90,10 @@ def build_v2_router(app_routes) -> APIRouter:
             responses = dict(src.responses)
             if gated:
                 responses = {**GATE_RESPONSES, **responses}
+            dependencies = [Depends(require_client_version)] if gated else []
+            if (method, path) in OPERATOR_ONLY:
+                dependencies.append(Depends(require_operator))
+                responses[403] = {"description": "Admin accounts cannot work on orders"}
             router.add_api_route(
                 path,
                 src.endpoint,
@@ -96,7 +104,7 @@ def build_v2_router(app_routes) -> APIRouter:
                 description=src.description,
                 responses=responses,
                 tags=[v2_tag(t) for t in (src.tags or ["v2"])],
-                dependencies=[Depends(require_client_version)] if gated else [],
+                dependencies=dependencies,
                 operation_id=None,
                 name=f"v2_{src.name}",
             )
