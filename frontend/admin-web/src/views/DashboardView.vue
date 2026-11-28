@@ -34,7 +34,7 @@ const shortcuts = [
   { label: 'Workers', to: '/workers' },
   { label: 'Devices', to: '/devices' },
   { label: 'Orders', to: '/orders' },
-  { label: 'Tasks', to: '/warehouse/tasks' },
+  { label: 'Tasks', to: '/tasks' },
   { label: 'Warehouse', to: '/warehouse' },
 ]
 </script>
@@ -45,7 +45,7 @@ const shortcuts = [
     <NAlert v-if="tasks.blockedCount" type="warning" :title="`Blocked tasks (${tasks.blockedCount})`" style="margin-bottom: 16px">
       A worker could not finish {{ tasks.blockedCount === 1 ? 'a task' : `${tasks.blockedCount} tasks` }}. Reassign, cancel or close
       {{ tasks.blockedCount === 1 ? 'it' : 'them' }}.
-      <NButton size="small" style="margin-left: 8px" @click="router.push('/warehouse/tasks?status=blocked')">Open</NButton>
+      <NButton size="small" style="margin-left: 8px" @click="router.push('/tasks?status=blocked')">Open</NButton>
     </NAlert>
     <NH2 style="margin: 0 0 4px">Devices</NH2>
     <NText depth="3">{{ online }} of {{ shown.length }} online</NText>

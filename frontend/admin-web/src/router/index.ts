@@ -25,6 +25,8 @@ export const router = createRouter({
     { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { public: true } },
     { path: '/about', name: 'about', component: () => import('../views/HomeView.vue'), meta: { title: 'Server' } },
     ...pageRoutes,
+    // Tasks moved from Warehouse to Operations; old links keep working.
+    { path: '/warehouse/tasks', redirect: (to) => ({ name: 'tasks', query: to.query }) },
     { path: '/:rest(.*)*', redirect: '/' },
   ],
 })

@@ -368,6 +368,13 @@ Consequences:
 | – | **Order of work:** (1) deleting entries from the worker list on the device, and the console theme toggle; (2) spec for the worker switch from the console (with step 8); (3) spec for tasks. Stockkeeping, Stock & finder and localization come close together; the maintainer prepares Stockkeeping and Stock & finder separately. | ✅ |
 | – | **Later, in this order:** barcode rules as configuration (after localization), then the Tokopedia / TikTok Shop integration (`MARKETPLACE_REVIEW.md`) and the UOM stock logic (Q82) at the same priority: the barcode system has to be modernised before either fits. | 📌 |
 
+## Delta 14 (2026-11-28)
+
+| Ref | Decision | Status |
+|---|---|---|
+| – | The console's **Orders** group is renamed **Operations**. **Tasks** moves there from Warehouse, next to Orders (`/tasks`; the old `/warehouse/tasks` redirects). Replaces the group names of D8 / Q37. | ✅ |
+| Q85 | ⚠️ Revisited: the **BOM page is removed from the v2 console** entirely (it was a placeholder linking to the classic admin). The BOM backend stays (Delta 13). | ✅ |
+
 ---
 
 ## Open questions and things to revisit
@@ -414,5 +421,5 @@ without it), **before device day** (it decides what the first APK must contain),
 | ~~Q51–Q58~~ | ~~Orders: auto-close on SHIPPED, History by day, time zone, night pause of auto-sync~~ | Decided in [V2_ORDERS_DELTA.md](V2_ORDERS_DELTA.md) Round 4 (exact label matching replaces Q44) | – | ✅ |
 | Q84 | Finder: who uses it, when, and what should it answer? | Proposal in [V2_UX.md](V2_UX.md) §3.1 (questions F1–F4 there). | before its brief | 📌 |
 | Q9 | ⚠️ Revisited for the worker switch: device calls use Keystore key signatures now; the device token waits for T8.2 | [V2_WORKER_SWITCH_DELTA.md](V2_WORKER_SWITCH_DELTA.md) W3 | – | ✅ ⚠️ |
-| ~~Q85~~ | ~~BOM deprecation scope~~ | The admin view only; the BOM backend stays (Delta 13) | – | ✅ |
+| ~~Q85~~ | ~~BOM deprecation scope~~ | The admin view only; the BOM backend stays (Delta 13). The v2 console has no BOM page (Delta 14) | – | ✅ |
 | ~~Q86~~ | ~~Localization scope~~ | Both apps, Android first (Delta 13) | – | ✅ |
