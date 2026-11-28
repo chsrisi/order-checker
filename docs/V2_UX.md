@@ -144,9 +144,10 @@ settings (Scanner: suffix setting and a live log of what the scanner sends).
 - **Navigation groups** (categorised bars; names per D8 / Q37):
   1. **Administration:** Workers (operator accounts; v1 "Users"), Devices, Settings (Shopee
      configuration).
-  2. **Orders:** ongoing orders, scan history, period close (rebuilt later, T7.x).
-  3. **Warehouse:** stock info and the item finder together (A8: read-only), BOM; later the
-     optional interactive map (D7).
+  2. **Operations** (was *Orders*, renamed in V2_DELTA Delta 14): Orders (ongoing orders, scan
+     history, period close) and Tasks (§2.12).
+  3. **Warehouse:** stock info and the item finder together (A8: read-only); later the optional
+     interactive map (D7). No BOM page (Delta 14: removed from the v2 console).
 - **Desktop:** a left sidebar with the three groups as section headers and their pages under
   them; Dashboard on top.
 - **Mobile (my choice for round 1):** the same menu in a slide-in drawer from a ☰ button in
@@ -670,14 +671,15 @@ accepted.** As built:
   The order links open Orders → History with that order searched (`/orders?find=…`).
 - Task links (added after step 9): a task count, a task pick and its return read "counted for
   task #N", "picked for task #N" and "returned from task #N". Each has *open task*, which opens
-  `/warehouse/tasks?task=N` with that task's detail.
+  `/tasks?task=N` with that task's detail.
 
 ### 2.12 Admin Tasks (T9.3, 2026-11-27)
 
 - **Goal:** hand a count or a manual pick to a worker, and see in one place what everyone is
   doing: manual tasks and claimed orders.
 - **v1 checklist:** none (new). Spec: V2_TASKS_SPEC §6, V2_TASKS_DELTA (T6, T8, T9, R1.3, R1.5).
-- **Place:** Warehouse → **Tasks** (`/warehouse/tasks`), a new nav entry next to Stock and BOM.
+- **Place:** Operations → **Tasks** (`/tasks`), next to Orders (moved from Warehouse in V2_DELTA
+  Delta 14; `/warehouse/tasks` redirects).
 - **Flow:**
   - **Header:** filters for worker, type (Count, Pick) and status (Open, Blocked, Done,
     Cancelled; default *Open + Blocked*, with done and cancelled from the last 7 days shown

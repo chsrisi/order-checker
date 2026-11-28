@@ -30,18 +30,17 @@ export const groups: NavGroup[] = [
     ],
   },
   {
-    key: 'orders',
-    label: 'Orders',
-    pages: [{ name: 'orders', path: '/orders', label: 'Orders', ready: true }],
+    key: 'operations',
+    label: 'Operations',
+    pages: [
+      { name: 'orders', path: '/orders', label: 'Orders', ready: true },
+      { name: 'tasks', path: '/tasks', label: 'Tasks', ready: true },
+    ],
   },
   {
     key: 'warehouse',
     label: 'Warehouse',
-    pages: [
-      { name: 'tasks', path: '/warehouse/tasks', label: 'Tasks', ready: true },
-      { name: 'stock', path: '/warehouse', label: 'Stock & finder', ready: true },
-      { name: 'bom', path: '/warehouse/bom', label: 'BOM', ready: false, classic: 'BOM' },
-    ],
+    pages: [{ name: 'stock', path: '/warehouse', label: 'Stock & finder', ready: true }],
   },
 ]
 
