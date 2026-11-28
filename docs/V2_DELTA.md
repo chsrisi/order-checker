@@ -375,6 +375,14 @@ Consequences:
 | – | The console's **Orders** group is renamed **Operations**. **Tasks** moves there from Warehouse, next to Orders (`/tasks`; the old `/warehouse/tasks` redirects). Replaces the group names of D8 / Q37. | ✅ |
 | Q85 | ⚠️ Revisited: the **BOM page is removed from the v2 console** entirely (it was a placeholder linking to the classic admin). The BOM backend stays (Delta 13). | ✅ |
 
+## Delta 15 (2026-11-28)
+
+| Ref | Decision | Status |
+|---|---|---|
+| – | **Both scanners run v2**, build 3 (2.1.0), tested and used in operation (device day 1, V2_DEVICE_DAY_TODO). | ✅ |
+| – | **v1 sunset:** the maintainer observes one operating week on v2, then sunsets v1. | 📌 |
+| – | **After the sunset: clean up and remove v1**: the root (v1) operator routes and their contract tests, the Flutter operator client, and the versioning leftovers (KNOWN_LIMITATIONS #8 "Cleanup when v1 is sunset"). Planned as its own step once the sunset is confirmed. | 📌 |
+
 ---
 
 ## Open questions and things to revisit

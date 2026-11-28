@@ -5,7 +5,8 @@ Status 2026-11-23: **postponed** (V2_DELTA Delta 5). v0.6.0 is deployed; feature
 v1 retirement come later.
 
 **Device day 1: 2026-11-28**, on v0.7.0. Everything done except recording the device facts
-(model, build), which follow on day 2. Findings and fixes: "Device day 1 findings" below.
+(model, build), which follow on day 2. **Both scanners now run v2, build 3 (2.1.0)**, tested and
+used in operation; v1 is sunset after one observed operating week (V2_DELTA Delta 15). Findings and fixes: "Device day 1 findings" below.
 
 The release APK allows plain HTTP only to `192.168.1.50`, so the device talks to production.
 Use a **test operator account** throughout: "log out everywhere" logs that account out on every
