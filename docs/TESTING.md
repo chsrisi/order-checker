@@ -124,7 +124,10 @@ session store (token placement, shared refresh, revocation) and the WS client.
 
 The API models are generated from `backend/openapi/v2.json` at build time, so a contract
 change shows up as a compile error or a failing model test. Emulator checks use an API 30
-image (Android 11, like the MT67).
+image (Android 11, like the MT67). Small_Phone (360×640 dp) is taller than the scanner: check
+layouts also on a short AVD, 480×854 at 240 dpi with `hw.mainKeys=no` (320×569 dp with the
+3-button bar), which reproduced the device-day cut of the Home menu (V2_DEVICE_DAY_TODO
+findings).
 
 ## Test conventions
 

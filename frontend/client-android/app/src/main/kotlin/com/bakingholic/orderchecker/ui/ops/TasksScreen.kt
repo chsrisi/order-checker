@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +25,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -50,6 +54,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bakingholic.orderchecker.R
 import com.bakingholic.orderchecker.api.model.TaskResponse
 import com.bakingholic.orderchecker.ops.CANT_FINISH_REASONS
 import com.bakingholic.orderchecker.ops.LineState
@@ -162,7 +167,9 @@ private fun TaskHeader(task: TaskResponse, ops: OpsController, onClose: () -> Un
             task.note?.let { Text("Note: $it", style = MaterialTheme.typography.bodySmall) }
         }
         Box {
-            TextButton(onClick = { menu = true }, modifier = Modifier.testTag("task_menu")) { Text("⋯") }
+            IconButton(onClick = { menu = true }, modifier = Modifier.noKeyFocus().testTag("task_menu")) {
+                Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More", modifier = Modifier.size(28.dp))
+            }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Can't finish…") }, onClick = { menu = false; reporting = true }, modifier = Modifier.testTag("task_cant_finish"))
             }

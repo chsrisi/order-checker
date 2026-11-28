@@ -78,6 +78,12 @@ class ScanGate(
         lastAt = now
         return value
     }
+
+    /**
+     * [accept] unless the screen is still saving the previous scan ([busy]): that scan is refused,
+     * not queued, and not remembered, so scanning it again right after the save goes through.
+     */
+    fun accept(raw: String, busy: Boolean): String? = if (busy) null else accept(raw)
 }
 
 /** The status line under a scan field: replaces v1's modal alerts and success toasts (C5). */

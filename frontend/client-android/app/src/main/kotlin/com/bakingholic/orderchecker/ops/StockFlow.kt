@@ -203,7 +203,8 @@ data class StockFlow(
 
     fun back(): StockFlow = when (step) {
         StockStep.LOCATION -> this
-        StockStep.ITEM -> copy(step = StockStep.LOCATION, item = null, mismatch = null, error = null)
+        // Back at the shelf scan nothing of the last shelf stays (device day 1: it did).
+        StockStep.ITEM -> copy(step = StockStep.LOCATION, location = null, item = null, qty = null, destination = null, mismatch = null, error = null)
         StockStep.QUANTITY -> copy(step = StockStep.ITEM, qty = null, error = null)
         StockStep.DESTINATION ->
             if (single && action == StockAction.MOVE) copy(step = StockStep.ITEM, qty = null, error = null)
