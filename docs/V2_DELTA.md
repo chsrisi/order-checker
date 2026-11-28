@@ -382,6 +382,8 @@ Consequences:
 | – | **Both scanners run v2**, build 3 (2.1.0), tested and used in operation (device day 1, V2_DEVICE_DAY_TODO). | ✅ |
 | – | **v1 sunset:** the maintainer observes one operating week on v2, then sunsets v1. | 📌 |
 | – | **After the sunset: clean up and remove v1**: the root (v1) operator routes and their contract tests, the Flutter operator client, and the versioning leftovers (KNOWN_LIMITATIONS #8 "Cleanup when v1 is sunset"). Planned as its own step once the sunset is confirmed. | 📌 |
+| – | **Then the console takes the base path:** with v1 removed, the Flutter admin ("classic admin" at `/`) is retired too (T7.11), and the Vue console moves from `/console/` to `/` (nginx, Vite `base`, the console's "Classic admin" link, OPERATIONS). Same step as the v1 removal or right after it. | 📌 |
+| – | Device-day fixes ship as **build 4 (2.1.1)**; build 3 (2.1.0) is what the scanners run. | ✅ |
 
 ---
 
